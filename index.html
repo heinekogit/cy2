@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>A最小版 v2：スナップ式ルート作成（保存・共有つき）</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:12px}
+  #map{height:68vh;border:1px solid #ddd}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:.5rem 0}
+  .btn{padding:8px 12px;border-radius:8px;border:1px solid #cfcfcf;background:#fafafa;cursor:pointer}
+  .btn:hover{background:#f0f0f0}
+  .muted{color:#666;font-size:.9rem}
+  .field{display:flex;gap:6px;align-items:center}
+  input[type="text"]{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>A最小版 v2：スナップ式ルート作成</h1>
+  <div class="toolbar">
+    <button id="start" class="btn">開始</button>
+    <button id="undo" class="btn">戻す</button>
+    <button id="clear" class="btn">全消去</button>
+    <select id="profile" class="btn">
+      <option value="cycling">自転車</option>
+      <option value="foot">徒歩</option>
+      <option value="driving">車</option>
+    </select>
+    <button id="export" class="btn">GPXエクスポート</button>
+    <button id="share" class="btn">共有リンクを作成</button>
+    <label class="btn" for="load">GPX読み込み<input id="load" type="file" accept=".gpx" style="display:none"></label>
+  </div>
+  <div id="map"></div>
+  <p class="muted">
+    距離: <span id="dist">0.00</span> km / 経由地: <span id="wpcount">0</span> 点
+    <span class="pill">クリックで経由地追加（道路にスナップ）</span>
+    <br>※ ルーティングは <code>router.project-osrm.org</code>（公開デモ）。大量アクセス・商用は不可。
+  </p>
+
+  <div class="field">
+    <input id="shareurl" type="text" placeholder="共有リンクがここに表示されます" readonly>
+    <button id="copy" class="btn">コピー</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// --- Map setup ---
+const map = L.map('map').setView([35.681236,139.767125], 13);
+const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+tile.on('tileerror', (e)=>{ console.error('Tile error', e); alert('地図タイルの取得に失敗しました。ネット接続や拡張機能を確認してください。'); });
+
+// --- State ---
+let profile = 'cycling';
+let drawing = false;
+let waypoints = [];
+let snapped = [];
+const distEl = document.getElementById('dist');
+const wpEl = document.getElementById('wpcount');
+const shareInput = document.getElementById('shareurl');
+
+let routeLayer = L.polyline([], {color:'#1e88e5',weight:5}).addTo(map);
+let markerLayer = L.layerGroup().addTo(map);
+
+// --- UI events ---
+document.getElementById('profile').onchange = (e)=>{ profile = e.target.value; if (waypoints.length>=2) recomputeRoute(); };
+document.getElementById('start').onclick = ()=>{ drawing = true; };
+document.getElementById('clear').onclick = ()=>{
+  drawing=false; waypoints=[]; snapped=[];
+  routeLayer.setLatLngs([]); markerLayer.clearLayers();
+  distEl.textContent='0.00'; wpEl.textContent='0'; shareInput.value='';
+};
+document.getElementById('undo').onclick = ()=>{
+  if (waypoints.length===0) return;
+  waypoints.pop();
+  renderMarkers();
+  recomputeRoute();
+};
+document.getElementById('export').onclick = ()=>{
+  if (snapped.length<2) { alert('ルートがありません'); return; }
+  const gpx = toGPX(snapped);
+  const blob = new Blob([gpx], {type:'application/gpx+xml'});
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), {href:url, download:'route.gpx'});
+  a.click(); URL.revokeObjectURL(url);
+};
+document.getElementById('share').onclick = ()=>{
+  if (waypoints.length<2){ alert('共有するには2点以上の経由地を置いてください'); return; }
+  const encoded = encodeWaypoints(waypoints);
+  const base = location.origin + location.pathname;
+  const url = `${base}?w=${encoded}&p=${profile}`;
+  shareInput.value = url;
+};
+document.getElementById('copy').onclick = async ()=>{
+  if (!shareInput.value){ alert('共有リンクがありません'); return; }
+  try { await navigator.clipboard.writeText(shareInput.value); alert('コピーしました'); }
+  catch{ shareInput.select(); document.execCommand('copy'); alert('コピーしました（互換）'); }
+};
+document.getElementById('load').onchange = (e)=>{
+  const file = e.target.files?.[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const text = reader.result;
+    const coords = parseGPXtoCoords(text);
+    if (!coords.length){ alert('GPXにトラックが見つかりませんでした'); return; }
+    waypoints = [ L.latLng(coords[0][1], coords[0][0]), L.latLng(coords[coords.length-1][1], coords[coords.length-1][0]) ];
+    renderMarkers();
+    recomputeRoute();
+  };
+  reader.readAsText(file);
+};
+
+map.on('click', (e)=>{ if(!drawing) return; waypoints.push(e.latlng); renderMarkers(); recomputeRoute(); });
+
+function renderMarkers(){
+  markerLayer.clearLayers();
+  waypoints.forEach((p,i)=> L.marker(p, {title:`WP${i+1}`}).addTo(markerLayer));
+  wpEl.textContent = waypoints.length;
+}
+
+async function recomputeRoute(){
+  if (waypoints.length<2){ routeLayer.setLatLngs(waypoints); distEl.textContent='0.00'; return; }
+  let all = [];
+  for (let i=1;i<waypoints.length;i++){
+    const a=waypoints[i-1], b=waypoints[i];
+    const url = `https://router.project-osrm.org/route/v1/${profile}/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+    try{
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('routing failed');
+      const j = await r.json();
+      if (!j.routes || !j.routes[0]) throw new Error('no route');
+      const seg = j.routes[0].geometry.coordinates.map(([lng,lat])=>L.latLng(lat,lng));
+      if (all.length) seg.shift();
+      all = all.concat(seg);
+    }catch(e){
+      console.error(e);
+      alert('ルーティング失敗。経由地を少し変えて試してください。');
+      return;
+    }
+  }
+  snapped = all;
+  routeLayer.setLatLngs(all);
+  if (all.length) map.fitBounds(L.latLngBounds(all), {padding:[20,20]});
+  + if (all.length) {
+   const last = all[all.length - 1];
+   if (!map.getBounds().contains(last)) {
+     map.panTo(last, { animate: true });
+   }
+ }
+
+  let d=0; for(let i=1;i<all.length;i++){ d += map.distance(all[i-1], all[i]); }
+  distEl.textContent = (d/1000).toFixed(2);
+}
+
+function toGPX(latlngs){
+  const head = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="SnapRoute" xmlns="http://www.topografix.com/GPX/1/1">
+<trk><name>SnapRoute</name><trkseg>
+`;
+  const body = latlngs.map(p=>`  <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}"></trkpt>`).join('\n');
+  const foot = `\n</trkseg></trk>\n</gpx>\n`; return head+body+foot;
+}
+
+function encodeWaypoints(wps){
+  const arr = wps.map(p=>[Number(p.lat.toFixed(6)), Number(p.lng.toFixed(6))]);
+  const json = JSON.stringify(arr);
+  return btoa(unescape(encodeURIComponent(json)));
+}
+function decodeWaypoints(s){
+  try{
+    const json = decodeURIComponent(escape(atob(s)));
+    const arr = JSON.parse(json);
+    return arr.map(([lat,lng])=>L.latLng(lat,lng));
+  }catch{ return []; }
+}
+
+function parseGPXtoCoords(text){
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(text, "text/xml");
+  const pts = xml.getElementsByTagName("trkpt");
+  const coords = [];
+  for (let i=0;i<pts.length;i++){
+    const el = pts[i];
+    const lat = parseFloat(el.getAttribute("lat"));
+    const lon = parseFloat(el.getAttribute("lon"));
+    if (!isNaN(lat) && !isNaN(lon)) coords.push([lon, lat]);
+  }
+  return coords;
+}
+
+(function initFromURL(){
+  const u = new URL(location.href);
+  const w = u.searchParams.get('w');
+  const p = u.searchParams.get('p');
+  if (p) { profile = p; document.getElementById('profile').value = p; }
+  if (w){
+    waypoints = decodeWaypoints(w);
+    renderMarkers();
+    if (waypoints.length>=2) recomputeRoute();
+    else if (waypoints.length===1) map.setView(waypoints[0], 14);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,219 +1,140 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Pages版：スナップ式ルート作成（デバッグ補助つき）</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  .wrap{max-width:980px;margin:0 auto;padding:12px}
-  #map{height:68vh;min-height:360px;border:1px solid #ddd}
-  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:.5rem 0}
-  .btn{padding:8px 12px;border-radius:8px;border:1px solid #cfcfcf;background:#fafafa;cursor:pointer}
-  .btn:hover{background:#f0f0f0}
-  .muted{color:#666;font-size:.9rem}
-  .field{display:flex;gap:6px;align-items:center}
-  input[type="text"]{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Route MVP – GPS実走テスト（三鷹駅↔玉川上水・井の頭公園サンプル）</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    html,body,#map { height: 100%; margin: 0; }
+    .ui { position: fixed; left: 8px; right: 8px; top: env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
+    .ui .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
+    .ui .badge.ok { background:#d1fae5; color:#065f46; }
+    .ui .badge.warn { background:#fef3c7; color:#92400e; }
+    .ui .badge.off { background:#fee2e2; color:#991b1b; }
+    .dock { position: fixed; right: 8px; bottom: 8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
+    .btn { background:#111827; color:#fff; border:none; padding:10px 12px; border-radius:12px; font-size:14px; }
+    .btn.ghost { background:#ffffff; color:#111827; border:1px solid #e5e7eb; }
+    .hint { position: fixed; left: 8px; bottom: 8px; z-index:1000; background:#ffffffdd; padding:6px 10px; border-radius:10px; font-size:12px; }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Pages版：スナップ式ルート作成</h1>
-  <div class="toolbar">
-    <button id="start" class="btn">開始</button>
-    <button id="undo" class="btn">戻す</button>
-    <button id="clear" class="btn">全消去</button>
-    <select id="profile" class="btn">
-      <option value="cycling">自転車</option>
-      <option value="foot">徒歩</option>
-      <option value="driving">車</option>
-    </select>
-    <button id="export" class="btn">GPXエクスポート</button>
-    <button id="share" class="btn">共有リンクを作成</button>
-    <label class="btn" for="load">GPX読み込み<input id="load" type="file" accept=".gpx" style="display:none"></label>
-    <button id="selftest" class="btn">接続テスト</button>
-  </div>
   <div id="map"></div>
-  <p class="muted">
-    距離: <span id="dist">0.00</span> km / 経由地: <span id="wpcount">0</span> 点
-    <span class="pill">クリックで経由地追加（道路にスナップ）</span><br>
-    ※ ルーティングは <code>router.project-osrm.org</code>（公開デモ）。大量アクセス・商用は不可。
-  </p>
-  <div class="field">
-    <input id="shareurl" type="text" placeholder="共有リンクがここに表示されます" readonly>
-    <button id="copy" class="btn">コピー</button>
+
+  <div class="ui">
+    <div id="courseBadge" class="badge">準備中…</div>
   </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-// --- Map setup ---
-const map = L.map('map').setView([35.681236,139.767125], 13);
-const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
-tile.on('tileerror', (e)=>{ console.error('Tile error', e); alert('地図タイルの取得に失敗しました。ネット接続や拡張機能をご確認ください。'); });
-window.addEventListener('load', ()=> setTimeout(()=> map.invalidateSize(), 100));
+  <div class="dock">
+    <button id="locateBtn" class="btn">📍 現在地</button>
+    <button id="startBtn" class="btn">▶ 開始</button>
+    <button id="stopBtn" class="btn ghost">⏸ 停止</button>
+    <button id="followBtn" class="btn ghost">🔁 追従 ON</button>
+  </div>
 
-// --- State ---
-let profile = 'cycling';
-let drawing = false;
-let waypoints = [];
-let snapped = [];
-const distEl = document.getElementById('dist');
-const wpEl = document.getElementById('wpcount');
-const shareInput = document.getElementById('shareurl');
-let routeLayer = L.polyline([], {color:'#1e88e5',weight:5}).addTo(map);
-let markerLayer = L.layerGroup().addTo(map);
+  <div class="hint">📌 サンプルは「三鷹駅 →（北側）玉川上水沿いで井の頭文化園横 → 井の頭公園西側入口（グラウンド付近） → 折返し（南側）玉川上水沿い → 三鷹駅」。必要に応じて地図タップで点を足して微修正できます。</div>
 
-// --- UI events ---
-document.getElementById('profile').onchange = (e)=>{ profile = e.target.value; if (waypoints.length>=2) recomputeRoute(); };
-document.getElementById('start').onclick = ()=>{ drawing = true; };
-document.getElementById('clear').onclick = ()=>{
-  drawing=false; waypoints=[]; snapped=[];
-  routeLayer.setLatLngs([]); markerLayer.clearLayers();
-  distEl.textContent='0.00'; wpEl.textContent='0'; shareInput.value='';
-};
-document.getElementById('undo').onclick = ()=>{
-  if (waypoints.length===0) return;
-  waypoints.pop();
-  renderMarkers();
-  recomputeRoute();
-};
-document.getElementById('export').onclick = ()=>{
-  if (snapped.length<2) { alert('ルートがありません'); return; }
-  const gpx = toGPX(snapped);
-  const blob = new Blob([gpx], {type:'application/gpx+xml'});
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), {href:url, download:'route.gpx'});
-  a.click(); URL.revokeObjectURL(url);
-};
-document.getElementById('share').onclick = ()=>{
-  if (waypoints.length<2){ alert('共有するには2点以上の経由地を置いてください'); return; }
-  const encoded = encodeWaypoints(waypoints);
-  const base = location.origin + location.pathname;
-  const url = `${base}?w=${encoded}&p=${profile}`;
-  shareInput.value = url;
-};
-document.getElementById('copy').onclick = async ()=>{
-  if (!shareInput.value){ alert('共有リンクがありません'); return; }
-  try { await navigator.clipboard.writeText(shareInput.value); alert('コピーしました'); }
-  catch{ shareInput.select(); document.execCommand('copy'); alert('コピーしました（互換）'); }
-};
-document.getElementById('load').onchange = (e)=>{
-  const file = e.target.files?.[0]; if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    const text = reader.result;
-    const coords = parseGPXtoCoords(text);
-    if (!coords.length){ alert('GPXにトラックが見つかりませんでした'); return; }
-    waypoints = [ L.latLng(coords[0][1], coords[0][0]), L.latLng(coords[coords.length-1][1], coords[coords.length-1][0]) ];
-    renderMarkers();
-    recomputeRoute();
-  };
-  reader.readAsText(file);
-};
-document.getElementById('selftest').onclick = async ()=>{
-  try{
-    const png = await fetch('https://tile.openstreetmap.org/13/7280/3220.png', {mode:'cors'});
-    console.log('OSM tile status:', png.status);
-    const r = await fetch('https://router.project-osrm.org/route/v1/cycling/139.76,35.68;139.77,35.69?overview=false', {mode:'cors'});
-    console.log('OSRM status:', r.status);
-    if (png.ok && r.ok) alert('接続テストOK（タイル・ルーティングに到達）');
-    else alert('一部に到達できません。ネット/拡張/企業フィルタを確認してください。');
-  }catch(e){
-    console.error(e); alert('ネットワークテスト失敗：' + e.message);
-  }
-};
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
-map.on('click', (e)=>{ if(!drawing) return; waypoints.push(e.latlng); renderMarkers(); recomputeRoute(); });
+  <script>
+    const map = L.map('map').setView([35.7015, 139.5665], 15);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-function renderMarkers(){
-  markerLayer.clearLayers();
-  waypoints.forEach((p,i)=> L.marker(p, {title:`WP${i+1}`}).addTo(markerLayer));
-  wpEl.textContent = waypoints.length;
-}
+    const badge = document.getElementById('courseBadge');
+    const locateBtn = document.getElementById('locateBtn');
+    const startBtn  = document.getElementById('startBtn');
+    const stopBtn   = document.getElementById('stopBtn');
+    const followBtn = document.getElementById('followBtn');
 
-async function recomputeRoute(){
-  if (waypoints.length<2){ routeLayer.setLatLngs(waypoints); distEl.textContent='0.00'; return; }
-  let all = [];
-  for (let i=1;i<waypoints.length;i++){
-    const a=waypoints[i-1], b=waypoints[i];
-    const url = `https://router.project-osrm.org/route/v1/${profile}/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-    try{
-      const r = await fetch(url, {mode:'cors'});
-      if(!r.ok) throw new Error('routing failed '+r.status);
-      const j = await r.json();
-      if (!j.routes || !j.routes[0]) throw new Error('no route');
-      const seg = j.routes[0].geometry.coordinates.map(([lng,lat])=>L.latLng(lat,lng));
-      if (all.length) seg.shift();
-      all = all.concat(seg);
-    }catch(e){
-      console.error(e);
-      alert('ルーティング失敗。経由地を少し変えて試してください。');
-      return;
+    let routePts = [
+      [35.7032,139.5608], // 三鷹駅
+      [35.7019,139.5630],
+      [35.7015,139.5658],
+      [35.7012,139.5686],
+      [35.7009,139.5705], // 文化園北側
+      [35.7006,139.5718],
+      [35.7002,139.5732],
+      [35.7000,139.5745], // 公園西入口
+      [35.6994,139.5740], // 南側
+      [35.6996,139.5710],
+      [35.6999,139.5680],
+      [35.7003,139.5652],
+      [35.7007,139.5627],
+      [35.7025,139.5609],
+      [35.7032,139.5608]  // 三鷹駅
+    ];
+    let routeLine = L.polyline(routePts, { color:'#2563eb', weight:4 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding:[30,30] });
+
+    map.on('click', (e) => {
+      routePts.push([e.latlng.lat, e.latlng.lng]);
+      routeLine.setLatLngs(routePts);
+    });
+
+    let watchId = null, follow=false, dot=null, accuracyCircle=null;
+    let traced=[], tracedLine=null, recording=false;
+
+    function setBadge(state, text) {
+      badge.className = 'badge ' + (state||'');
+      badge.textContent = text;
     }
-  }
-  snapped = all;
-  routeLayer.setLatLngs(all);
-  if (!window.__didInitialFit && all.length){
-    map.fitBounds(L.latLngBounds(all), {padding:[20,20]});
-    window.__didInitialFit = true;
-  }else if (all.length){
-    const last = all[all.length-1];
-    if (!map.getBounds().contains(last)) map.panTo(last, {animate:true});
-  }
-  let d=0; for(let i=1;i<all.length;i++){ d += map.distance(all[i-1], all[i]); }
-  distEl.textContent = (d/1000).toFixed(2);
-}
 
-function toGPX(latlngs){
-  const head = `<?xml version="1.0" encoding="UTF-8"?>\\n<gpx version="1.1" creator="SnapRoute" xmlns="http://www.topografix.com/GPX/1/1">\\n<trk><name>SnapRoute</name><trkseg>\\n`;
-  const body = latlngs.map(p=>`  <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}"></trkpt>`).join('\\n');
-  const foot = `\\n</trkseg></trk>\\n</gpx>\\n`; return head+body+foot;
-}
-function encodeWaypoints(wps){
-  const arr = wps.map(p=>[Number(p.lat.toFixed(6)), Number(p.lng.toFixed(6))]);
-  const json = JSON.stringify(arr);
-  return btoa(unescape(encodeURIComponent(json)));
-}
-function decodeWaypoints(s){
-  try{
-    const json = decodeURIComponent(escape(atob(s)));
-    const arr = JSON.parse(json);
-    return arr.map(([lat,lng])=>L.latLng(lat,lng));
-  }catch{ return []; }
-}
-function parseGPXtoCoords(text){
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(text, "text/xml");
-  const pts = xml.getElementsByTagName("trkpt");
-  const coords = [];
-  for (let i=0;i<pts.length;i++){
-    const el = pts[i];
-    const lat = parseFloat(el.getAttribute("lat"));
-    const lon = parseFloat(el.getAttribute("lon"));
-    if (!isNaN(lat) && !isNaN(lon)) coords.push([lon, lat]);
-  }
-  return coords;
-}
-(function initFromURL(){
-  const u = new URL(location.href);
-  const w = u.searchParams.get('w');
-  const p = u.searchParams.get('p');
-  if (p) { profile = p; document.getElementById('profile').value = p; }
-  if (w){
-    waypoints = decodeWaypoints(w);
-    renderMarkers();
-    if (waypoints.length>=2) recomputeRoute();
-    else if (waypoints.length===1) map.setView(waypoints[0], 14);
-  }
-})();
-window.addEventListener('unhandledrejection', e=>console.error('PromiseRejection:', e.reason));
-window.addEventListener('error', e=>console.error('Error:', e.message));
-</script>
+    function distToRouteMeters(lat, lng) {
+      const p = turf.point([lng, lat]);
+      const line = turf.lineString(routePts.map(([la,ln]) => [ln, la]));
+      return turf.pointToLineDistance(p, line, { units:'meters' });
+    }
+
+    function updateCourseStatus(latlng) {
+      const d = distToRouteMeters(latlng.lat, latlng.lng);
+      if (d <= 30) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
+      else if (d <= 60) setBadge('warn', `注意：${Math.round(d)}m外`);
+      else setBadge('off', `ルート外：${Math.round(d)}m`);
+    }
+
+    function onPos(pos) {
+      const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords;
+      const latlng = L.latLng(lat,lng);
+      if (!dot) {
+        dot = L.circleMarker(latlng,{radius:6,weight:2,color:'#2563eb',fillColor:'#3b82f6',fillOpacity:1}).addTo(map);
+        accuracyCircle = L.circle(latlng,{radius:acc,color:'#93c5fd',weight:1,fillColor:'#bfdbfe',fillOpacity:0.25}).addTo(map);
+      } else {
+        dot.setLatLng(latlng);
+        accuracyCircle.setLatLng(latlng).setRadius(acc);
+      }
+      if (follow) map.panTo(latlng,{animate:true});
+      if (acc<=50) {
+        const prev = traced[traced.length-1];
+        const moved = !prev || latlng.distanceTo(L.latLng(prev[0],prev[1]))>=5;
+        if (moved && recording) {
+          traced.push([lat,lng]);
+          if (tracedLine) tracedLine.setLatLngs(traced);
+          else tracedLine=L.polyline(traced,{color:'#ef4444',weight:5}).addTo(map);
+        }
+      }
+      updateCourseStatus(latlng);
+    }
+
+    locateBtn.onclick=()=>{
+      if (!('geolocation' in navigator)) { alert('端末で位置情報不可'); return; }
+      follow=true; followBtn.textContent='🔁 追従 ON';
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      watchId=navigator.geolocation.watchPosition(onPos,()=>alert('位置情報エラー'),{enableHighAccuracy:true,timeout:10000,maximumAge:3000});
+    };
+    startBtn.onclick=()=>{ recording=true; traced=[]; if(tracedLine){map.removeLayer(tracedLine);tracedLine=null;} setBadge('warn','記録中'); };
+    stopBtn.onclick=()=>{ recording=false; setBadge('','記録停止'); };
+    followBtn.onclick=()=>{ follow=!follow; followBtn.textContent= follow?'🔁 追従 ON':'🔁 追従 OFF'; };
+    map.on('dragstart',()=>{ if(follow){follow=false; followBtn.textContent='🔁 追従 OFF';} });
+    setBadge('','サンプルルート読み込み済み：開始でログ記録／📍で現在地追従');
+  </script>
 </body>
 </html>

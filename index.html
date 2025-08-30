@@ -57,6 +57,10 @@
 <div id="errBanner" style="display:none;padding:8px 12px;background:#fff7ed;color:#92400e;border-bottom:1px solid #fde68a;">
   端末のストレージ機能（IndexedDB）が使えません。localStorageに保存します（プライベートブラウズをOFFにすると改善します）。
 </div>
+<div id="libBanner" style="display:none;padding:8px 12px;background:#fee2e2;color:#991b1b;border-bottom:1px solid #fecaca;">
+  地図ライブラリの読み込みに失敗しました（通信/コンテンツブロッカー/キャッシュの可能性）。再読み込み、別回線、またはブロッカーOFFをお試しください。
+</div>
+
 
   <main>
     <!-- Home -->
@@ -160,6 +164,14 @@ function resampleByDistance(latlngs, stepMeters){
   }
   return pts.length?pts:latlngs.slice();
 }
+
+function libsReady(){ return !!(window.L && window.turf); }
+function showLibError(){
+  const el = document.getElementById('libBanner');
+  if (el) el.style.display = 'block';
+}
+
+
 
 /* =========================
    1) ストレージ層：IndexedDB or localStorage フォールバック
@@ -333,6 +345,9 @@ function showHome(tab='logs'){
   setHomeTab(tab);
 }
 function showRun(options={}){
+  // ライブラリ未読込なら、画面切替の前に警告だけ表示して戻る
+  if (!libsReady()) { showLibError(); alert('Leaflet/Turf が読み込めていません。通信やブロッカー、キャッシュを確認してください。'); return; }
+
   home.classList.remove('active');
   run.classList.add('active');
   initMapOnce();
@@ -342,6 +357,7 @@ function showRun(options={}){
     resetRunLayers();
   }
 }
+
 
 let map, badge, routePts, routeLine, editMode=false, recording=false, follow=false;
 let watchId=null, dot=null, accCircle=null, lastLatLng=null;
@@ -504,10 +520,13 @@ window.addEventListener('beforeunload', (e)=>{ if(recording){ e.preventDefault()
    4) 初期表示
 ========================= */
 (async function init(){
-  // まずUIのイベントは必ず登録（DBの成否に依らない）
+  // UIのイベントは必ず最初に登録
   document.getElementById('tabRoutes').onclick = ()=> setHomeTab('routes');
   document.getElementById('tabLogs').onclick   = ()=> setHomeTab('logs');
   document.getElementById('btnGoRun').onclick  = ()=> showRun();
+
+  // ライブラリ読み込み確認（1秒後にチェック）
+  setTimeout(()=>{ if(!libsReady()) showLibError(); }, 1000);
 
   // DBオープン（失敗してもフォールバックで続行）
   await openDB();

@@ -54,6 +54,9 @@
       <button id="btnGoRun" class="btn ghost">すぐ実走画面へ</button>
     </div>
   </header>
+<div id="errBanner" style="display:none;padding:8px 12px;background:#fff7ed;color:#92400e;border-bottom:1px solid #fde68a;">
+  端末のストレージ機能（IndexedDB）が使えません。localStorageに保存します（プライベートブラウズをOFFにすると改善します）。
+</div>
 
   <main>
     <!-- Home -->
@@ -159,11 +162,19 @@ function resampleByDistance(latlngs, stepMeters){
 }
 
 /* =========================
-   1) IndexedDB（routes/logs）
+   1) ストレージ層：IndexedDB or localStorage フォールバック
 ========================= */
 let db;
+let useLocalFallback = false;
+
 function openDB(){
-  return new Promise((resolve,reject)=>{
+  return new Promise((resolve)=>{
+    // IndexedDBが無い/失敗したらフォールバック
+    if (!('indexedDB' in window)) {
+      useLocalFallback = true;
+      document.getElementById('errBanner').style.display = 'block';
+      return resolve(null);
+    }
     const req = indexedDB.open('route_mvp', 1);
     req.onupgradeneeded = (e)=>{
       const db = e.target.result;
@@ -177,26 +188,66 @@ function openDB(){
       }
     };
     req.onsuccess = ()=>{ db=req.result; resolve(db); };
-    req.onerror = ()=>reject(req.error);
-  });
-}
-function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
-function dbPut(store, obj){ return new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
-function dbGetAll(store, index=null, desc=true){
-  return new Promise((res,rej)=>{
-    const st = tx(store);
-    const arr=[];
-    let req;
-    if(index){ req = st.index(index).openCursor(null, desc?'prev':'next'); }
-    else { req = st.openCursor(null, desc?'prev':'next'); }
-    req.onsuccess = (e)=>{
-      const cur = e.target.result;
-      if(cur){ arr.push(cur.value); cur.continue(); } else res(arr);
+    req.onerror = ()=> {
+      useLocalFallback = true;
+      document.getElementById('errBanner').style.display = 'block';
+      resolve(null);
     };
-    req.onerror = ()=>rej(req.error);
   });
 }
-function dbDelete(store, key){ return new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
+
+// localStorage ヘルパ
+function lsGet(key, def){ try{ return JSON.parse(localStorage.getItem(key) || def); }catch{ return JSON.parse(def); } }
+function lsSet(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+// IndexedDB 用ユーティリティ
+function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
+
+// ルートは今回は使わないので logs のみフォールバック実装
+async function dbPut(store, obj){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]');
+      const i = arr.findIndex(x=>x.id===obj.id);
+      if (i>=0) arr[i]=obj; else arr.unshift(obj);
+      lsSet('logs', arr);
+      return;
+    }
+  }
+}
+async function dbGetAll(store, index=null, desc=true){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{
+      const st = tx(store);
+      const out=[];
+      let req = index ? st.index(index).openCursor(null, desc?'prev':'next')
+                      : st.openCursor(null, desc?'prev':'next');
+      req.onsuccess = (e)=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else res(out); };
+      req.onerror = ()=>rej(req.error);
+    });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]');
+      // endedAt 降順に並べ替え
+      arr.sort((a,b)=> (b.endedAt||'').localeCompare(a.endedAt||''));
+      return arr;
+    }
+    return [];
+  }
+}
+async function dbDelete(store, key){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]').filter(x=>x.id!==key);
+      lsSet('logs', arr);
+      return;
+    }
+  }
+}
 
 /* =========================
    2) ホーム：一覧UI
@@ -453,12 +504,18 @@ window.addEventListener('beforeunload', (e)=>{ if(recording){ e.preventDefault()
    4) 初期表示
 ========================= */
 (async function init(){
-  await openDB();
+  // まずUIのイベントは必ず登録（DBの成否に依らない）
   document.getElementById('tabRoutes').onclick = ()=> setHomeTab('routes');
   document.getElementById('tabLogs').onclick   = ()=> setHomeTab('logs');
   document.getElementById('btnGoRun').onclick  = ()=> showRun();
+
+  // DBオープン（失敗してもフォールバックで続行）
+  await openDB();
+
+  // 初期はログタブ
   setHomeTab('logs');
 })();
+
 </script>
 </body>
 </html>

@@ -90,7 +90,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 <script>
-// --- onerror/unhandledrejection を画面に出す ---
+// --- 画面にエラーを出す ---
 (function(){
   const show=(msg)=>{const b=document.getElementById('pageErr');const p=document.getElementById('pageErrLog');
     if(b) b.style.display='block'; if(p){ p.style.display='block'; p.textContent += msg + "\n"; }};
@@ -98,10 +98,421 @@
   window.addEventListener('unhandledrejection', (e)=>{const r=e.reason; show(`[unhandled] ${r&&r.message?r.message:r}`); });
 })();
 </script>
-
 <script>
-/* ユーティリティ・DB・地図関連の既存コードは省略せず全部入れる（ここでは略） */
-/* === ここに前回までの全スクリプト本体（utils, storage fallback, home UI, run map, start/stop etc.）が続きます === */
+/* =========================
+   0) ユーティリティ
+========================= */
+const fmtDate = (d)=> new Date(d).toLocaleString();
+const pad = (n)=> String(n).padStart(2,'0');
+function ymd() { const t=new Date(); return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`; }
+function showToast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.style.display='block'; setTimeout(()=>el.style.display='none',2000); }
+const m2deg = (m)=> m/111320;
+
+/* ポリライン符号化/復号 */
+function encodePolyline(latlngs){
+  let lastLat=0,lastLng=0, res='';
+  for(const [lat,lng] of latlngs){
+    let iLat=Math.round(lat*1e5), iLng=Math.round(lng*1e5);
+    let dLat=iLat-lastLat, dLng=iLng-lastLng;
+    for(let v of [dLat,dLng]){
+      v = v<0 ? ~(v<<1) : v<<1;
+      while(v>=0x20){ res += String.fromCharCode((0x20 | (v & 0x1f))+63); v >>= 5; }
+      res += String.fromCharCode(v+63);
+    }
+    lastLat=iLat; lastLng=iLng;
+  }
+  return res;
+}
+function decodePolyline(str){
+  let idx=0, lat=0, lng=0, coords=[];
+  while(idx<str.length){
+    let b,shift=0,result=0;
+    do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+    let dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift=0; result=0;
+    do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+    let dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lat += dlat; lng += dlng;
+    coords.push([lat/1e5, lng/1e5]);
+  }
+  return coords;
+}
+
+/* 平滑化/重複除去/距離リサンプル */
+function movingAverage(latlngs){
+  if(latlngs.length<3) return latlngs.slice();
+  const out = latlngs.map(p=>p.slice());
+  for(let i=1;i<latlngs.length-1;i++){
+    out[i][0] = (latlngs[i-1][0]+latlngs[i][0]+latlngs[i+1][0])/3;
+    out[i][1] = (latlngs[i-1][1]+latlngs[i][1]+latlngs[i+1][1])/3;
+  }
+  return out;
+}
+function dedupeTinyMoves(latlngs){
+  if(latlngs.length<2) return latlngs.slice();
+  const out=[latlngs[0]];
+  for(let i=1;i<latlngs.length;i++){
+    const a=L.latLng(out[out.length-1][0], out[out.length-1][1]);
+    const b=L.latLng(latlngs[i][0], latlngs[i][1]);
+    if(a.distanceTo(b)>=2) out.push(latlngs[i]);
+  }
+  return out;
+}
+function resampleByDistance(latlngs, stepMeters){
+  if(latlngs.length<2) return latlngs.slice();
+  const ls = turf.lineString(latlngs.map(([la,ln])=>[ln,la]));
+  const lenKm = turf.length(ls, {units:'kilometers'});
+  const stepKm = stepMeters/1000;
+  const pts=[];
+  for(let d=0; d<=lenKm; d+=stepKm){
+    const p = turf.along(ls, d, {units:'kilometers'});
+    const [lng,lat] = p.geometry.coordinates;
+    pts.push([lat,lng]);
+  }
+  return pts.length?pts:latlngs.slice();
+}
+
+/* =========================
+   1) ストレージ層：IndexedDB or localStorage フォールバック
+========================= */
+let db;
+let useLocalFallback = false;
+
+function openDB(){
+  return new Promise((resolve)=>{
+    if (!('indexedDB' in window)) {
+      useLocalFallback = true;
+      const b=document.getElementById('errBanner'); if(b) b.style.display='block';
+      return resolve(null);
+    }
+    const req = indexedDB.open('route_mvp', 1);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('routes')){
+        const st = db.createObjectStore('routes', {keyPath:'id'});
+        st.createIndex('updatedAt','updatedAt',{unique:false});
+      }
+      if(!db.objectStoreNames.contains('logs')){
+        const st = db.createObjectStore('logs', {keyPath:'id'});
+        st.createIndex('endedAt','endedAt',{unique:false});
+      }
+    };
+    req.onsuccess = ()=>{ db=req.result; resolve(db); };
+    req.onerror = ()=> {
+      useLocalFallback = true;
+      const b=document.getElementById('errBanner'); if(b) b.style.display='block';
+      resolve(null);
+    };
+  });
+}
+// localStorage ヘルパ
+function lsGet(key, def){ try{ return JSON.parse(localStorage.getItem(key) || def); }catch{ return JSON.parse(def); } }
+function lsSet(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+// IndexedDB tx
+function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
+
+// ルートは今回は未使用。logs のみフォールバック実装
+async function dbPut(store, obj){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]');
+      const i = arr.findIndex(x=>x.id===obj.id);
+      if (i>=0) arr[i]=obj; else arr.unshift(obj);
+      lsSet('logs', arr);
+      return;
+    }
+  }
+}
+async function dbGetAll(store, index=null, desc=true){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{
+      const st = tx(store);
+      const out=[];
+      let req = index ? st.index(index).openCursor(null, desc?'prev':'next')
+                      : st.openCursor(null, desc?'prev':'next');
+      req.onsuccess = (e)=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else res(out); };
+      req.onerror = ()=>rej(req.error);
+    });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]');
+      arr.sort((a,b)=> (b.endedAt||'').localeCompare(a.endedAt||''));
+      return arr;
+    }
+    return [];
+  }
+}
+async function dbDelete(store, key){
+  if (!useLocalFallback && db){
+    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+  } else {
+    if (store==='logs'){
+      const arr = lsGet('logs','[]').filter(x=>x.id!==key);
+      lsSet('logs', arr);
+      return;
+    }
+  }
+}
+
+/* =========================
+   2) ホーム：一覧UI
+========================= */
+const tabRoutes = document.getElementById('tabRoutes');
+const tabLogs   = document.getElementById('tabLogs');
+const routesList= document.getElementById('routesList');
+const logsList  = document.getElementById('logsList');
+const btnGoRun  = document.getElementById('btnGoRun');
+let lastSavedLogId = null;
+
+function setHomeTab(which){
+  tabRoutes.classList.toggle('active', which==='routes');
+  tabLogs.classList.toggle('active', which==='logs');
+  routesList.hidden = which!=='routes';
+  logsList.hidden   = which!=='logs';
+  renderLists(which);
+}
+async function renderLists(which){
+  if(which==='routes'){
+    routesList.innerHTML = '';
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `<div><div>三鷹↔玉川上水（サンプル）</div><div class="meta">ローカルサンプル · 編集可</div></div>
+      <div><button class="btn ghost" id="openSample">実走画面で開く</button></div>`;
+    routesList.appendChild(card);
+    card.querySelector('#openSample').onclick = ()=>{ showRun(); };
+  } else {
+    logsList.innerHTML = '';
+    const logs = await dbGetAll('logs','endedAt', true);
+    if(!logs.length){
+      const empty=document.createElement('div');
+      empty.className='meta';
+      empty.textContent='保存された実走ログはまだありません。▶で記録し、停止→保存してください。';
+      logsList.appendChild(empty);
+      return;
+    }
+    for(const log of logs){
+      const card = document.createElement('div');
+      card.className = 'card' + (log.id===lastSavedLogId ? ' highlight' : '');
+      const km = log.distanceMeters ? (log.distanceMeters/1000).toFixed(2) : '-';
+      const dur = log.durationSec ? `${Math.floor(log.durationSec/60)}分` : '-';
+      card.innerHTML = `<div>
+          <div>${log.name||'実走ログ'}</div>
+          <div class="meta">${fmtDate(log.endedAt)} · ${km} km · ${dur}</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost" data-open="${log.id}">開く</button>
+          <button class="btn danger" data-del="${log.id}">削除</button>
+        </div>`;
+      logsList.appendChild(card);
+      if(log.id===lastSavedLogId){ setTimeout(()=>{ card.classList.remove('highlight'); lastSavedLogId=null; }, 2500); }
+    }
+    logsList.querySelectorAll('button[data-open]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.dataset.open;
+        const logs = await dbGetAll('logs');
+        const log = logs.find(x=>x.id===id);
+        if(!log){ alert('ログが見つかりません'); return; }
+        const coords = log.polyline ? decodePolyline(log.polyline) : (log.coords||[]);
+        showRun({ replay: { coords } });
+      };
+    });
+    logsList.querySelectorAll('button[data-del]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.dataset.del;
+        if(confirm('この実走ログを削除しますか？')){ await dbDelete('logs', id); renderLists('logs'); }
+      };
+    });
+  }
+}
+
+/* =========================
+   3) RUN画面（地図・記録）
+========================= */
+const home = document.getElementById('home');
+const run  = document.getElementById('run');
+const backHomeBtn = document.getElementById('backHomeBtn');
+
+function showHome(tab='logs'){
+  run.classList.remove('active');
+  home.classList.add('active');
+  setHomeTab(tab);
+}
+function showRun(options={}){
+  home.classList.remove('active');
+  run.classList.add('active');
+  initMapOnce();
+  if(options.replay){
+    drawReplay(options.replay.coords);
+  } else {
+    resetRunLayers();
+  }
+}
+
+let map, badge, routePts, routeLine, editMode=false, recording=false, follow=false;
+let watchId=null, dot=null, accCircle=null, lastLatLng=null;
+let traced=[], tracedLine=null, lastAddTs=0;
+const ACC_LIMIT=100, MIN_MOVE=3, MIN_INTERVAL_MS=1000;
+
+function initMapOnce(){
+  if(map) return;
+  map = L.map('map').setView([35.7015,139.5665], 15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
+  badge = document.getElementById('courseBadge');
+
+  // サンプル青ルート
+  routePts = [
+    [35.7032,139.5608],[35.7019,139.5630],[35.7015,139.5658],[35.7012,139.5686],
+    [35.7009,139.5705],[35.7006,139.5718],[35.7002,139.5732],[35.7000,139.5745],
+    [35.6994,139.5740],[35.6996,139.5710],[35.6999,139.5680],[35.7003,139.5652],
+    [35.7007,139.5627],[35.7025,139.5609],[35.7032,139.5608]
+  ];
+  routeLine = L.polyline(routePts, { color:'#2563eb', weight:4 }).addTo(map);
+  map.fitBounds(routeLine.getBounds(), { padding:[30,30] });
+
+  // 編集モード：クリックで点追加（記録中は不可）
+  map.on('click', (e)=>{
+    if(!editMode || recording) return;
+    routePts.push([e.latlng.lat, e.latlng.lng]);
+    routeLine.setLatLngs(routePts);
+    if(lastLatLng) updateCourseStatus(lastLatLng);
+  });
+  map.on('dragstart', ()=>{ if(follow){ follow=false; followBtn.textContent='🔁 追従 OFF'; }});
+}
+
+/* バッジ & コース判定 */
+function setBadge(state,text){ badge.className='badge '+(state||''); badge.textContent=text; }
+function distToRouteMeters(lat,lng){
+  if(!routePts || routePts.length<2) return null;
+  const p = turf.point([lng,lat]);
+  const line = turf.lineString(routePts.map(([la,ln])=>[ln,la]));
+  return turf.pointToLineDistance(p, line, {units:'meters'});
+}
+function updateCourseStatus(latlng){
+  const d = distToRouteMeters(latlng.lat, latlng.lng);
+  if(d==null){ setBadge('', 'ルート未作成'); return; }
+  if (d<=30) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
+  else if (d<=60) setBadge('warn', `注意：${Math.round(d)}m外`);
+  else setBadge('off', `ルート外：${Math.round(d)}m`);
+}
+
+/* リプレイ/リセット */
+function resetRunLayers(){
+  if(tracedLine){ map.removeLayer(tracedLine); tracedLine=null; }
+  traced=[]; lastAddTs=0; recording=false;
+  setEditMode(false);
+  setBadge('','サンプル：✏️で編集、▶で記録、■で停止保存／📍で現在地追従');
+}
+function drawReplay(coords){
+  resetRunLayers();
+  if(tracedLine) map.removeLayer(tracedLine);
+  tracedLine = L.polyline(coords, { color:'#ef4444', weight:5 }).addTo(map);
+  map.fitBounds(L.latLngBounds(coords), { padding:[30,30] });
+  setBadge('','保存済みログを表示中');
+}
+
+/* GPS */
+function onPos(pos){
+  const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords;
+  const latlng = L.latLng(lat,lng);
+  lastLatLng = latlng;
+
+  if(!dot){
+    dot = L.circleMarker(latlng,{ radius:6, weight:2, color:'#2563eb', fillColor:'#3b82f6', fillOpacity:1 }).addTo(map);
+    accCircle = L.circle(latlng,{ radius:acc, color:'#93c5fd', weight:1, fillColor:'#bfdbfe', fillOpacity:0.25 }).addTo(map);
+  }else{
+    dot.setLatLng(latlng); accCircle.setLatLng(latlng).setRadius(acc);
+  }
+  if(follow) map.panTo(latlng,{animate:true});
+
+  const now = Date.now();
+  if(recording && acc<=ACC_LIMIT && (now-lastAddTs)>=MIN_INTERVAL_MS){
+    const prev = traced[traced.length-1];
+    const moved = !prev || latlng.distanceTo(L.latLng(prev[0],prev[1]))>=MIN_MOVE;
+    if(moved){
+      traced.push([lat,lng]); lastAddTs=now;
+      if(tracedLine) tracedLine.setLatLngs(traced);
+      else tracedLine = L.polyline(traced,{ color:'#ef4444', weight:5 }).addTo(map);
+    }
+  }
+  updateCourseStatus(latlng);
+}
+function onErr(){ showToast('位置情報エラー'); if(watchId) navigator.geolocation.clearWatch(watchId), watchId=null; }
+
+/* ボタン */
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const followBtn= document.getElementById('followBtn');
+const locateBtn= document.getElementById('locateBtn');
+const editToggleBtn=document.getElementById('editToggleBtn');
+// backHomeBtn は上で取得済み
+
+function setEditMode(on){
+  editMode = !!on;
+  editToggleBtn.textContent = editMode ? '✅ 編集終了（ロック）' : '✏️ 編集モード';
+}
+startBtn.onclick = ()=>{
+  if(!('geolocation' in navigator)){ alert('この端末では位置情報が使えません'); return; }
+  follow = true; followBtn.textContent='🔁 追従 ON';
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+
+  setEditMode(false);
+  recording = true; traced=[]; lastAddTs=0;
+  if(tracedLine){ map.removeLayer(tracedLine); tracedLine=null; }
+  window.__logStartedAt = new Date().toISOString();
+  setBadge('warn','記録中：オンコース判定有効');
+  showToast('記録を開始しました');
+};
+stopBtn.onclick = async ()=>{
+  if(!recording){ showToast('記録は開始されていません'); return; }
+  recording = false;
+  const count = traced.length;
+  const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
+  if(!ok){ setBadge('','記録停止'); showToast('保存せず終了'); return; }
+
+  const startedAt = window.__logStartedAt || new Date().toISOString();
+  const endedAt   = new Date().toISOString();
+  let pts = dedupeTinyMoves(traced);
+  pts = movingAverage(pts);
+  const tolDeg = m2deg(6); // 標準精度。切替UIは今後
+  let ls = turf.lineString(pts.map(([la,ln])=>[ln,la]));
+  ls = turf.simplify(ls, {tolerance: tolDeg, highQuality: true});
+  let simp = ls.geometry.coordinates.map(([lng,lat])=>[lat,lng]);
+  simp = resampleByDistance(simp, 5);
+
+  const ls2 = turf.lineString(simp.map(([la,ln])=>[ln,la]));
+  const lenMeters = turf.length(ls2,{units:'kilometers'})*1000;
+  const bbox = turf.bbox(ls2);
+  const polyline = encodePolyline(simp);
+  const durationSec = Math.max(1, Math.round((new Date(endedAt)-new Date(startedAt))/1000));
+
+  const id = 'l_'+Math.random().toString(36).slice(2,10);
+  const nameDefault = `${ymd()} 実走 01`;
+  const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
+  const record = { id, version:1, routeId:null, name, startedAt, endedAt, polyline,
+                   pointCount: simp.length, distanceMeters: Math.round(lenMeters),
+                   durationSec, bbox };
+  await dbPut('logs', record);
+  lastSavedLogId = id;
+
+  setBadge('','記録停止');
+  showToast('保存しました');
+  showHome('logs');
+};
+
+followBtn.onclick = ()=>{ follow=!follow; followBtn.textContent = follow?'🔁 追従 ON':'🔁 追従 OFF'; };
+locateBtn.onclick = ()=>{
+  if(!('geolocation' in navigator)) { alert('この端末では位置情報が使えません'); return; }
+  if(watchId) navigator.geolocation.clearWatch(watchId);
+  follow = true; followBtn.textContent='🔁 追従 ON';
+  watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+};
+editToggleBtn.onclick = ()=>{ if(recording){ alert('記録中は編集できません'); return; } setEditMode(!editMode); };
+backHomeBtn.onclick = ()=> showHome('logs');
+
+window.addEventListener('beforeunload', (e)=>{ if(recording){ e.preventDefault(); e.returnValue=''; }});
 
 /* =========================
    4) 初期表示（iOSでも確実に起動）

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Route MVP – 診断ページ</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, sans-serif; margin:16px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  .row { margin:10px 0; padding:10px; border:1px solid #e5e7eb; border-radius:10px; }
+  .ok { color:#065f46; }
+  .ng { color:#991b1b; }
+  code,pre { background:#f3f4f6; padding:6px; border-radius:6px; display:block; overflow:auto; }
+  button { padding:8px 12px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; }
+</style>
+</head>
+<body>
+<h1>診断ページ</h1>
+
+<div class="row">
+  <b>1) JavaScript 実行</b>
+  <div id="jsStatus">…</div>
+  <button id="clickTest">クリック動作テスト</button>
+  <div id="clickResult"></div>
+</div>
+
+<div class="row">
+  <b>2) IndexedDB 利用可否</b>
+  <div id="idbStatus">…</div>
+</div>
+
+<div class="row">
+  <b>3) Leaflet / Turf の読み込み</b>
+  <div id="libStatus">…</div>
+</div>
+
+<div class="row">
+  <b>4) Geolocation（位置情報）</b>
+  <div id="geoStatus">…</div>
+  <button id="geoBtn">現在地の取得を試す</button>
+</div>
+
+<div class="row">
+  <b>5) エラー表示（自動）</b>
+  <div>下にランタイムエラー/未処理Promiseの内容を出します。</div>
+  <pre id="errlog" style="min-height:60px;"></pre>
+</div>
+
+<!-- Leaflet/Turf（本番と同じCDN） -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+
+<script>
+(function(){
+  const $ = (id)=> document.getElementById(id);
+  const log = (msg)=> { const el=$('errlog'); el.textContent += msg + "\n"; };
+
+  // 5) 全体エラーハンドラ
+  window.addEventListener('error', (e)=>{
+    log('[error] ' + (e.message||'unknown') + ' @ ' + (e.filename||'') + ':' + (e.lineno||''));
+  });
+  window.addEventListener('unhandledrejection', (e)=>{
+    log('[unhandledrejection] ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+
+  // 1) JS 実行 & クリックイベント
+  $('jsStatus').innerHTML = '<span class="ok">OK: スクリプトは動作中</span>';
+  $('clickTest').onclick = ()=>{
+    const now = new Date().toLocaleTimeString();
+    $('clickResult').textContent = 'クリック受信: ' + now;
+  };
+
+  // 2) IndexedDB
+  if (!('indexedDB' in window)) {
+    $('idbStatus').innerHTML = '<span class="ng">NG: indexedDB がありません（プライベートブラウズ等）</span>';
+  } else {
+    // 簡単なオープンテスト
+    try{
+      const req = indexedDB.open('diag_test_db', 1);
+      req.onupgradeneeded = ()=>{};
+      req.onsuccess = ()=> $('idbStatus').innerHTML = '<span class="ok">OK: indexedDB 使用可能</span>';
+      req.onerror   = ()=> $('idbStatus').innerHTML = '<span class="ng">NG: indexedDB オープンに失敗</span>';
+    }catch(e){
+      $('idbStatus').innerHTML = '<span class="ng">NG: indexedDB 例外: '+e.message+'</span>';
+    }
+  }
+
+  // 3) Leaflet/Turf ロード確認
+  const leafletOk = !!window.L;
+  const turfOk = !!window.turf;
+  $('libStatus').innerHTML =
+    (leafletOk ? '<span class="ok">Leaflet: OK</span>' : '<span class="ng">Leaflet: NG</span>')
+    + ' / ' +
+    (turfOk ? '<span class="ok">Turf: OK</span>' : '<span class="ng">Turf: NG</span>');
+
+  // 4) Geolocation
+  if(!('geolocation' in navigator)){
+    $('geoStatus').innerHTML = '<span class="ng">NG: このブラウザは geolocation 非対応</span>';
+    $('geoBtn').disabled = true;
+  } else {
+    $('geoStatus').innerHTML = '未テスト（ボタンを押してください）';
+    $('geoBtn').onclick = ()=>{
+      navigator.geolocation.getCurrentPosition(
+        (pos)=>{
+          const {latitude, longitude, accuracy} = pos.coords;
+          $('geoStatus').innerHTML = '<span class="ok">OK:</span> lat='+latitude.toFixed(6)
+              + ', lng='+longitude.toFixed(6)+' (±'+Math.round(accuracy)+'m)';
+        },
+        (err)=>{
+          $('geoStatus').innerHTML = '<span class="ng">NG:</span> ' + err.message + '（HTTPS/権限/ブロッカーを確認）';
+        },
+        { enableHighAccuracy:true, maximumAge:0, timeout:10000 }
+      );
+    };
+  }
+})();
+</script>
+</body>
+</html>

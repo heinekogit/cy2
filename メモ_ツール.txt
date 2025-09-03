@@ -1,0 +1,48 @@
+terminalで、
+python3 -m http.server 8000 --directory ~/Desktop/cy2
+
+ブラウザは、
+http://localhost:8000/index.html
+
+
+＜更新作業＞
+（例：フォルダごと）
+git init
+git add .
+git commit -m "Add route detail page implementation (detail.html, css, js)"
+
+
+（例：index.html）
+git add index.html
+git commit -m "update MVP error zuttoI"
+git push
+
+＜長い説明＞
+Git コマンド実行
+# 変更確認
+git status
+
+# index.html の変更をステージに追加
+git add index.html
+
+# コミット（コメントはわかりやすく）
+git commit -m "Update index.html with Mitaka–Tamagawa Josui sample route"
+
+# GitHub にプッシュ
+git push origin main
+※ ブランチ名が main でない場合は、master や自分のブランチ名に置き換えてください。
+
+
+反映チェック（順番にやればOK）
+ブラウザ更新
+PC/スマホで公開URLを開く
+強制リロード：Windows/Linuxは Ctrl+F5、macOSは Cmd+Shift+R
+まだ古い場合は ?v=2 みたいにクエリを付けて開く（例：.../index.html?v=2）
+GitHub Pages のビルド確認
+リポジトリ → Settings → Pages で「Published」が緑ならOK
+反映が遅い時は Actions タブで失敗してないかチェック
+
+確認方法
+リポジトリの Settings → Pages に「Published」と出ていれば有効
+Actions タブで「Pages build and deployment」が成功しているか確認できる
+公開URLを開いて、強制リロード（Ctrl+F5 / Cmd+Shift+R） でキャッシュを飛ばす

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Route MVP – 改修版（編集ロック & 停止保存 & GPS調整）</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    html,body,#map { height:100%; margin:0; }
+    .ui { position:fixed; left:8px; right:8px; top:env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
+    .ui .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
+    .ui .badge.ok{background:#d1fae5;color:#065f46;} .ui .badge.warn{background:#fef3c7;color:#92400e;}
+    .ui .badge.off{background:#fee2e2;color:#991b1b;}
+    .dock { position:fixed; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
+    .btn { border:none; border-radius:12px; padding:12px 14px; font-size:14px; }
+    .btn.primary{ background:#111827; color:#fff; }
+    .btn.ghost{ background:#fff; color:#111827; border:1px solid #e5e7eb; }
+    .btn.stop{ background:#ef4444; color:#fff; font-weight:700; }
+    .toolbar { position:fixed; left:8px; bottom:8px; z-index:1000; display:flex; gap:8px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="ui">
+    <div id="courseBadge" class="badge">準備中…</div>
+  </div>
+
+  <div class="dock">
+    <button id="locateBtn" class="btn primary">📍 現在地</button>
+    <button id="startBtn"  class="btn primary">▶ 記録開始</button>
+    <button id="stopBtn"   class="btn stop">■ 停止</button>
+    <button id="followBtn" class="btn ghost">🔁 追従 ON</button>
+  </div>
+
+  <div class="toolbar">
+    <button id="editToggleBtn" class="btn ghost">✏️ 編集モード</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script>
+    // ====== 地図 ======
+    const map = L.map('map').setView([35.7015,139.5665], 15);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
+
+    // ====== UI参照 ======
+    const badge = document.getElementById('courseBadge');
+    const locateBtn = document.getElementById('locateBtn');
+    const startBtn  = document.getElementById('startBtn');
+    const stopBtn   = document.getElementById('stopBtn');
+    const followBtn = document.getElementById('followBtn');
+    const editToggleBtn = document.getElementById('editToggleBtn');
+
+    // ====== 予定ルート（青）: 三鷹↔玉川上水 ざっくりサンプル ======
+    let routePts = [
+      [35.7032,139.5608],[35.7019,139.5630],[35.7015,139.5658],[35.7012,139.5686],
+      [35.7009,139.5705],[35.7006,139.5718],[35.7002,139.5732],[35.7000,139.5745],
+      [35.6994,139.5740],[35.6996,139.5710],[35.6999,139.5680],[35.7003,139.5652],
+      [35.7007,139.5627],[35.7025,139.5609],[35.7032,139.5608]
+    ];
+    let routeLine = L.polyline(routePts, { color:'#2563eb', weight:4 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding:[30,30] });
+
+    // ====== モード分離 ======
+    let editMode = false;   // ✏️編集モードか
+    let recording = false;  // 記録中か
+    function setEditMode(on){
+      editMode = !!on;
+      editToggleBtn.textContent = editMode ? '✅ 編集終了（ロック）' : '✏️ 編集モード';
+    }
+    setEditMode(false);
+
+    // クリックで点追加：編集モード && 非記録中のみ
+    map.on('click', (e) => {
+      if (!editMode || recording) return;
+      routePts.push([e.latlng.lat, e.latlng.lng]);
+      routeLine.setLatLngs(routePts);
+      // 予定ルート更新に伴い判定更新
+      if (lastLatLng) updateCourseStatus(lastLatLng);
+    });
+
+    // 記録中はユーザーが地図操作したら追従OFF
+    map.on('dragstart', ()=>{ if(follow){ follow=false; followBtn.textContent='🔁 追従 OFF'; }});
+
+    // ====== 現在地・追従 ======
+    let watchId=null, follow=false, dot=null, accuracyCircle=null, lastLatLng=null;
+    function setBadge(state, text){ badge.className='badge '+(state||''); badge.textContent=text; }
+    function distToRouteMeters(lat, lng){
+      if (routePts.length<2) return null;
+      const p = turf.point([lng,lat]);
+      const line = turf.lineString(routePts.map(([la,ln])=>[ln,la]));
+      return turf.pointToLineDistance(p, line, {units:'meters'});
+    }
+    function updateCourseStatus(latlng){
+      const d = distToRouteMeters(latlng.lat, latlng.lng);
+      if (d==null){ setBadge('', 'ルート未作成'); return; }
+      if (d<=30) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
+      else if (d<=60) setBadge('warn', `注意：${Math.round(d)}m外`);
+      else setBadge('off', `ルート外：${Math.round(d)}m`);
+    }
+
+    // ====== 実走ログ（赤） ======
+    let traced=[], tracedLine=null, lastAddTs=0;
+    const ACC_LIMIT=100;        // 100mまで許容（都市部対策）
+    const MIN_MOVE=3;           // 3m以上動いたら採用
+    const MIN_INTERVAL_MS=1000; // 1秒間隔で取り込み
+
+    function onPos(pos){
+      const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords;
+      const latlng = L.latLng(lat,lng);
+      lastLatLng = latlng;
+
+      // 現在地描画
+      if (!dot){
+        dot = L.circleMarker(latlng,{ radius:6, weight:2, color:'#2563eb', fillColor:'#3b82f6', fillOpacity:1 }).addTo(map);
+        accuracyCircle = L.circle(latlng,{ radius:acc, color:'#93c5fd', weight:1, fillColor:'#bfdbfe', fillOpacity:0.25 }).addTo(map);
+      } else {
+        dot.setLatLng(latlng);
+        accuracyCircle.setLatLng(latlng).setRadius(acc);
+      }
+      if (follow) map.panTo(latlng,{animate:true});
+
+      // ログ取り込み：精度・移動量・間隔でフィルタ
+      const now = Date.now();
+      if (recording && acc<=ACC_LIMIT && (now-lastAddTs)>=MIN_INTERVAL_MS){
+        const prev = traced[traced.length-1];
+        const moved = !prev || latlng.distanceTo(L.latLng(prev[0],prev[1]))>=MIN_MOVE;
+        if (moved){
+          traced.push([lat,lng]);
+          lastAddTs = now;
+          if (tracedLine) tracedLine.setLatLngs(traced);
+          else tracedLine = L.polyline(traced,{ color:'#ef4444', weight:5 }).addTo(map);
+        }
+      }
+
+      updateCourseStatus(latlng);
+    }
+
+    function onErr(err){
+      alert('位置情報エラー：権限/電波/設定を確認してください');
+      if (watchId) navigator.geolocation.clearWatch(watchId), watchId=null;
+    }
+
+    // ====== ボタン挙動 ======
+    locateBtn.onclick = () => {
+      if (!('geolocation' in navigator)) { alert('この端末では位置情報が使えません'); return; }
+      follow = true; followBtn.textContent='🔁 追従 ON';
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+        enableHighAccuracy:true, maximumAge:0, timeout:20000
+      });
+    };
+
+    startBtn.onclick = () => {
+      recording = true;
+      setEditMode(false);                // 記録中は強制ロック
+      if (tracedLine) { map.removeLayer(tracedLine); tracedLine=null; }
+      traced = []; lastAddTs = 0;
+      setBadge('warn','記録中：オンコース判定有効');
+    };
+
+    stopBtn.onclick = () => {
+      if (!recording){ setBadge('','記録は開始されていません'); return; }
+      // 停止→保存確認
+      const count = traced.length;
+      const confirmSave = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
+      recording = false;
+
+      if (confirmSave && count>1){
+        const today = new Date();
+        const y = today.getFullYear(), m=String(today.getMonth()+1).padStart(2,'0'), d=String(today.getDate()).padStart(2,'0');
+        // 同日連番
+        const key = 'logs';
+        const logs = JSON.parse(localStorage.getItem(key) || '[]');
+        const sameDay = logs.filter(l => (l.startedAt||'').startsWith(`${y}-${m}-${d}`));
+        const nameDefault = `${y}-${m}-${d} 実走 ${String(sameDay.length+1).padStart(2,'0')}`;
+        const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
+
+        const startedAt = (window.__logStartedAt || new Date()).toISOString();
+        const endedAt = new Date().toISOString();
+        const routeId = null; // 既存のID管理が入ったら差し替え
+        const log = { id: 'l_'+Math.random().toString(36).slice(2,10),
+                      version:1, routeId, name, startedAt, endedAt,
+                      coords: traced, distanceMeters: null, durationSec: null };
+        logs.unshift(log);
+        localStorage.setItem(key, JSON.stringify(logs));
+        alert('保存しました（ログ一覧は後日UIで表示予定）');
+      } else {
+        alert('保存せずに終了しました');
+      }
+      setBadge('','記録停止');
+      window.__logStartedAt = null;
+    };
+
+    editToggleBtn.onclick = () => {
+      if (recording){ alert('記録中は編集できません'); return; }
+      setEditMode(!editMode);
+    };
+
+    followBtn.onclick = () => {
+      follow = !follow;
+      followBtn.textContent = follow ? '🔁 追従 ON' : '🔁 追従 OFF';
+    };
+
+    // 記録中に閉じる警告
+    window.addEventListener('beforeunload', (e)=>{
+      if (recording){
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
+    setBadge('','サンプル：✏️で編集、▶で記録、■で停止保存／📍で現在地追従');
+  </script>
+</body>
+</html>

@@ -1,5 +1,0 @@
-terminalで、
-python3 -m http.server 8000 --directory ~/Desktop/cy2
-
-ブラウザは、
-http://localhost:8000/index.html

@@ -256,6 +256,7 @@ async function dbDelete(store, key){
   }
 }
 
+
 /* =========================
    2) ホーム：一覧UI
 ========================= */
@@ -308,6 +309,8 @@ async function renderLists(which){
       logsList.appendChild(card);
       if(log.id===lastSavedLogId){ setTimeout(()=>{ card.classList.remove('highlight'); lastSavedLogId=null; }, 2500); }
     }
+  }
+
 logsList.querySelectorAll('button[data-open]').forEach(btn=>{
   btn.onclick = async ()=>{
     const id = btn.dataset.open;
@@ -324,7 +327,8 @@ logsList.querySelectorAll('button[data-open]').forEach(btn=>{
       };
     });
   }
-}
+
+
 
 /* =========================
    3) RUN画面（地図・記録）

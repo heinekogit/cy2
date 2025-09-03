@@ -308,18 +308,14 @@ async function renderLists(which){
       logsList.appendChild(card);
       if(log.id===lastSavedLogId){ setTimeout(()=>{ card.classList.remove('highlight'); lastSavedLogId=null; }, 2500); }
     }
-    logsList.querySelectorAll('button[data-open]').forEach(btn=>{
+logsList.querySelectorAll('button[data-open]').forEach(btn=>{
   btn.onclick = async ()=>{
     const id = btn.dataset.open;
--   const logs = await dbGetAll('logs');
--   const log = logs.find(x=>x.id===id);
--   if(!log){ alert('ログが見つかりません'); return; }
--   const coords = log.polyline ? decodePolyline(log.polyline) : (log.coords||[]);
--   showRun({ replay: { coords } });
-+   // detail.html に id を渡して遷移
-+   location.href = `detail.html?id=${encodeURIComponent(id)}`;
+    // detail.html に id を渡して遷移
+    location.href = `detail.html?id=${encodeURIComponent(id)}`;
   };
 });
+
 
     logsList.querySelectorAll('button[data-del]').forEach(btn=>{
       btn.onclick = async ()=>{

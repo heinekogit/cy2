@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Route MVP – 実走ログ保存（IndexedDB+Fallback）</title>
+</head>
+<body>
+
+
+<!-- Admin Console (MVP) -->
+<div id="adminConsole" style="display:none; position:fixed; inset:0; background:#0008; z-index:99999;">
+  <div style="max-width:1100px; margin:24px auto; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 8px 40px #0004;">
+    <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:#111; color:#fff;">
+      <strong>Admin Console</strong>
+      <span id="adminStatus" style="opacity:.8; font-size:12px;"></span>
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <button id="btnAdminReload">再読込</button>
+        <button id="btnAdminIntegrity">整合性チェック</button>
+        <button id="btnAdminDanger" style="background:#f5c842;">危険操作OFF</button>
+        <button id="btnAdminClose">閉じる ✕</button>
+      </div>
+    </div>
+
+    <div style="padding:12px 16px;">
+      <div style="display:flex; gap:16px; align-items:end; flex-wrap:wrap;">
+        <div>
+          <label>ビュー</label><br>
+          <select id="adminView">
+            <option value="runs">runs（実走ログ）</option>
+            <option value="routes">routes（コース定義）</option>
+          </select>
+        </div>
+        <div>
+          <label>検索</label><br>
+          <input id="adminQuery" placeholder="id / title / date など部分一致" style="min-width:280px;">
+        </div>
+        <div>
+          <button id="btnAdminExportJson">JSON書き出し</button>
+          <button id="btnAdminExportCsv">CSV書き出し（runs）</button>
+        </div>
+        <div id="dangerOps" style="display:none;">
+          <button id="btnAdminDeleteSelected" style="background:#ff6b6b; color:#fff;">選択削除</button>
+          <button id="btnAdminWipeAll" style="background:#d7263d; color:#fff;">全消去（表示中のみ）</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; max-height:48vh; overflow:auto; border:1px solid #ddd; border-radius:6px;">
+        <table id="adminTable" style="width:100%; border-collapse:collapse; font-size:14px;">
+          <thead style="position:sticky; top:0; background:#fafafa;">
+            <tr>
+              <th style="padding:8px; border-bottom:1px solid #eee;"><input type="checkbox" id="adminChkAll"></th>
+              <th style="padding:8px; border-bottom:1px solid #eee;">id</th>
+              <th style="padding:8px; border-bottom:1px solid #eee;">title/date</th>
+              <th style="padding:8px; border-bottom:1px solid #eee;">distance/time</th>
+              <th style="padding:8px; border-bottom:1px solid #eee;">routeId</th>
+            </tr>
+          </thead>
+          <tbody id="adminTbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:16px; margin-top:12px;">
+        <textarea id="adminDetail" style="flex:1; min-height:160px; font-family:ui-monospace, monospace;"></textarea>
+      </div>
+
+      <div id="adminLog" style="margin-top:8px; font:12px/1.6 monospace; white-space:pre-wrap; color:#333;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Admin Console MVP =====
+(function(){
+  const el = (q, r=document)=>r.querySelector(q);
+  const els= (q, r=document)=>Array.from(r.querySelectorAll(q));
+  const $root = el('#adminConsole');
+  const $adminStatus = el('#adminStatus');
+  const $view = el('#adminView');
+  const $query = el('#adminQuery');
+  const $tbody = el('#adminTbody');
+  const $detail = el('#adminDetail');
+  const $log = el('#adminLog');
+  const $chkAll = el('#adminChkAll');
+  const $dangerOps = el('#dangerOps');
+
+  let danger = false;
+  let rows = [];   // 表示用キャッシュ
+  let view = 'runs';
+
+  // ストレージ抽象（あとでIndexedDBに差し替え可能）
+  function loadArray(key){
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+    catch(e){ return []; }
+  }
+  function saveArray(key, arr){
+    localStorage.setItem(key, JSON.stringify(arr));
+  }
+
+  function fmt(v){ return (v==null || v==='') ? '-' : v; }
+
+  function render(){
+    view = $view.value;
+    const q = ($query.value||'').toLowerCase();
+    const all = loadArray(view); // 想定構造: [{id, title, date, distance_km, moving_time, routeId, ...}]
+    rows = all.filter(o=>{
+      if(!q) return true;
+      return JSON.stringify(o).toLowerCase().includes(q);
+    });
+    $tbody.innerHTML = rows.map((o,i)=>`
+      <tr data-idx="${i}" style="border-bottom:1px solid #f1f1f1;">
+        <td style="padding:6px 8px;"><input type="checkbox" class="adminRowChk"></td>
+        <td style="padding:6px 8px;"><button class="adminViewBtn" data-idx="${i}">${fmt(o.id)}</button></td>
+        <td style="padding:6px 8px;">${fmt(o.title || o.date)}</td>
+        <td style="padding:6px 8px;">${fmt(o.distance_km)} / ${fmt(o.moving_time)}</td>
+        <td style="padding:6px 8px;">${fmt(o.routeId)}</td>
+      </tr>
+    `).join('');
+    $adminStatus.textContent = `view=${view} / ${rows.length}件`;
+    $detail.value = '';
+    $chkAll.checked = false;
+    $log.textContent = '';
+  }
+
+  function open(){ $root.style.display='block'; render(); }
+  function close(){ $root.style.display='none'; }
+
+  // 詳細
+  function showDetail(idx){
+    const obj = rows[idx];
+    if(!obj) return;
+    $detail.value = JSON.stringify(obj, null, 2);
+  }
+
+  // 整合性チェック
+  function integrity(){
+    const runs = loadArray('runs');
+    const routes = loadArray('routes');
+    const routeIds = new Set(routes.map(r=>r.id).filter(Boolean));
+    const idSet = new Set();
+    const errs = [];
+
+    runs.forEach((r, i)=>{
+      if(!r.id) errs.push(`runs[${i}]: idなし`);
+      else if(idSet.has(r.id)) errs.push(`runs[${i}]: id重複 (${r.id})`);
+      else idSet.add(r.id);
+
+      if(r.routeId && !routeIds.has(r.routeId)){
+        errs.push(`runs[${i}]: routeId参照不整合 (${r.routeId})`);
+      }
+    });
+
+    if(!routes.every(r=>r.id)) errs.push('routes: id未設定の要素あり');
+
+    $log.textContent = (errs.length? '✖ 整合性NG:\n'+errs.join('\n') : '✓ 整合性OK');
+  }
+
+  // Export JSON/CSV
+  function download(filename, text){
+    const blob = new Blob([text], {type:'application/octet-stream'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = filename;
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportJson(){
+    download(`${view}.json`, JSON.stringify(loadArray(view), null, 2));
+  }
+
+  function exportCsvRuns(){
+    if(view!=='runs'){ alert('runsビューで実行してください'); return; }
+    const arr = loadArray('runs');
+    const cols = ['id','title','date','distance_km','moving_time','pace','routeId','note'];
+    const head = cols.join(',');
+    const body = arr.map(o=>cols.map(k=>{
+      const v = o[k]==null? '' : String(o[k]).replaceAll('"','""');
+      return /[",\n]/.test(v) ? `"${v}"` : v;
+    }).join(',')).join('\n');
+    download(`runs_${new Date().toISOString().slice(0,10)}.csv`, head+'\n'+body+'\n');
+  }
+
+  // 危険操作（デフォOFF）
+  function toggleDanger(){
+    danger = !danger;
+    el('#btnAdminDanger').textContent = danger? '危険操作ON' : '危険操作OFF';
+    $dangerOps.style.display = danger? 'block':'none';
+  }
+  function getSelectedIndices(){
+    return els('.adminRowChk', $tbody).map((c,i)=> c.checked? i : -1).filter(i=>i>=0);
+  }
+  function deleteSelected(){
+    if(!danger) return;
+    const idxs = new Set(getSelectedIndices());
+    if(!idxs.size){ alert('選択がありません'); return; }
+    if(!confirm(`${idxs.size}件を削除します。よろしいですか？`)) return;
+
+    const arr = loadArray(view);
+    // rows はフィルタ済みのビューなので、実体配列上のindexに変換
+    // 簡易実装：idベースで削除
+    const idsToDel = Array.from(idxs).map(i=>rows[i]?.id).filter(Boolean);
+    const filtered = arr.filter(o => !idsToDel.includes(o.id));
+    saveArray(view, filtered);
+    render();
+  }
+  function wipeAll(){
+    if(!danger) return;
+    if(!confirm(`表示中の ${view} を全消去します。よろしいですか？`)) return;
+    saveArray(view, []);
+    render();
+  }
+
+  // events
+  el('#btnAdminClose').onclick = close;
+  el('#btnAdminReload').onclick = render;
+  el('#btnAdminIntegrity').onclick = integrity;
+  el('#btnAdminExportJson').onclick = exportJson;
+  el('#btnAdminExportCsv').onclick = exportCsvRuns;
+  el('#btnAdminDanger').onclick = toggleDanger;
+  el('#btnAdminDeleteSelected').onclick = deleteSelected;
+  el('#btnAdminWipeAll').onclick = wipeAll;
+
+  $view.onchange = render;
+  $query.oninput = ()=>{ render(); };
+  $chkAll.onchange = ()=>{
+    els('.adminRowChk', $tbody).forEach(c=> c.checked = $chkAll.checked);
+  };
+  $tbody.addEventListener('click', (e)=>{
+    const b = e.target.closest('.adminViewBtn');
+    if(b){ showDetail(Number(b.dataset.idx||0)); }
+  });
+
+  // 起動方法：?admin=1 または Alt+A
+  if(new URLSearchParams(location.search).get('admin') === '1'){
+    open();
+  }
+  window.addEventListener('keydown', (ev)=>{
+    if(ev.altKey && ev.key.toLowerCase()==='a'){
+      if($root.style.display==='none') open(); else close();
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

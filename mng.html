@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Route MVP – 実走ログ保存（IndexedDB+Fallback）</title>
+<title>実走ログ確認（IndexedDB+Fallback）</title>
 </head>
 <body>
 
@@ -27,8 +27,10 @@
         <div>
           <label>ビュー</label><br>
           <select id="adminView">
-            <option value="runs">runs（実走ログ）</option>
-            <option value="routes">routes（コース定義）</option>
+            <option value="logs">logs（IDB: 実走ログ）</option>
+            <option value="tracks">tracks（IDB: 旧実走ログ）</option>
+            <option value="runs">runs（localStorage: 実走ログ・旧MVP）</option>
+            <option value="routes">routes（localStorage: コース定義）</option>
           </select>
         </div>
         <div>
@@ -70,6 +72,44 @@
 </div>
 
 <script>
+// --- IndexedDB helpers ---
+function idbOpen(){
+  return new Promise(resolve=>{
+    const req = indexedDB.open('route_mvp', 1);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('logs'))   db.createObjectStore('logs',   {keyPath:'id'});
+      if(!db.objectStoreNames.contains('tracks')) db.createObjectStore('tracks', {keyPath:'id'});
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror  = ()=> resolve(null);
+  });
+}
+async function idbGetAll(store){
+  const db = await idbOpen();
+  if(!db) return [];
+  return await new Promise(res=>{
+    if(!db.objectStoreNames.contains(store)) return res([]);
+    const tx = db.transaction(store,'readonly');
+    const st = tx.objectStore(store);
+    const q = st.getAll();
+    q.onsuccess = ()=> res(q.result || []);
+    q.onerror   = ()=> res([]);
+  });
+}
+async function idbPutAll(store, arr){
+  const db = await idbOpen();
+  if(!db) return;
+  await Promise.all((arr||[]).map(o=>new Promise(res=>{
+    const tx = db.transaction(store,'readwrite');
+    const st = tx.objectStore(store);
+    const p = st.put(o);
+    p.onsuccess = ()=>res();
+    p.onerror   = ()=>res();
+  })));
+}
+
+
 // ===== Admin Console MVP =====
 (function(){
   const el = (q, r=document)=>r.querySelector(q);
@@ -102,8 +142,17 @@
   function render(){
     view = $view.value;
     const q = ($query.value||'').toLowerCase();
-    const all = loadArray(view); // 想定構造: [{id, title, date, distance_km, moving_time, routeId, ...}]
-    rows = all.filter(o=>{
+//    const all = loadArray(view); // 想定構造: [{id, title, date, distance_km, moving_time, routeId, ...}]
+
+      let allPromise;
+      if(view === 'logs' || view === 'tracks'){
+      allPromise = idbGetAll(view);             // IndexedDB から取得
+      } else {
+      allPromise = Promise.resolve(loadArray(view)); // localStorage（従来）
+      }
+      allPromise.then(all=>{
+
+rows = all.filter(o=>{
       if(!q) return true;
       return JSON.stringify(o).toLowerCase().includes(q);
     });
@@ -134,8 +183,10 @@
 
   // 整合性チェック
   function integrity(){
-    const runs = loadArray('runs');
-    const routes = loadArray('routes');
+//    const runs = loadArray('runs');
+    const runs = view==='logs' ? [] : loadArray('runs'); // 簡易：localStorage用
+
+const routes = loadArray('routes');
     const routeIds = new Set(routes.map(r=>r.id).filter(Boolean));
     const idSet = new Set();
     const errs = [];

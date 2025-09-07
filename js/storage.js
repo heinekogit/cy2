@@ -1,6 +1,8 @@
 // IndexedDB: route_mvp / tracks
 const DB_NAME = 'route_mvp';
-const STORE = 'tracks';
+// const STORE = 'tracks';
+const STORE = 'logs'; // ← 'tracks' から一時的に変更
+
 
 function withDB() {
   return new Promise((resolve, reject) => {

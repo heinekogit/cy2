@@ -18,6 +18,15 @@ const map = L.map('map').setView([35.681236,139.767125], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap contributors'
+
+// map生成直後
+L.control.attribution({ prefix: false }).addTo(map);
+// タイルレイヤの attribution は残す
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+
+
 }).addTo(map);
 </script>
 </body>

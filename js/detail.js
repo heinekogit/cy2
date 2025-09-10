@@ -258,6 +258,28 @@ function drawElevationSVG(svg, elevs, points){
   svg.appendChild(gLine);
 }
 
+// 距離配列（m）を作る
+function cumDistances(points){
+  const d=[0]; for(let i=1;i<points.length;i++) d[i]=d[i-1]+distanceOnEarth(points[i-1],points[i]); 
+  return d;
+}
+
+// 距離ベース移動平均（winMeters ≈ 150〜300 が目安）
+function smoothByDistance(elevs, dists, winMeters=200){
+  const n=elevs.length, out=new Array(n);
+  let j0=0, j1=0, sum=0, cnt=0;
+  for(let i=0;i<n;i++){
+    const left = dists[i]-winMeters/2, right = dists[i]+winMeters/2;
+    // 右端を広げる
+    while(j1<n && dists[j1] <= right){ sum += elevs[j1]; cnt++; j1++; }
+    // 左端を縮める
+    while(j0<j1 && dists[j0] < left){ sum -= elevs[j0]; cnt--; j0++; }
+    out[i] = cnt>0 ? sum/cnt : elevs[i];
+  }
+  return out;
+}
+
+
 // 標高を計算して表示（なければスキップ）
 async function renderElevation(rec){
   const svg = document.getElementById('elevChart');
@@ -280,6 +302,9 @@ async function renderElevation(rec){
   const avgGrade = (totalDistKm>0) ? ((elevs[elevs.length-1]-elevs[0]) / (totalDistKm*1000) * 100) : 0;
 
   stats.textContent = `総上昇量 ${up} m ／ 総下降量 ${down} m ／ 平均勾配 ${avgGrade.toFixed(1)} %`;
+
+  const dists = cumDistances(rec.points);
+  const elevSmooth = smoothByDistance(elevs, dists, 200); // ← 200m窓。好みで150/300に
 
   drawElevationSVG(svg, elevs, rec.points);
 }

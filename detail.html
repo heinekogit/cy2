@@ -56,5 +56,111 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script type="module" src="js/detail.js"></script>
+
+<button id="promote">このログをルート化</button>
+
+<script type="module">
+  import { dbGetById } from './js/storage.js';
+
+  async function promoteRunToRoute(runId) {
+    // runs を取得
+    const { data: run, error: e1 } = await supabase
+      .from('runs').select('*').eq('id', runId).single();
+    if (e1) { alert('取得失敗'); console.error(e1); return; }
+
+    // routes へコピー（由来: from_log）
+    const payload = {
+      name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
+      origin: 'from_log',
+      geojson: run.geojson ?? null,
+      polyline: run.polyline ?? null,
+      distance_m: run.distance_m ?? null,
+      duration_s: run.duration_s ?? null,
+      elev_profile: run.elev_profile ?? null,
+      bbox: run.bbox ?? null,
+      promoted_from_run: run.id
+    };
+
+    const { data: route, error: e2 } = await supabase
+      .from('routes').insert([payload]).select().single();
+    if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
+
+    // runs 側にフラグ
+    await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
+
+    alert('ルートとして保存しました');
+    console.log('new route:', route);
+  }
+
+  document.getElementById('promote')?.addEventListener('click', async () => {
+    const id = Number(new URL(location.href).searchParams.get('id'));
+    await promoteRunToRoute(id);
+  });
+</script>
+
+<button id="promote">このログをルート化</button>
+
+<script type="module">
+  import { dbGetById } from './js/storage.js';
+
+  async function promoteRunToRoute(runId) {
+    // runs を取得
+    const { data: run, error: e1 } = await supabase
+      .from('runs').select('*').eq('id', runId).single();
+    if (e1) { alert('取得失敗'); console.error(e1); return; }
+
+    // routes へコピー（由来: from_log）
+    const payload = {
+      name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
+      origin: 'from_log',
+      geojson: run.geojson ?? null,
+      polyline: run.polyline ?? null,
+      distance_m: run.distance_m ?? null,
+      duration_s: run.duration_s ?? null,
+      elev_profile: run.elev_profile ?? null,
+      bbox: run.bbox ?? null,
+      promoted_from_run: run.id
+    };
+
+    const { data: route, error: e2 } = await supabase
+      .from('routes').insert([payload]).select().single();
+    if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
+
+    // runs 側にフラグ
+    await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
+
+    alert('ルートとして保存しました');
+    console.log('new route:', route);
+  }
+
+  document.getElementById('promote')?.addEventListener('click', async () => {
+    const id = Number(new URL(location.href).searchParams.get('id'));
+    await promoteRunToRoute(id);
+  });
+</script>
+
+
+
+  <script type="module">
+  import { dbGetById } from './js/storage.js';
+
+  function getId() {
+    const u = new URL(location.href);
+    return Number(u.searchParams.get('id'));
+  }
+
+  (async () => {
+    const id = getId();
+    const run = await dbGetById('logs', id);
+    if (!run) {
+      alert('データが見つかりません');
+      return;
+    }
+    // ここで run の中身を既存UIに反映（地図描画や数値表示）
+    // run.polyline / run.geojson / run.distance_m / run.duration_s など
+    console.log('run:', run);
+  })();
+</script>
+
 </body>
 </html>

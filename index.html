@@ -531,5 +531,16 @@ async function init(){
 document.addEventListener('DOMContentLoaded', init, { once:true });
 window.addEventListener('load', ()=>{ if(!window.__booted){ window.__booted=true; init(); }}, { once:true });
 </script>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+  const SUPABASE_URL = 'https://xxxx.supabase.co'
+  const SUPABASE_ANON_KEY = 'xxxxx'
+  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+</script>
+
+<script type="module" src="js/storage.js"></script>
+<script type="module" src="js/detail.js"></script>
+
 </body>
 </html>

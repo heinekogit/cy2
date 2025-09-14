@@ -4,16 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Route Detail</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
-  <!-- OGP（任意・最小雛形） -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Route Detail" />
   <meta property="og:description" content="保存したルートの概要と地図表示" />
 </head>
 <body>
   <header class="topbar">
-    <button id="backBtn" class="btn">← 戻る</button>
+    <button id="backBtn" class="btn" onclick="history.back()">← 戻る</button>
     <div class="title">ルート詳細</div>
     <button id="shareBtn" class="btn">共有</button>
   </header>
@@ -34,133 +33,120 @@
     </section>
 
     <section class="map-wrap">
-      <div id="map" class="map"></div>
+      <div id="map" class="map" style="height:60vh;"></div>
       <div id="hint" class="hint" hidden></div>
     </section>
 
-    <!-- Elevation / Grade -->
-<section class="elev-wrap">
-  <h2 style="margin:12px 0 6px;">標高プロファイル</h2>
-  <div id="elevStats" style="font-size:14px;opacity:.85;margin-bottom:6px;">—</div>
-  <svg id="elevChart" width="100%" height="120" style="background:#fafafa;border:1px solid #eee;border-radius:6px;"></svg>
-  <div style="font-size:12px;opacity:.7;margin-top:6px;">
-    ※ 標高は Open-Elevation から取得（失敗時は距離/時間のみ表示）
-  </div>
-</section>
+    <section class="elev-wrap">
+      <h2 style="margin:12px 0 6px;">標高プロファイル</h2>
+      <div id="elevStats" style="font-size:14px;opacity:.85;margin-bottom:6px;">—</div>
+      <svg id="elevChart" width="100%" height="120" style="background:#fafafa;border:1px solid #eee;border-radius:6px;"></svg>
+      <div style="font-size:12px;opacity:.7;margin-top:6px;">
+        ※ 標高は Open-Elevation から取得（失敗時は距離/時間のみ表示）
+      </div>
+    </section>
 
     <section class="actions">
+      <button id="promote" class="btn">このログをルート化</button>
       <a id="openInApp" class="link" href="#">このルートで“すぐ実走”を開く</a>
       <div id="debug" class="debug" hidden></div>
     </section>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script type="module" src="js/detail.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-<button id="promote">このログをルート化</button>
-
-<script type="module">
-  import { dbGetById } from './js/storage.js';
-
-  async function promoteRunToRoute(runId) {
-    // runs を取得
-    const { data: run, error: e1 } = await supabase
-      .from('runs').select('*').eq('id', runId).single();
-    if (e1) { alert('取得失敗'); console.error(e1); return; }
-
-    // routes へコピー（由来: from_log）
-    const payload = {
-      name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
-      origin: 'from_log',
-      geojson: run.geojson ?? null,
-      polyline: run.polyline ?? null,
-      distance_m: run.distance_m ?? null,
-      duration_s: run.duration_s ?? null,
-      elev_profile: run.elev_profile ?? null,
-      bbox: run.bbox ?? null,
-      promoted_from_run: run.id
-    };
-
-    const { data: route, error: e2 } = await supabase
-      .from('routes').insert([payload]).select().single();
-    if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
-
-    // runs 側にフラグ
-    await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
-
-    alert('ルートとして保存しました');
-    console.log('new route:', route);
-  }
-
-  document.getElementById('promote')?.addEventListener('click', async () => {
-    const id = Number(new URL(location.href).searchParams.get('id'));
-    await promoteRunToRoute(id);
-  });
-</script>
-
-<button id="promote">このログをルート化</button>
-
-<script type="module">
-  import { dbGetById } from './js/storage.js';
-
-  async function promoteRunToRoute(runId) {
-    // runs を取得
-    const { data: run, error: e1 } = await supabase
-      .from('runs').select('*').eq('id', runId).single();
-    if (e1) { alert('取得失敗'); console.error(e1); return; }
-
-    // routes へコピー（由来: from_log）
-    const payload = {
-      name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
-      origin: 'from_log',
-      geojson: run.geojson ?? null,
-      polyline: run.polyline ?? null,
-      distance_m: run.distance_m ?? null,
-      duration_s: run.duration_s ?? null,
-      elev_profile: run.elev_profile ?? null,
-      bbox: run.bbox ?? null,
-      promoted_from_run: run.id
-    };
-
-    const { data: route, error: e2 } = await supabase
-      .from('routes').insert([payload]).select().single();
-    if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
-
-    // runs 側にフラグ
-    await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
-
-    alert('ルートとして保存しました');
-    console.log('new route:', route);
-  }
-
-  document.getElementById('promote')?.addEventListener('click', async () => {
-    const id = Number(new URL(location.href).searchParams.get('id'));
-    await promoteRunToRoute(id);
-  });
-</script>
-
-
-
+  <!-- Supabase 初期化 → storage.js（順序重要） -->
   <script type="module">
-  import { dbGetById } from './js/storage.js';
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+    const SUPABASE_URL = 'https://xxxx.supabase.co';      /* ← あなたのURL */
+    const SUPABASE_ANON_KEY = 'xxxxx';                    /* ← あなたのanon key */
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  </script>
+  <script type="module" src="js/storage.js?v=1"></script>
 
-  function getId() {
-    const u = new URL(location.href);
-    return Number(u.searchParams.get('id'));
-  }
+  <!-- 画面ロジック -->
+  <script type="module">
+    import { dbGetById } from './js/storage.js'; // モジュールとしても参照可（window 経由でもOK）
 
-  (async () => {
-    const id = getId();
-    const run = await dbGetById('logs', id);
-    if (!run) {
-      alert('データが見つかりません');
-      return;
+    function getId() {
+      const u = new URL(location.href);
+      return Number(u.searchParams.get('id'));
     }
-    // ここで run の中身を既存UIに反映（地図描画や数値表示）
-    // run.polyline / run.geojson / run.distance_m / run.duration_s など
-    console.log('run:', run);
-  })();
-</script>
 
+    // 昇格：runs → routes
+    async function promoteRunToRoute(runId) {
+      const { data: run, error: e1 } = await supabase
+        .from('runs').select('*').eq('id', runId).single();
+      if (e1) { alert('取得失敗'); console.error(e1); return; }
+
+      const payload = {
+        name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
+        origin: 'from_log',
+        geojson: run.geojson ?? null,
+        polyline: run.polyline ?? null,
+        distance_m: run.distance_m ?? null,
+        duration_s: run.duration_s ?? null,
+        elev_profile: run.elev_profile ?? null,
+        bbox: run.bbox ?? null,
+        promoted_from_run: run.id
+      };
+
+      const { data: route, error: e2 } = await supabase
+        .from('routes').insert([payload]).select().single();
+      if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
+
+      await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
+      alert('ルートとして保存しました');
+      console.log('new route:', route);
+    }
+
+    document.getElementById('promote')?.addEventListener('click', async () => {
+      const id = getId();
+      if (!id) return;
+      await promoteRunToRoute(id);
+    });
+
+    // 詳細の読み込み
+    (async () => {
+      const id = getId();
+      const run = await dbGetById('logs', id);
+      if (!run) { alert('データが見つかりません'); return; }
+
+      // 画面反映（最低限）
+      document.getElementById('name').textContent = run.name || `Run #${id}`;
+      const dist = (run.distance_m ?? run.distanceMeters);
+      const durS = (run.duration_s ?? run.durationSec);
+      document.getElementById('distance').textContent = dist ? (Number(dist)/1000).toFixed(2) + ' km' : '—';
+      document.getElementById('duration').textContent = durS ? Math.round(durS/60) + ' 分' : '—';
+      document.getElementById('createdAt').textContent = (run.ended_at || run.endedAt) ? new Date(run.ended_at || run.endedAt).toLocaleString() : '—';
+
+      // 地図描画（polyline 前提の簡易表示）
+      const map = L.map('map').setView([35.7015,139.5665], 13);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
+
+      const poly = run.polyline;
+      if (poly) {
+        const coords = decodePolyline(poly).map(([la,ln])=>[la,ln]); // index.html側と同じ関数定義が必要なら再掲
+        const line = L.polyline(coords, { color:'#ef4444', weight:5 }).addTo(map);
+        map.fitBounds(line.getBounds(), { padding:[30,30] });
+      }
+    })();
+
+    // polyline デコード関数（index.html と同じ実装）
+    function decodePolyline(str){
+      let idx=0, lat=0, lng=0, coords=[];
+      while(idx<str.length){
+        let b,shift=0,result=0;
+        do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+        let dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+        shift=0; result=0;
+        do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+        let dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lat += dlat; lng += dlng;
+        coords.push([lat/1e5, lng/1e5]);
+      }
+      return coords;
+    }
+  </script>
 </body>
 </html>

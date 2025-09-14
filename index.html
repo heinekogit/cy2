@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Route MVP – 実走ログ保存（IndexedDB+Fallback）</title>
+<title>Route MVP – 実走ログ保存（Supabase版）</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
   :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --accent:#111827; --ok:#065f46; --okbg:#d1fae5; --warn:#92400e; --warnbg:#fef3c7; --off:#991b1b; --offbg:#fee2e2; }
@@ -57,13 +57,6 @@
   <div id="bootBanner" style="display:none;padding:8px 12px;background:#e0f2fe;color:#075985;border-bottom:1px solid #7dd3fc;">
     起動OK（イベント登録済み）
   </div>
-  <div id="errBanner" style="display:none;padding:8px 12px;background:#fff7ed;color:#92400e;border-bottom:1px solid #fde68a;">
-    IndexedDBが使えません。localStorageに保存します（プライベートブラウズをOFFにすると改善します）。
-  </div>
-  <div id="pageErr" style="display:none;padding:8px 12px;background:#fee2e2;color:#991b1b;border-bottom:1px solid #fecaca;">
-    ページ内でエラーが発生しました。下部ログを確認してください。
-  </div>
-  <pre id="pageErrLog" style="display:none;margin:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;padding:8px;border-radius:8px;max-height:180px;overflow:auto;"></pre>
 
   <main>
     <section id="home" class="active" aria-label="home">
@@ -87,17 +80,22 @@
   </main>
 </div>
 
+<!-- ライブラリ -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-<script>
-// --- 画面にエラーを出す ---
-(function(){
-  const show=(msg)=>{const b=document.getElementById('pageErr');const p=document.getElementById('pageErrLog');
-    if(b) b.style.display='block'; if(p){ p.style.display='block'; p.textContent += msg + "\n"; }};
-  window.addEventListener('error', (e)=>{ show(`[error] ${e.message||'unknown'} @ ${e.filename||''}:${e.lineno||''}`); });
-  window.addEventListener('unhandledrejection', (e)=>{const r=e.reason; show(`[unhandled] ${r&&r.message?r.message:r}`); });
-})();
+
+<!-- 1) Supabase 初期化（最初に） -->
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+  const SUPABASE_URL = 'https://xxxx.supabase.co';          /* ← あなたのURL */
+  const SUPABASE_ANON_KEY = 'xxxxx';                        /* ← あなたのanon key */
+  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 </script>
+
+<!-- 2) Supabase版ストレージ（dbPut/dbGetAll/dbDelete/dbGetById を提供） -->
+<script type="module" src="js/storage.js?v=1"></script>
+
+<!-- 3) アプリ本体（UI・地図・記録ロジック） -->
 <script>
 /* =========================
    0) ユーティリティ
@@ -173,92 +171,7 @@ function resampleByDistance(latlngs, stepMeters){
 }
 
 /* =========================
-   1) ストレージ層：IndexedDB or localStorage フォールバック
-========================= */
-let db;
-let useLocalFallback = false;
-
-function openDB(){
-  return new Promise((resolve)=>{
-    if (!('indexedDB' in window)) {
-      useLocalFallback = true;
-      const b=document.getElementById('errBanner'); if(b) b.style.display='block';
-      return resolve(null);
-    }
-    const req = indexedDB.open('route_mvp', 1);
-    req.onupgradeneeded = (e)=>{
-      const db = e.target.result;
-      if(!db.objectStoreNames.contains('routes')){
-        const st = db.createObjectStore('routes', {keyPath:'id'});
-        st.createIndex('updatedAt','updatedAt',{unique:false});
-      }
-      if(!db.objectStoreNames.contains('logs')){
-        const st = db.createObjectStore('logs', {keyPath:'id'});
-        st.createIndex('endedAt','endedAt',{unique:false});
-      }
-    };
-    req.onsuccess = ()=>{ db=req.result; resolve(db); };
-    req.onerror = ()=> {
-      useLocalFallback = true;
-      const b=document.getElementById('errBanner'); if(b) b.style.display='block';
-      resolve(null);
-    };
-  });
-}
-// localStorage ヘルパ
-function lsGet(key, def){ try{ return JSON.parse(localStorage.getItem(key) || def); }catch{ return JSON.parse(def); } }
-function lsSet(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
-// IndexedDB tx
-function tx(store, mode='readonly'){ return db.transaction(store, mode).objectStore(store); }
-
-// ルートは今回は未使用。logs のみフォールバック実装
-async function dbPut(store, obj){
-  if (!useLocalFallback && db){
-    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').put(obj); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
-  } else {
-    if (store==='logs'){
-      const arr = lsGet('logs','[]');
-      const i = arr.findIndex(x=>x.id===obj.id);
-      if (i>=0) arr[i]=obj; else arr.unshift(obj);
-      lsSet('logs', arr);
-      return;
-    }
-  }
-}
-async function dbGetAll(store, index=null, desc=true){
-  if (!useLocalFallback && db){
-    return new Promise((res,rej)=>{
-      const st = tx(store);
-      const out=[];
-      let req = index ? st.index(index).openCursor(null, desc?'prev':'next')
-                      : st.openCursor(null, desc?'prev':'next');
-      req.onsuccess = (e)=>{ const cur=e.target.result; if(cur){ out.push(cur.value); cur.continue(); } else res(out); };
-      req.onerror = ()=>rej(req.error);
-    });
-  } else {
-    if (store==='logs'){
-      const arr = lsGet('logs','[]');
-      arr.sort((a,b)=> (b.endedAt||'').localeCompare(a.endedAt||''));
-      return arr;
-    }
-    return [];
-  }
-}
-async function dbDelete(store, key){
-  if (!useLocalFallback && db){
-    return new Promise((res,rej)=>{ const r=tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
-  } else {
-    if (store==='logs'){
-      const arr = lsGet('logs','[]').filter(x=>x.id!==key);
-      lsSet('logs', arr);
-      return;
-    }
-  }
-}
-
-
-/* =========================
-   2) ホーム：一覧UI
+   1) ホーム：一覧UI（SupabaseのdbGetAllを使用）
 ========================= */
 const tabRoutes = document.getElementById('tabRoutes');
 const tabLogs   = document.getElementById('tabLogs');
@@ -285,7 +198,7 @@ async function renderLists(which){
     card.querySelector('#openSample').onclick = ()=>{ showRun(); };
   } else {
     logsList.innerHTML = '';
-    const logs = await dbGetAll('logs','endedAt', true);
+    const logs = await window.dbGetAll('logs');  // Supabase版
     if(!logs.length){
       const empty=document.createElement('div');
       empty.className='meta';
@@ -296,11 +209,13 @@ async function renderLists(which){
     for(const log of logs){
       const card = document.createElement('div');
       card.className = 'card' + (log.id===lastSavedLogId ? ' highlight' : '');
-      const km = log.distanceMeters ? (log.distanceMeters/1000).toFixed(2) : '-';
-      const dur = log.durationSec ? `${Math.floor(log.durationSec/60)}分` : '-';
+      const km = log.distanceMeters ? (log.distanceMeters/1000).toFixed(2) : (log.distance_m ? (Number(log.distance_m)/1000).toFixed(2) : '-');
+      const durSec = log.durationSec ?? log.duration_s;
+      const dur = durSec ? `${Math.floor(durSec/60)}分` : '-';
+      const ended = log.endedAt ?? log.ended_at;
       card.innerHTML = `<div>
           <div>${log.name||'実走ログ'}</div>
-          <div class="meta">${fmtDate(log.endedAt)} · ${km} km · ${dur}</div>
+          <div class="meta">${ended ? new Date(ended).toLocaleString() : '—'} · ${km} km · ${dur}</div>
         </div>
         <div style="display:flex; gap:8px;">
           <button class="btn ghost" data-open="${log.id}">開く</button>
@@ -311,27 +226,22 @@ async function renderLists(which){
     }
   }
 
-logsList.querySelectorAll('button[data-open]').forEach(btn=>{
-  btn.onclick = async ()=>{
-    const id = btn.dataset.open;
-    // detail.html に id を渡して遷移
-    location.href = `detail.html?id=${encodeURIComponent(id)}`;
-  };
-});
-
-
-    logsList.querySelectorAll('button[data-del]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const id = btn.dataset.del;
-        if(confirm('この実走ログを削除しますか？')){ await dbDelete('logs', id); renderLists('logs'); }
-      };
-    });
-  }
-
-
+  logsList.querySelectorAll('button[data-open]').forEach(btn=>{
+    btn.onclick = ()=>{ const id = btn.dataset.open; location.href = `detail.html?id=${encodeURIComponent(id)}`; };
+  });
+  logsList.querySelectorAll('button[data-del]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = Number(btn.dataset.del);
+      if(confirm('この実走ログを削除しますか？')){
+        await window.dbDelete('logs', id);
+        renderLists('logs');
+      }
+    };
+  });
+}
 
 /* =========================
-   3) RUN画面（地図・記録）
+   2) RUN画面（地図・記録）
 ========================= */
 const home = document.getElementById('home');
 const run  = document.getElementById('run');
@@ -346,11 +256,7 @@ function showRun(options={}){
   home.classList.remove('active');
   run.classList.add('active');
   initMapOnce();
-  if(options.replay){
-    drawReplay(options.replay.coords);
-  } else {
-    resetRunLayers();
-  }
+  if(options.replay){ drawReplay(options.replay.coords); } else { resetRunLayers(); }
 }
 
 let map, badge, routePts, routeLine, editMode=false, recording=false, follow=false;
@@ -363,7 +269,6 @@ function initMapOnce(){
   map = L.map('map').setView([35.7015,139.5665], 15);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
   badge = document.getElementById('courseBadge');
-
   // サンプル青ルート
   routePts = [
     [35.7032,139.5608],[35.7019,139.5630],[35.7015,139.5658],[35.7012,139.5686],
@@ -374,7 +279,6 @@ function initMapOnce(){
   routeLine = L.polyline(routePts, { color:'#2563eb', weight:4 }).addTo(map);
   map.fitBounds(routeLine.getBounds(), { padding:[30,30] });
 
-  // 編集モード：クリックで点追加（記録中は不可）
   map.on('click', (e)=>{
     if(!editMode || recording) return;
     routePts.push([e.latlng.lat, e.latlng.lng]);
@@ -449,7 +353,7 @@ const stopBtn  = document.getElementById('stopBtn');
 const followBtn= document.getElementById('followBtn');
 const locateBtn= document.getElementById('locateBtn');
 const editToggleBtn=document.getElementById('editToggleBtn');
-// backHomeBtn は上で取得済み
+const backHomeBtn = document.getElementById('backHomeBtn');
 
 function setEditMode(on){
   editMode = !!on;
@@ -479,7 +383,7 @@ stopBtn.onclick = async ()=>{
   const endedAt   = new Date().toISOString();
   let pts = dedupeTinyMoves(traced);
   pts = movingAverage(pts);
-  const tolDeg = m2deg(6); // 標準精度。切替UIは今後
+  const tolDeg = m2deg(6);
   let ls = turf.lineString(pts.map(([la,ln])=>[ln,la]));
   ls = turf.simplify(ls, {tolerance: tolDeg, highQuality: true});
   let simp = ls.geometry.coordinates.map(([lng,lat])=>[lat,lng]);
@@ -491,16 +395,20 @@ stopBtn.onclick = async ()=>{
   const polyline = encodePolyline(simp);
   const durationSec = Math.max(1, Math.round((new Date(endedAt)-new Date(startedAt))/1000));
 
-  const id = 'l_'+Math.random().toString(36).slice(2,10);
   const nameDefault = `${ymd()} 実走 01`;
   const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
-  const record = { id, version:1, routeId:null, name, startedAt, endedAt, polyline,
-                   pointCount: simp.length, distanceMeters: Math.round(lenMeters),
-                   durationSec, bbox };
-  await dbPut('logs', record);
-  lastSavedLogId = id;
 
-  setBadge('','記録停止');
+  // Supabaseへ保存（idはDBの連番を使うので不要）
+  const record = {
+    name,
+    startedAt, endedAt,         // 互換のために持つが storage.js 側で変換
+    polyline,
+    pointCount: simp.length,
+    distanceMeters: Math.round(lenMeters),
+    durationSec,
+    bbox
+  };
+  await window.dbPut('logs', record);
   showToast('保存しました');
   showHome('logs');
 };
@@ -515,43 +423,25 @@ locateBtn.onclick = ()=>{
 editToggleBtn.onclick = ()=>{ if(recording){ alert('記録中は編集できません'); return; } setEditMode(!editMode); };
 backHomeBtn.onclick = ()=> showHome('logs');
 
-window.addEventListener('beforeunload', (e)=>{ if(recording){ e.preventDefault(); e.returnValue=''; }});
-
-/* =========================
-   4) 初期表示（iOSでも確実に起動）
-========================= */
-async function init(){
+/* 初期表示 */
+function init(){
   document.getElementById('tabRoutes').onclick = ()=> setHomeTab('routes');
   document.getElementById('tabLogs').onclick   = ()=> setHomeTab('logs');
   document.getElementById('btnGoRun').onclick  = ()=> showRun();
   const bb=document.getElementById('bootBanner'); if(bb) bb.style.display='block';
-  try{ await openDB(); }catch(e){}
   setHomeTab('logs');
 }
 document.addEventListener('DOMContentLoaded', init, { once:true });
-window.addEventListener('load', ()=>{ if(!window.__booted){ window.__booted=true; init(); }}, { once:true });
 </script>
 
+<!-- 4) Service Worker（最後でOK） -->
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js')
-      .then(reg => {
-        console.log('Service Worker registered:', reg);
-      })
+      .then(reg => console.log('Service Worker registered:', reg))
       .catch(err => console.error('Service Worker registration failed:', err));
   }
 </script>
-
-
-<script type="module">
-  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-  const SUPABASE_URL = 'https://xxxx.supabase.co'
-  const SUPABASE_ANON_KEY = 'xxxxx'
-  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-</script>
-
-<script type="module" src="js/storage.js"></script>
-<script type="module" src="js/detail.js"></script>
 
 </body>
 </html>

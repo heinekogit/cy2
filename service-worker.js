@@ -1,5 +1,6 @@
 // キャッシュ名にバージョンを付与（更新時は変更する）
-const CACHE_NAME = 'app-cache-v1';
+const CACHE_NAME = 'app-cache-v2';
+
 
 // インストール時（skipWaitingで即時反映）
 self.addEventListener('install', event => {

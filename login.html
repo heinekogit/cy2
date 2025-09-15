@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dev Login</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:680px;margin:24px auto;padding:0 16px}
+    form, .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
+    input{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:8px}
+    button{padding:10px 14px;border-radius:10px;border:1px solid #ddd;cursor:pointer}
+    pre{background:#f7f7f7;padding:12px;border-radius:10px;overflow:auto}
+  </style>
+</head>
+<body>
+  <h1>ログイン（開発用）</h1>
+
+  <div class="card">
+    <form id="login">
+      <label>メール</label>
+      <input name="email" type="email" required placeholder="you@example.com" />
+      <label>パスワード</label>
+      <input name="password" type="password" required placeholder="••••••••" />
+      <button>Sign in</button>
+      <button type="button" id="logout" style="margin-left:8px">Sign out</button>
+    </form>
+    <div style="margin-top:8px">
+      <small>※ Supabase Studio → Authentication → Users で作成したユーザーでログイン</small>
+    </div>
+  </div>
+
+<div class="card">
+  <strong>登録テスト</strong>
+  <p>ログイン後に押すと <code>routes</code> に1件INSERTします（owner_account_idはトリガで自動）。</p>
+  <button id="insert">テストルートを登録</button>
+  <pre id="insertResult" style="margin-top:8px">未実行</pre>
+</div>
+
+
+  <div class="card">
+    <strong>現在の状態</strong>
+    <pre id="status">loading...</pre>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // ★ ここをあなたのプロジェクトの値に置き換え
+    const SUPABASE_URL  = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    async function refresh() {
+      const { data: { user } } = await supabase.auth.getUser();
+      let account_id = null, uid = null, handle = null;
+      if (user) {
+        uid = user.id;
+        try {
+          // DB側で作った関数（security definer）※未作成ならスキップされます
+          const { data: aid } = await supabase.rpc("current_user_account_id");
+          account_id = aid ?? null;
+        } catch (_) {}
+        // 参考：accounts.handle を知りたい場合（任意）
+        try {
+          const { data } = await supabase
+            .from("users")
+            .select("account_id, accounts:account_id(handle,display_name)")
+            .eq("id", uid)
+            .maybeSingle();
+          handle = data?.accounts?.handle ?? null;
+        } catch (_) {}
+      }
+      document.getElementById("status").textContent =
+        JSON.stringify({ user: { id: uid, email: user?.email }, account_id, handle }, null, 2);
+    }
+
+// 登録テスト（既存の supabase / refresh() 定義の下に置く）
+document.getElementById("insert").addEventListener("click", async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { alert("先にログインしてください"); return; }
+
+  // あなたの routes スキーマに合わせて最小列だけ
+  const payload = {
+    // title: "Devテスト " + new Date().toISOString(), // title列があるなら有効化
+    visibility: "private"
+  };
+
+  // もし owner_account_id の自動トリガ未設定なら、明示セットでもOK
+  // const { data: accountId } = await supabase.rpc("current_user_account_id");
+  // payload.owner_account_id = accountId;
+
+  const { data, error } = await supabase.from("routes").insert([payload]).select("*");
+  const out = document.getElementById("insertResult");
+  out.textContent = error ? ("ERROR: " + error.message) : JSON.stringify(data, null, 2);
+});
+
+
+    // フォーム動作
+    document.getElementById("login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = e.target.email.value.trim();
+      const password = e.target.password.value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return alert(error.message);
+      await refresh();
+    });
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      await refresh();
+    });
+
+    // 起動時の状態表示
+    await refresh();
+
+    // 状態変化を拾って表示更新（別タブでのログイン/ログアウトも反映）
+    supabase.auth.onAuthStateChange((_event, _session) => refresh());
+  </script>
+
+
+
+</body>
+</html>

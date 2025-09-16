@@ -23,7 +23,7 @@
       <label>パスワード</label>
       <input name="password" type="password" required placeholder="••••••••" />
       <div class="row">
-        <button type="button" id="signin">Sign in</button>
+        <button type="button" id="signin" onclick="signIn()">Sign in</button>
         <button type="button" id="logout">Sign out</button>
       </div>
     </form>
@@ -48,119 +48,74 @@
   </div>
 
   <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 
     // ★ ここをあなたのプロジェクトの値に置き換え
     const SUPABASE_URL  = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
 
+  // 最小パッチ(1): セッション保持の揺れ対策（スマホの 400 を防止）
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
-    const statusEl = document.getElementById("status");
-    const show = (obj) => statusEl.textContent = JSON.stringify(obj, null, 2);
+  const $status = document.getElementById("status");
+  const show = (obj) => $status.textContent = JSON.stringify(obj, null, 2);
 
-    async function refresh() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error) { show({ error }); return; }
-      let account_id = null, handle = null, uid = user?.id ?? null;
-      if (user) {
-        try {
-          const { data: aid } = await supabase.rpc("current_user_account_id");
-          account_id = aid ?? null;
-        } catch (_) {}
-        try {
-          const { data } = await supabase
-            .from("users")
-            .select("account_id, accounts:account_id(handle,display_name)")
-            .eq("id", uid)
-            .maybeSingle();
-          handle = data?.accounts?.handle ?? null;
-        } catch (_) {}
-      }
-      show({ user: { id: uid, email: user?.email ?? null }, account_id, handle });
+  // 最小パッチ(2): getSession ベースの refresh（未ログイン時に 400 を出さない）
+  async function refresh() {
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
+
+    let account_id = null, handle = null;
+    if (user) {
+      try {
+        const { data: aid } = await supabase.rpc("current_user_account_id");
+        account_id = aid ?? null;
+      } catch {}
+      try {
+        const { data } = await supabase
+          .from("users")
+          .select("account_id, accounts:account_id(handle,display_name)")
+          .eq("id", user.id)
+          .maybeSingle();
+        handle = data?.accounts?.handle ?? null;
+      } catch {}
     }
 
-    // ---- Sign in / Sign out ----
-    document.getElementById("signin").addEventListener("click", async () => {
-      try {
-        const email = document.querySelector("#login input[name=email]").value.trim();
-        const password = document.querySelector("#login input[name=password]").value;
-        if (!email || !password) { alert("メール/パスワードを入れてください"); return; }
-        await supabase.auth.signOut(); // 念のため初期化
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          alert("Sign in error: " + error.message);
-          console.error("[signIn]", error);
-          show({ signin_error: error });
-          return;
-        }
-        console.log("[signIn] ok", data.user);
-        await refresh();
-      } catch (e) {
-        alert("Sign in failed (JS error). Console を見てください。");
-        console.error(e);
-      }
-    });
+    show({ user: user ? { id: user.id, email: user.email } : null, account_id, handle });
+  }
 
-    document.getElementById("logout").addEventListener("click", async () => {
-      await supabase.auth.signOut();
-      await refresh();
-    });
+  // ← onclick方式：必ずこの関数が呼ばれる
+  window.signIn = async function signIn() {
+    try {
+      const email = document.querySelector('#login [name=email]').value.trim();
+      const password = document.querySelector('#login [name=password]').value;
+      if (!email || !password) return alert("メール/パスワードを入れてください");
 
-    // ---- Insert tests ----
-    async function ensureLoggedIn() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert("先にログインしてください（login.html）"); throw new Error("not signed in"); }
-      return user;
+      await supabase.auth.signOut(); // 念のため初期化
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return alert("Sign in error: " + error.message);
+
+      await refresh(); // ログイン後の状態更新
+    } catch (e) {
+      console.error(e);
+      alert("Sign in failed: " + (e.message || e));
     }
+  };
 
-    // runs に最小挿入 → id を返す
-    document.getElementById("insertRun").addEventListener("click", async () => {
-      const out = document.getElementById("insertResult");
-      try {
-        await ensureLoggedIn();
-        const payload = {
-          name: "Dev Run " + new Date().toISOString(),
-          started_at: new Date().toISOString(),
-          ended_at: new Date().toISOString(),
-          distance_m: 100, duration_s: 10
-          // owner_account_id はトリガで自動付与（無い場合は下2行をアンコメント）
-          // , ...(await supabase.rpc("current_user_account_id").then(r => ({ owner_account_id: r.data })))
-        };
-        const { data, error } = await supabase.from("runs").insert([payload]).select("id").maybeSingle();
-        if (error) throw error;
-        out.textContent = "runs inserted: id=" + data.id;
-      } catch (e) {
-        console.error("insertRun error", e);
-        out.textContent = "ERROR (runs): " + (e.message || JSON.stringify(e));
-      }
-      await refresh();
-    });
-
-    // routes に最小挿入（visibilityだけ）
-    document.getElementById("insertRoute").addEventListener("click", async () => {
-      const out = document.getElementById("insertResult");
-      try {
-        await ensureLoggedIn();
-        const payload = { visibility: "private" };
-        // トリガが無い/不調の環境では owner を明示（保険）
-        try {
-          const { data: aid } = await supabase.rpc("current_user_account_id");
-          if (aid) payload.owner_account_id = aid;
-        } catch (_){}
-        const { data, error } = await supabase.from("routes").insert([payload]).select("id").maybeSingle();
-        if (error) throw error;
-        out.textContent = "routes inserted: id=" + data.id;
-      } catch (e) {
-        console.error("insertRoute error", e);
-        out.textContent = "ERROR (routes): " + (e.message || JSON.stringify(e));
-      }
-      await refresh();
-    });
-
-    // 起動時
+  // Sign out（任意）
+  document.getElementById("logout")?.addEventListener("click", async () => {
+    await supabase.auth.signOut();
     await refresh();
-    supabase.auth.onAuthStateChange((_e,_s)=>refresh());
-  </script>
+  });
+
+  // 初期描画 & セッション変化で再描画
+  await refresh();
+  supabase.auth.onAuthStateChange(() => refresh());
+</script>
+
+
 </body>
 </html>

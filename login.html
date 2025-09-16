@@ -97,14 +97,28 @@ document.getElementById("insert").addEventListener("click", async () => {
 
 
     // フォーム動作
-    document.getElementById("login").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = e.target.email.value.trim();
-      const password = e.target.password.value;
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return alert(error.message);
-      await refresh();
-    });
+document.getElementById("login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = e.target.email.value.trim();
+  const password = e.target.password.value;
+
+  // 念のため古いセッションを破棄
+  await supabase.auth.signOut();
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const status = document.getElementById("status");
+  if (error) {
+    alert("Sign in error: " + error.message);
+    status.textContent = "Sign in error:\n" + JSON.stringify(error, null, 2);
+    console.error(error);
+    return;
+  }
+  status.textContent = "Signed in:\n" + JSON.stringify(data.user, null, 2);
+
+  // ログイン直後の再描画
+  await refresh();
+});
+
 
     document.getElementById("logout").addEventListener("click", async () => {
       await supabase.auth.signOut();

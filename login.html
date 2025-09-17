@@ -3,18 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dev Login</title>
+  <title>Dev Login (Minimal)</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 16px}
     form, .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
     input{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:8px}
     button{padding:10px 14px;border-radius:10px;border:1px solid #ddd;cursor:pointer}
     pre{background:#f7f7f7;padding:12px;border-radius:10px;overflow:auto}
-    .row{display:flex;gap:8px;align-items:center}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   </style>
 </head>
 <body>
-  <h1>ログイン（開発用）</h1>
+  <h1>Dev Login (Minimal)</h1>
+
+  <div class="card">
+    <div class="row">
+      <button type="button" onclick="alert('click OK');">Click test</button>
+      <small>← これが出ればボタン反応OK</small>
+    </div>
+  </div>
 
   <div class="card">
     <form id="login">
@@ -24,22 +31,16 @@
       <input name="password" type="password" required placeholder="••••••••" />
       <div class="row">
         <button type="button" id="signin" onclick="signIn()">Sign in</button>
-        <button type="button" id="logout">Sign out</button>
+        <button type="button" id="logout" onclick="signOut()">Sign out</button>
       </div>
     </form>
-    <div style="margin-top:8px">
-      <small>※ Supabase Studio → Authentication → Users で作成したユーザーでログイン（Email confirmed 推奨）</small>
-    </div>
   </div>
 
   <div class="card">
-    <strong>登録テスト</strong>
-    <p>ログイン後に押すと <code>runs</code> / <code>routes</code> に1件INSERTします（<code>owner_account_id</code> はトリガ or RPCで付与）。</p>
     <div class="row">
-      <button id="insertRun">テストRunを登録（runs）</button>
-      <button id="insertRoute">テストRouteを登録（routes）</button>
+      <button id="insertRun" onclick="insertRun()">テストRunを登録（runs）</button>
     </div>
-    <pre id="insertResult" style="margin-top:8px">未実行</pre>
+    <pre id="insertResult">未実行</pre>
   </div>
 
   <div class="card">
@@ -48,74 +49,76 @@
   </div>
 
   <script type="module">
-  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+    // ★ 必ず置き換え（index.html と同じ値）
+    const SUPABASE_URL  = "https://YOUR-PROJECT.supabase.co";
+    const SUPABASE_ANON = "YOUR_PUBLIC_ANON_KEY";
 
-    // ★ ここをあなたのプロジェクトの値に置き換え
-    const SUPABASE_URL  = "https://cqiqhczxuiyakptdjowr.supabase.co";
-    const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
-
-  // 最小パッチ(1): セッション保持の揺れ対策（スマホの 400 を防止）
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-  });
-
-  const $status = document.getElementById("status");
-  const show = (obj) => $status.textContent = JSON.stringify(obj, null, 2);
-
-  // 最小パッチ(2): getSession ベースの refresh（未ログイン時に 400 を出さない）
-  async function refresh() {
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user ?? null;
-
-    let account_id = null, handle = null;
-    if (user) {
-      try {
-        const { data: aid } = await supabase.rpc("current_user_account_id");
-        account_id = aid ?? null;
-      } catch {}
-      try {
-        const { data } = await supabase
-          .from("users")
-          .select("account_id, accounts:account_id(handle,display_name)")
-          .eq("id", user.id)
-          .maybeSingle();
-        handle = data?.accounts?.handle ?? null;
-      } catch {}
+    if (SUPABASE_URL.includes("YOUR-PROJECT") || SUPABASE_ANON.includes("YOUR_PUBLIC_ANON_KEY")) {
+      alert("SUPABASE_URL / ANON をあなたのプロジェクト値に置き換えてください（index.html と同じ）");
     }
 
-    show({ user: user ? { id: user.id, email: user.email } : null, account_id, handle });
-  }
+    // セッション保持を明示（スマホ400回避）
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
 
-  // ← onclick方式：必ずこの関数が呼ばれる
-  window.signIn = async function signIn() {
-    try {
-      const email = document.querySelector('#login [name=email]').value.trim();
-      const password = document.querySelector('#login [name=password]').value;
-      if (!email || !password) return alert("メール/パスワードを入れてください");
+    const $ = (id) => document.getElementById(id);
+    const show = (obj) => { $("status").textContent = JSON.stringify(obj, null, 2); };
 
-      await supabase.auth.signOut(); // 念のため初期化
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return alert("Sign in error: " + error.message);
-
-      await refresh(); // ログイン後の状態更新
-    } catch (e) {
-      console.error(e);
-      alert("Sign in failed: " + (e.message || e));
+    // 未ログインで400を出さない refresh
+    async function refresh() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
+      show({ user: user ? { id:user.id, email:user.email } : null });
     }
-  };
 
-  // Sign out（任意）
-  document.getElementById("logout")?.addEventListener("click", async () => {
-    await supabase.auth.signOut();
+    // onclick で確実に呼ばれる関数（window に公開）
+    window.signIn = async function signIn() {
+      try {
+        const email = document.querySelector('#login [name=email]').value.trim();
+        const password = document.querySelector('#login [name=password]').value;
+        if (!email || !password) return alert("メール/パスワードを入れてください");
+        await supabase.auth.signOut(); // 念のため初期化
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) return alert("Sign in error: " + error.message);
+        await refresh();
+        alert("Signed in");
+      } catch (e) {
+        console.error(e); alert("JS error: " + (e.message || e));
+      }
+    };
+
+    window.signOut = async function signOut() {
+      await supabase.auth.signOut();
+      await refresh();
+      alert("Signed out");
+    };
+
+    window.insertRun = async function insertRun() {
+      const out = $("insertResult");
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return alert("先にログインしてください");
+        const payload = {
+          name: "Dev Run " + new Date().toISOString(),
+          started_at: new Date().toISOString(),
+          ended_at: new Date().toISOString(),
+          distance_m: 100, duration_s: 10
+        };
+        const { data, error } = await supabase.from("runs").insert([payload]).select("id").maybeSingle();
+        if (error) throw error;
+        out.textContent = "runs inserted: id=" + data.id;
+      } catch (e) {
+        console.error(e); out.textContent = "ERROR: " + (e.message || JSON.stringify(e));
+      }
+      await refresh();
+    };
+
+    // 初期描画
     await refresh();
-  });
-
-  // 初期描画 & セッション変化で再描画
-  await refresh();
-  supabase.auth.onAuthStateChange(() => refresh());
-</script>
-
-
+    supabase.auth.onAuthStateChange(() => refresh());
+  </script>
 </body>
 </html>

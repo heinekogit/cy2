@@ -52,9 +52,12 @@
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
     // ★ 必ず置き換え（index.html と同じ値）
-    const SUPABASE_URL  = "https://YOUR-PROJECT.supabase.co";
-    const SUPABASE_ANON = "YOUR_PUBLIC_ANON_KEY";
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log('[INIT] supabase ok');
 
+  
     if (SUPABASE_URL.includes("YOUR-PROJECT") || SUPABASE_ANON.includes("YOUR_PUBLIC_ANON_KEY")) {
       alert("SUPABASE_URL / ANON をあなたのプロジェクト値に置き換えてください（index.html と同じ）");
     }

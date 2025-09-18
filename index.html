@@ -221,7 +221,7 @@ async function renderLists(which){
           <div class="meta">${ended ? new Date(ended).toLocaleString() : '—'} · ${km} km · ${dur}</div>
         </div>
         <div style="display:flex; gap:8px;">
-          <button class="btn ghost" data-open="${log.id}">開く</button>
+          <a href="detail.html?src=routes&id=${row.id}">開く</a>
           <button class="btn danger" data-del="${log.id}">削除</button>
         </div>`;
       logsList.appendChild(card);

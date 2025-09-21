@@ -98,10 +98,11 @@
 <!-- 1) Supabase 初期化（login_inline_client と同一のURL/ANONに統一） -->
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL（既存と同じ） */
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k'; /* ← あなたのanon key（既存と同じ） */
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
   window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   console.log('[INIT] supabase ok');
+
 
   /* ================= 認証バー ================= */
   async function __getSession(){ const { data:{ session } } = await supabase.auth.getSession(); return session; }

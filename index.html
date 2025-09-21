@@ -113,7 +113,7 @@
     const session = await __getSession();
     if (!session?.user) {
       el.innerHTML = `未ログインです。
-        <a href="login_inline_client.html" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+        <a href="login.html" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
     } else {
       const u = session.user;
       el.innerHTML = `ログイン中: <code>${u.email ?? ''}</code><br/>

@@ -56,6 +56,11 @@
     </div>
   </header>
 
+  <!-- 追加: ログインバー -->
+<div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:8px 0;">
+  認証状態を確認中…
+</div>
+
   <main>
     <section id="home" class="active" aria-label="home">
       <div id="routesList" class="list" hidden></div>
@@ -93,6 +98,37 @@
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
   window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   console.log('[INIT] supabase ok');
+
+  // 追加: ログイン導線＆状態表示
+const LOGIN_URL = 'login_inline_client.html'; // ← 働いてる方のログインページ
+
+async function renderAuthBar() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  const el = document.getElementById('authBar');
+  if (!el) return;
+
+  if (session?.user) {
+    const u = session.user;
+    el.innerHTML = `
+      ログイン中: <code>${u.email ?? ''}</code>
+      <br/><small>ID: ${u.id}</small>
+      <div style="margin-top:6px">
+        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
+      </div>`;
+    document.getElementById('signOutBtn').onclick = async () => {
+      await supabase.auth.signOut();
+      await renderAuthBar();
+    };
+  } else {
+    el.innerHTML = `
+      未ログインです。
+      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+  }
+}
+
+// 初期表示＋状態変化で更新
+await renderAuthBar();
+supabase.auth.onAuthStateChange(renderAuthBar);
 </script>
 
 <!-- 2) Supabase版ストレージ（window.db* を公開） -->

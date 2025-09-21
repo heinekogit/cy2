@@ -1,46 +1,46 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Route MVP – Supabase 版</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-<script>window.__APP_VERSION__='2025-09-14-03';</script>
-<style>
-  :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --accent:#111827; --ok:#065f46; --okbg:#d1fae5; --warn:#92400e; --warnbg:#fef3c7; --off:#991b1b; --offbg:#fee2e2; }
-  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP"; }
-  #app { height:100%; display:flex; flex-direction:column; }
-  header { padding:10px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  header .tabs { display:flex; gap:8px; }
-  .tab { padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; cursor:pointer; background:#fff; }
-  .tab.active { background:#111827; color:#fff; border-color:#111827; }
-  main { flex:1; display:flex; }
-  #home, #run { flex:1; display:none; }
-  #home.active, #run.active { display:flex; }
-  #home { flex-direction:column; }
-  .list { padding:12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
-  .card { border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; background:#fff; }
-  .card.highlight { outline:3px solid #93c5fd; }
-  .meta { font-size:12px; color:var(--muted); }
-  .btn { border:none; border-radius:10px; padding:8px 10px; font-size:14px; cursor:pointer; }
-  .btn.primary { background:#111827; color:#fff; }
-  .btn.ghost { background:#fff; color:#111827; border:1px solid #e5e7eb; }
-  .btn.danger { background:#ef4444; color:#fff; }
-  #run { position:relative; }
-  #map { position:absolute; inset:0; }
-  .badgewrap { position:fixed; left:8px; right:8px; top:env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
-  .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
-  .badge.ok{background:var(--okbg); color:var(--ok);}
-  .badge.warn{background:var(--warnbg); color:var(--warn);}
-  .badge.off{background:var(--offbg); color:var(--off);}
-  .dock { position:fixed; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
-  .btn.big { padding:12px 14px; font-weight:700; }
-  .btn.stop { background:#ef4444; color:#fff; }
-  .toolbar { position:fixed; left:8px; bottom:8px; z-index:1000; display:flex; gap:8px; }
-  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; z-index:1100; display:none; }
-  .hint { position:fixed; left:8px; bottom:60px; background:#ffffffd8; padding:6px 10px; border-radius:10px; font-size:12px; z-index:999; }
-  footer { padding:6px 10px; font-size:12px; color:#6b7280; border-top:1px solid #e5e7eb; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Route MVP – Supabase 版</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script>window.__APP_VERSION__='2025-09-14-03';</script>
+  <style>
+    :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --accent:#111827; --ok:#065f46; --okbg:#d1fae5; --warn:#92400e; --warnbg:#fef3c7; --off:#991b1b; --offbg:#fee2e2; }
+    html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP"; }
+    #app { height:100%; display:flex; flex-direction:column; }
+    header { padding:10px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    header .tabs { display:flex; gap:8px; }
+    .tab { padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; cursor:pointer; background:#fff; }
+    .tab.active { background:#111827; color:#fff; border-color:#111827; }
+    main { flex:1; display:flex; }
+    #home, #run { flex:1; display:none; }
+    #home.active, #run.active { display:flex; }
+    #home { flex-direction:column; }
+    .list { padding:12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
+    .card { border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; background:#fff; }
+    .card.highlight { outline:3px solid #93c5fd; }
+    .meta { font-size:12px; color:var(--muted); }
+    .btn { border:none; border-radius:10px; padding:8px 10px; font-size:14px; cursor:pointer; }
+    .btn.primary { background:#111827; color:#fff; }
+    .btn.ghost { background:#fff; color:#111827; border:1px solid #e5e7eb; }
+    .btn.danger { background:#ef4444; color:#fff; }
+    #run { position:relative; }
+    #map { position:absolute; inset:0; }
+    .badgewrap { position:fixed; left:8px; right:8px; top:env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
+    .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
+    .badge.ok{background:var(--okbg); color:var(--ok);}
+    .badge.warn{background:var(--warnbg); color:var(--warn);}
+    .badge.off{background:var(--offbg); color:var(--off);}
+    .dock { position:fixed; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
+    .btn.big { padding:12px 14px; font-weight:700; }
+    .btn.stop { background:#ef4444; color:#fff; }
+    .toolbar { position:fixed; left:8px; bottom:8px; z-index:1000; display:flex; gap:8px; }
+    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; z-index:1100; display:none; }
+    .hint { position:fixed; left:8px; bottom:60px; background:#ffffffd8; padding:6px 10px; border-radius:10px; font-size:12px; z-index:999; }
+    footer { padding:6px 10px; font-size:12px; color:#6b7280; border-top:1px solid #e5e7eb; }
+  </style>
 </head>
 <body>
 <div id="app">
@@ -51,29 +51,27 @@
       <button class="tab" id="tabLogs">実走ログ</button>
     </div>
     <div>
-      <!-- ★ インライン onclick は削除（JS側で登録） -->
       <button id="btnGoRun" class="btn ghost">すぐ実走画面へ</button>
     </div>
   </header>
 
-  <!-- 追加: ログインバー -->
-<!-- 認証バー -->
-<div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:10px 0;">
-  認証状態を確認中…
-</div>
+  <!-- 認証バー -->
+  <div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:10px 0;">
+    認証状態を確認中…
+  </div>
 
-<!-- ルート一覧（ログイン者） -->
-<section style="margin-top:12px;">
-  <h2 style="font-size:18px;margin:6px 0;">あなたのルート</h2>
-  <div id="routesList">読み込み中…</div>
-</section>
-
+  <!-- ログイン者ルート一覧（routes） -->
+  <section style="margin-top:12px;">
+    <h2 style="font-size:18px;margin:6px 0;">あなたのルート</h2>
+    <div id="routesList">読み込み中…</div>
+  </section>
 
   <main>
     <section id="home" class="active" aria-label="home">
-      <div id="routesList" class="list" hidden></div>
+      <!-- ★重複IDを排除：ここは logsList のみ -->
       <div id="logsList" class="list" hidden></div>
     </section>
+
     <section id="run" aria-label="run">
       <div id="map"></div>
       <div class="badgewrap"><div id="courseBadge" class="badge">準備中…</div></div>
@@ -90,143 +88,88 @@
     </section>
   </main>
 
-  <footer>
-    v: <script>document.write(window.__APP_VERSION__)</script>
-  </footer>
+  <footer>v: <script>document.write(window.__APP_VERSION__)</script></footer>
 </div>
 
 <!-- ライブラリ -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
-<!-- 1) Supabase 初期化（必ず最初） -->
+<!-- 1) Supabase 初期化（login_inline_client と同一のURL/ANONに統一） -->
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL（既存と同じ） */
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k'; /* ← あなたのanon key（既存と同じ） */
   window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   console.log('[INIT] supabase ok');
 
-  // 追加: ログイン導線＆状態表示
-const LOGIN_URL = 'login_inline_client.html'; // ← 働いてる方のログインページ
+  /* ================= 認証バー ================= */
+  async function __getSession(){ const { data:{ session } } = await supabase.auth.getSession(); return session; }
 
-async function renderAuthBar() {
-  const { data:{ session } } = await supabase.auth.getSession();
-  const el = document.getElementById('authBar');
-  if (!el) return;
-
-  if (session?.user) {
-    const u = session.user;
-    el.innerHTML = `
-      ログイン中: <code>${u.email ?? ''}</code>
-      <br/><small>ID: ${u.id}</small>
-      <div style="margin-top:6px">
-        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
-      </div>`;
-    document.getElementById('signOutBtn').onclick = async () => {
-      await supabase.auth.signOut();
-      await renderAuthBar();
-    };
-  } else {
-    el.innerHTML = `
-      未ログインです。
-      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+  async function renderAuthBar(){
+    const el = document.getElementById('authBar');
+    if (!el) return;
+    const session = await __getSession();
+    if (!session?.user) {
+      el.innerHTML = `未ログインです。
+        <a href="login_inline_client.html" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+    } else {
+      const u = session.user;
+      el.innerHTML = `ログイン中: <code>${u.email ?? ''}</code><br/>
+        <small>ID: ${u.id}</small>
+        <div style="margin-top:6px">
+          <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
+        </div>`;
+      document.getElementById('signOutBtn').onclick = async () => {
+        await supabase.auth.signOut();
+        await renderAuthBar();
+        await loadRoutesForCurrentUser(); // 一覧も更新
+      };
+    }
   }
 
-// ===== 認証バー（ログイン導線/ID表示） =====
-const LOGIN_URL = 'login_inline_client.html'; // ← 動く方のログインページ
-
-async function renderAuthBar() {
-  const { data:{ session } } = await supabase.auth.getSession();
-  const el = document.getElementById('authBar');
-  if (!el) return;
-
-  if (!session?.user) {
-    el.innerHTML = `
-      未ログインです。
-      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
-  } else {
-    const u = session.user;
-    el.innerHTML = `
-      ログイン中: <code>${u.email ?? ''}</code><br/>
-      <small>ID: ${u.id}</small>
-      <div style="margin-top:6px">
-        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
-      </div>`;
-    document.getElementById('signOutBtn').onclick = async () => {
-      await supabase.auth.signOut();
-      await renderAuthBar();
-      await loadRoutesForCurrentUser(); // 一覧も更新
-    };
-  }
-}
-
-// ===== ルート一覧（自分のprivate + 公開） =====
-async function getMyAccountId() {
-  const { data:{ session } } = await supabase.auth.getSession();
-  if (!session?.user) return null;
-  const { data, error } = await supabase.from('users')
-    .select('account_id').eq('id', session.user.id).single();
-  if (error) { console.error(error); return null; }
-  return data?.account_id ?? null;
-}
-
-async function loadRoutesForCurrentUser() {
-  const box = document.getElementById('routesList');
-  if (!box) return;
-
-  const myAcc = await getMyAccountId();
-  if (!myAcc) {
-    box.innerHTML = '未ログインのため表示できません。上の「ログインへ」からログインしてください。';
-    return;
+  /* ============ 自分のルート一覧（private + public） ============ */
+  async function getMyAccountId() {
+    const session = await __getSession();
+    if (!session?.user) return null;
+    const { data, error } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (error) { console.error(error); return null; }
+    return data?.account_id ?? null;
   }
 
-  // 自分のprivate or 公開 をORで取得
-  const { data, error } = await supabase.from('routes')
-    .select('id, name, visibility, created_at, owner_account_id')
-    .or(`owner_account_id.eq.${myAcc},visibility.eq.public`)
-    .order('created_at', { ascending:false })
-    .limit(50);
+  async function loadRoutesForCurrentUser() {
+    const box = document.getElementById('routesList');
+    if (!box) return;
 
-  if (error) {
-    console.error(error);
-    box.textContent = '読み込みに失敗しました';
-    return;
-  }
-  if (!data || data.length === 0) {
-    box.textContent = 'ルートがありません。';
-    return;
-  }
+    const acc = await getMyAccountId();
+    if (!acc) { box.textContent = '未ログインのため表示できません。'; return; }
 
-  // レンダリング
-  box.innerHTML = data.map(r => {
-    const when = new Date(r.created_at).toLocaleString();
-    const vis = r.visibility === 'public' ? '公開' : '非公開';
-    return `
-      <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0;">
+    const { data, error } = await supabase.from('routes')
+      .select('id, name, visibility, created_at')
+      .or(`owner_account_id.eq.${acc},visibility.eq.public`)
+      .order('created_at', { ascending:false })
+      .limit(50);
+
+    if (error) { console.error(error); box.textContent='読み込みに失敗しました'; return; }
+    if (!data || data.length === 0) { box.textContent='ルートがありません。'; return; }
+
+    box.innerHTML = data.map(r=>{
+      const when = new Date(r.created_at).toLocaleString();
+      const vis = r.visibility === 'public' ? '公開' : '非公開';
+      return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0;">
         <div style="font-weight:600;">${r.name ?? '(無題ルート)'} <span style="color:#6b7280;font-weight:400;">#${r.id}</span></div>
         <div style="color:#6b7280;font-size:12px;">${when}・${vis}</div>
         <div style="margin-top:6px;">
           <a href="detail.html?id=${r.id}" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">詳細</a>
         </div>
       </div>`;
-  }).join('');
-}
+    }).join('');
+  }
 
-// 初期表示＋認証状態変化で更新
-await renderAuthBar();
-await loadRoutesForCurrentUser();
-supabase.auth.onAuthStateChange(async () => {
+  // 初期表示＋認証状態変化で更新
   await renderAuthBar();
   await loadRoutesForCurrentUser();
-});
-
-
-}
-
-// 初期表示＋状態変化で更新
-await renderAuthBar();
-supabase.auth.onAuthStateChange(renderAuthBar);
+  supabase.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); await loadRoutesForCurrentUser(); });
 </script>
 
 <!-- 2) Supabase版ストレージ（window.db* を公開） -->
@@ -355,7 +298,7 @@ async function renderLists(which){
           <div class="meta">${ended ? new Date(ended).toLocaleString() : '—'} · ${km} km · ${dur}</div>
         </div>
         <div style="display:flex; gap:8px;">
-          <a href="detail.html?src=routes&id=${row.id}">開く</a>
+          <a href="detail.html?src=routes&id=${log.id}">開く</a>
           <button class="btn danger" data-del="${log.id}">削除</button>
         </div>`;
       logsList.appendChild(card);
@@ -589,7 +532,7 @@ function init(){
 document.addEventListener('DOMContentLoaded', init, { once:true });
 </script>
 
-<!-- Service Worker（ルート直下 / パス固定） -->
+<!-- Service Worker（任意） -->
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js')

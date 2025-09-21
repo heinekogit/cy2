@@ -57,9 +57,17 @@
   </header>
 
   <!-- 追加: ログインバー -->
-<div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:8px 0;">
+<!-- 認証バー -->
+<div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:10px 0;">
   認証状態を確認中…
 </div>
+
+<!-- ルート一覧（ログイン者） -->
+<section style="margin-top:12px;">
+  <h2 style="font-size:18px;margin:6px 0;">あなたのルート</h2>
+  <div id="routesList">読み込み中…</div>
+</section>
+
 
   <main>
     <section id="home" class="active" aria-label="home">
@@ -124,6 +132,96 @@ async function renderAuthBar() {
       未ログインです。
       <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
   }
+
+// ===== 認証バー（ログイン導線/ID表示） =====
+const LOGIN_URL = 'login_inline_client.html'; // ← 動く方のログインページ
+
+async function renderAuthBar() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  const el = document.getElementById('authBar');
+  if (!el) return;
+
+  if (!session?.user) {
+    el.innerHTML = `
+      未ログインです。
+      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+  } else {
+    const u = session.user;
+    el.innerHTML = `
+      ログイン中: <code>${u.email ?? ''}</code><br/>
+      <small>ID: ${u.id}</small>
+      <div style="margin-top:6px">
+        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
+      </div>`;
+    document.getElementById('signOutBtn').onclick = async () => {
+      await supabase.auth.signOut();
+      await renderAuthBar();
+      await loadRoutesForCurrentUser(); // 一覧も更新
+    };
+  }
+}
+
+// ===== ルート一覧（自分のprivate + 公開） =====
+async function getMyAccountId() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
+  const { data, error } = await supabase.from('users')
+    .select('account_id').eq('id', session.user.id).single();
+  if (error) { console.error(error); return null; }
+  return data?.account_id ?? null;
+}
+
+async function loadRoutesForCurrentUser() {
+  const box = document.getElementById('routesList');
+  if (!box) return;
+
+  const myAcc = await getMyAccountId();
+  if (!myAcc) {
+    box.innerHTML = '未ログインのため表示できません。上の「ログインへ」からログインしてください。';
+    return;
+  }
+
+  // 自分のprivate or 公開 をORで取得
+  const { data, error } = await supabase.from('routes')
+    .select('id, name, visibility, created_at, owner_account_id')
+    .or(`owner_account_id.eq.${myAcc},visibility.eq.public`)
+    .order('created_at', { ascending:false })
+    .limit(50);
+
+  if (error) {
+    console.error(error);
+    box.textContent = '読み込みに失敗しました';
+    return;
+  }
+  if (!data || data.length === 0) {
+    box.textContent = 'ルートがありません。';
+    return;
+  }
+
+  // レンダリング
+  box.innerHTML = data.map(r => {
+    const when = new Date(r.created_at).toLocaleString();
+    const vis = r.visibility === 'public' ? '公開' : '非公開';
+    return `
+      <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0;">
+        <div style="font-weight:600;">${r.name ?? '(無題ルート)'} <span style="color:#6b7280;font-weight:400;">#${r.id}</span></div>
+        <div style="color:#6b7280;font-size:12px;">${when}・${vis}</div>
+        <div style="margin-top:6px;">
+          <a href="detail.html?id=${r.id}" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">詳細</a>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// 初期表示＋認証状態変化で更新
+await renderAuthBar();
+await loadRoutesForCurrentUser();
+supabase.auth.onAuthStateChange(async () => {
+  await renderAuthBar();
+  await loadRoutesForCurrentUser();
+});
+
+
 }
 
 // 初期表示＋状態変化で更新

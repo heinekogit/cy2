@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dev Login (Minimal)</title>
+  <title>Login</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 16px}
     form, .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
@@ -14,7 +14,7 @@
   </style>
 </head>
 <body>
-  <h1>Dev Login (Minimal)</h1>
+  <h1>Login</h1>
 
   <div class="card">
     <form id="login">
@@ -23,12 +23,18 @@
       <label>パスワード</label>
       <input name="password" type="password" required placeholder="••••••••" />
       <div class="row">
-        <button type="button" id="signin" onclick="signIn()">Sign in</button>
-        <button type="button" id="logout" onclick="signOut()">Sign out</button>
+        <button type="button" onclick="signIn()">Sign in</button>
+        <button type="button" onclick="signOut()">Sign out</button>
       </div>
     </form>
   </div>
 
+  <div class="card">
+    <div class="row">
+      <button id="insertRun" onclick="insertRun()">テストRunを登録（runs）</button>
+    </div>
+    <pre id="insertResult">未実行</pre>
+  </div>
 
   <div class="card">
     <strong>現在の状態</strong>
@@ -36,57 +42,39 @@
   </div>
 
   <script type="module">
-  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  // ★ index.html と同じ値に統一
-  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+    // ★ index.html と同じ値を使う
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
 
-
-  // 単一のクライアントだけ作る（persist付き）
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-  });
-  // 既存コードは window.supabase を参照しているので公開しておく
-  window.supabase = supabase;
-  console.log('[INIT] supabase ok');
-
-  
-    if (SUPABASE_URL.includes("YOUR-PROJECT") || SUPABASE_ANON.includes("YOUR_PUBLIC_ANON_KEY")) {
-      alert("SUPABASE_URL / ANON をあなたのプロジェクト値に置き換えてください（index.html と同じ）");
-    }
-
-    // セッション保持を明示（スマホ400回避）
-    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+    // クライアントは一度だけ生成
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
+    window.supabase = supabase; // 既存関数から参照できるよう公開
 
     const $ = (id) => document.getElementById(id);
     const show = (obj) => { $("status").textContent = JSON.stringify(obj, null, 2); };
 
-    // 未ログインで400を出さない refresh
     async function refresh() {
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user ?? null;
-      show({ user: user ? { id:user.id, email:user.email } : null });
+      show({ user: user ? { id: user.id, email: user.email } : null });
     }
 
-    // onclick で確実に呼ばれる関数（window に公開）
     window.signIn = async function signIn() {
       try {
         const email = document.querySelector('#login [name=email]').value.trim();
         const password = document.querySelector('#login [name=password]').value;
         if (!email || !password) return alert("メール/パスワードを入れてください");
         await supabase.auth.signOut(); // 念のため初期化
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) return alert("Sign in error: " + error.message);
         await refresh();
         alert("Signed in");
-
-       // 成功したら index.html へ（キャッシュ回避のため v 付き）
-       window.location.href = "index.html?v=20250921-01";
-
-
+        // ★ ログイン成功後に index.html へ
+        window.location.href = "index.html?v=20250921-01";
       } catch (e) {
         console.error(e); alert("JS error: " + (e.message || e));
       }
@@ -118,7 +106,7 @@
       await refresh();
     };
 
-    // 初期描画
+    // 初期表示
     await refresh();
     supabase.auth.onAuthStateChange(() => refresh());
   </script>

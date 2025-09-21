@@ -61,7 +61,7 @@
     // --- clientは一度だけ作る（再読込でも再利用）---
     // これで「初期化前アクセス」や二重生成を回避
     window.__sbClient = window.__sbClient || window.supabase.createClient(
-      SUPABASE_URL, SUPABASE_ANON,
+      SUPABASE_URL, SUPABASE_ANON_KEY,
       { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }
     );
     const client = window.__sbClient;

@@ -29,12 +29,6 @@
     </form>
   </div>
 
-  <div class="card">
-    <div class="row">
-      <button id="insertRun" onclick="insertRun()">テストRunを登録（runs）</button>
-    </div>
-    <pre id="insertResult">未実行</pre>
-  </div>
 
   <div class="card">
     <strong>現在の状態</strong>
@@ -42,12 +36,19 @@
   </div>
 
   <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-    // ★ 必ず置き換え（index.html と同じ値）
+  // ★ index.html と同じ値に統一
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
-  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+  // 単一のクライアントだけ作る（persist付き）
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
+  // 既存コードは window.supabase を参照しているので公開しておく
+  window.supabase = supabase;
   console.log('[INIT] supabase ok');
 
   
@@ -82,8 +83,9 @@
         await refresh();
         alert("Signed in");
 
-        // ★ここで index.html に遷移
-    window.location.href = "index.html";
+       // 成功したら index.html へ（キャッシュ回避のため v 付き）
+       window.location.href = "index.html?v=20250921-01";
+
 
       } catch (e) {
         console.error(e); alert("JS error: " + (e.message || e));

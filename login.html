@@ -6,7 +6,7 @@
   <title>Login</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 16px}
-    form, .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
+    form,.card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
     input{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:8px}
     button{padding:10px 14px;border-radius:10px;border:1px solid #ddd;cursor:pointer}
     pre{background:#f7f7f7;padding:12px;border-radius:10px;overflow:auto}
@@ -41,55 +41,49 @@
     <pre id="status">loading...</pre>
   </div>
 
-  <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-    // ★ index.html と同じ値を使う
-    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
-
-    // クライアントは一度だけ生成
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  <!-- ★ UMD版を読み込む -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL  = "https://cqiqhczxuiyakptdjowr.supabase.co";
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+  
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
-    window.supabase = supabase; // 既存関数から参照できるよう公開
 
-    const $ = (id) => document.getElementById(id);
-    const show = (obj) => { $("status").textContent = JSON.stringify(obj, null, 2); };
+    const $ = (id)=>document.getElementById(id);
+    function show(obj){ $('status').textContent = JSON.stringify(obj, null, 2); }
 
-    async function refresh() {
-      const { data: { session } } = await supabase.auth.getSession();
+    async function refresh(){
+      const { data:{ session } } = await client.auth.getSession();
       const user = session?.user ?? null;
-      show({ user: user ? { id: user.id, email: user.email } : null });
+      show({ user: user ? { id:user.id, email:user.email } : null });
     }
 
-    window.signIn = async function signIn() {
-      try {
-        const email = document.querySelector('#login [name=email]').value.trim();
-        const password = document.querySelector('#login [name=password]').value;
-        if (!email || !password) return alert("メール/パスワードを入れてください");
-        await supabase.auth.signOut(); // 念のため初期化
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return alert("Sign in error: " + error.message);
+    async function signIn(){
+      try{
+        const email = document.querySelector('[name=email]').value.trim();
+        const password = document.querySelector('[name=password]').value;
+        if(!email || !password){ alert("メール/パスワードを入れてください"); return; }
+        await client.auth.signOut();
+        const { error } = await client.auth.signInWithPassword({ email, password });
+        if(error){ alert("Sign in error: " + error.message); return; }
         await refresh();
         alert("Signed in");
-        // ★ ログイン成功後に index.html へ
+        // ★ 成功したら index.html に遷移
         window.location.href = "index.html?v=20250921-01";
-      } catch (e) {
-        console.error(e); alert("JS error: " + (e.message || e));
-      }
-    };
+      }catch(e){ console.error(e); alert("JS error: " + (e.message||e)); }
+    }
 
-    window.signOut = async function signOut() {
-      await supabase.auth.signOut();
-      await refresh();
-      alert("Signed out");
-    };
+    async function signOut(){
+      await client.auth.signOut();
+      await refresh(); alert("Signed out");
+    }
 
-    window.insertRun = async function insertRun() {
+    async function insertRun(){
       const out = $("insertResult");
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
+      try{
+        const { data:{ session } } = await client.auth.getSession();
         if (!session?.user) return alert("先にログインしてください");
         const payload = {
           name: "Dev Run " + new Date().toISOString(),
@@ -97,18 +91,16 @@
           ended_at: new Date().toISOString(),
           distance_m: 100, duration_s: 10
         };
-        const { data, error } = await supabase.from("runs").insert([payload]).select("id").maybeSingle();
+        const { data, error } = await client.from("runs").insert([payload]).select("id").maybeSingle();
         if (error) throw error;
         out.textContent = "runs inserted: id=" + data.id;
       } catch (e) {
         console.error(e); out.textContent = "ERROR: " + (e.message || JSON.stringify(e));
       }
       await refresh();
-    };
+    }
 
-    // 初期表示
-    await refresh();
-    supabase.auth.onAuthStateChange(() => refresh());
+    refresh();
   </script>
 </body>
 </html>

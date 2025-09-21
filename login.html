@@ -17,13 +17,6 @@
   <h1>Dev Login (Minimal)</h1>
 
   <div class="card">
-    <div class="row">
-      <button type="button" onclick="alert('click OK');">Click test</button>
-      <small>← これが出ればボタン反応OK</small>
-    </div>
-  </div>
-
-  <div class="card">
     <form id="login">
       <label>メール</label>
       <input name="email" type="email" required placeholder="you@example.com" />
@@ -88,6 +81,10 @@
         if (error) return alert("Sign in error: " + error.message);
         await refresh();
         alert("Signed in");
+
+        // ★ここで index.html に遷移
+    window.location.href = "index.html";
+
       } catch (e) {
         console.error(e); alert("JS error: " + (e.message || e));
       }

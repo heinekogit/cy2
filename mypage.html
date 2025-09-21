@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>マイページ</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto; margin: 20px; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:16px; margin:16px 0; }
+    button { padding:8px 12px; border-radius:8px; border:1px solid #ccc; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>マイページ</h1>
+  <div id="authInfo" class="card">認証状態を確認中…</div>
+
+  <div class="card">
+    <a href="index.html"><button>🏠 ルート・ログ一覧へ</button></a>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function renderAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const el = document.getElementById("authInfo");
+      if (!session?.user) {
+        el.innerHTML = `未ログインです。<a href="login.html">ログインへ</a>`;
+        return;
+      }
+      const u = session.user;
+      el.innerHTML = `
+        <div>ログイン中: <b>${u.email}</b></div>
+        <div><small>ID: ${u.id}</small></div>
+        <div style="margin-top:6px">
+          <button id="signOutBtn">Sign out</button>
+        </div>`;
+      document.getElementById("signOutBtn").onclick = async () => {
+        await supabase.auth.signOut();
+        renderAuth();
+      };
+    }
+
+    renderAuth();
+    supabase.auth.onAuthStateChange(() => renderAuth());
+  </script>
+</body>
+</html>

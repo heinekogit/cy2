@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login</title>
+  <script src="js/version.js"></script>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 16px}
     form,.card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
@@ -86,7 +87,7 @@
         if(error){ alert("Sign in error: " + error.message); return; }
         await refresh();
         // 成功したら index へ（キャッシュ避けに v 付き）
-        window.location.href = "index.html?v=20250921-01";
+        window.location.href = 'index.html?v=' + (window.__APP_VERSION__||window.APP_VERSION||'');
       }catch(e){ console.error(e); alert("JS error: " + (e.message||e)); }
     }
 

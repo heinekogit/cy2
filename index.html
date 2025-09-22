@@ -96,12 +96,18 @@
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
 <!-- 1) Supabase 初期化（login_inline_client と同一のURL/ANONに統一） -->
-<script type="module">
-  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  /* UMD版を利用するため import は不要 */
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
-  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  console.log('[INIT] supabase ok');
+  if (!window.supabase || !window.supabase.createClient) { console.error('Supabase UMD load failed'); }
+  window.supabase = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }
+  );
+  console.log('[INIT] supabase ok (UMD)');
 
 
   /* ================= 認証バー ================= */
@@ -169,10 +175,12 @@
     }).join('');
   }
 
-  // 初期表示＋認証状態変化で更新
-  await renderAuthBar();
-  await loadRoutesForCurrentUser();
-  supabase.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); await loadRoutesForCurrentUser(); });
+  // 初期表示＋認証状態変化で更新（IIFE）
+  (async ()=>{
+    await renderAuthBar();
+    await loadRoutesForCurrentUser();
+    supabase.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); await loadRoutesForCurrentUser(); });
+  })();
 </script>
 
 <!-- 2) Supabase版ストレージ（window.db* を公開） -->

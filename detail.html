@@ -39,7 +39,15 @@
     window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     console.log('[INIT] supabase ok (detail)');
   </script>
-  <script type="module" src="js/storage.js?v=20250914-03"></script>
+  <script>
+    // 共有バージョンによる cache-busting（module を動的挿入）
+    (function(){
+      var s=document.createElement('script');
+      s.type='module';
+      s.src='js/storage.js?v=' + (window.__APP_VERSION__||window.APP_VERSION||'');
+      document.head.appendChild(s);
+    })();
+  </script>
 
   <!-- 画面ロジック（重複なし・1本化） -->
   <script type="module">

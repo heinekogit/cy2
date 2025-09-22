@@ -184,7 +184,15 @@
 </script>
 
 <!-- 2) Supabase版ストレージ（window.db* を公開） -->
-<script type="module" src="js/storage.js?v=20250914-03"></script>
+<script>
+  // 共有バージョンで cache-busting
+  (function(){
+    var s = document.createElement('script');
+    s.type = 'module';
+    s.src = 'js/storage.js?v=' + (window.__APP_VERSION__||window.APP_VERSION||'');
+    document.head.appendChild(s);
+  })();
+  </script>
 
 <!-- 3) アプリ本体（UI・地図・記録ロジック） -->
 <script>
@@ -546,7 +554,8 @@ document.addEventListener('DOMContentLoaded', init, { once:true });
 <!-- Service Worker（任意） -->
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js')
+    // バージョン連動のSW登録で更新検出を安定化
+    navigator.serviceWorker.register('./service-worker.js?v=' + (window.__APP_VERSION__||window.APP_VERSION||''))
       .then(reg => console.log('Service Worker registered:', reg))
       .catch(err => console.error('Service Worker registration failed:', err));
   }

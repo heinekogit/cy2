@@ -31,13 +31,20 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-  <!-- Supabase 初期化 → storage.js（順序重要） -->
-  <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
-    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log('[INIT] supabase ok (detail)');
+  <!-- Supabase 初期化（UMD版） → storage.js（順序重要） -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    (function(){
+      const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+      if (!window.supabase || !window.supabase.createClient) { console.error('Supabase UMD load failed (detail)'); return; }
+      window.supabase = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }
+      );
+      console.log('[INIT] supabase ok (detail UMD)');
+    })();
   </script>
   <script>
     // 共有バージョンによる cache-busting（module を動的挿入）

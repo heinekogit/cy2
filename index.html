@@ -549,6 +549,18 @@ function init(){
   setHomeTab('logs');
 }
 document.addEventListener('DOMContentLoaded', init, { once:true });
+
+// 履歴戻り（BFCache復元）時に一覧/認証を再描画
+window.addEventListener('pageshow', () => {
+  try{
+    // 認証バーとルート一覧を更新
+    if (typeof renderAuthBar === 'function') renderAuthBar();
+    if (typeof loadRoutesForCurrentUser === 'function') loadRoutesForCurrentUser();
+    // 現在アクティブなタブに応じてホームのリストを再描画
+    const active = document.getElementById('tabRoutes')?.classList.contains('active') ? 'routes' : 'logs';
+    if (typeof renderLists === 'function') renderLists(active);
+  }catch(e){ console.warn('pageshow refresh failed', e); }
+});
 </script>
 
 <!-- Service Worker（任意） -->

@@ -3,51 +3,154 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>マイページ</title>
+  <title>My Page – 自分のルート</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto; margin: 20px; }
-    .card { border:1px solid #ddd; border-radius:12px; padding:16px; margin:16px 0; }
-    button { padding:8px 12px; border-radius:8px; border:1px solid #ccc; cursor:pointer; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; }
+    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
+    .muted { color:#6b7280; }
+    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; display:flex; justify-content:space-between; align-items:center; }
+    .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; }
+    .badge.pub { background:#d1fae5; color:#065f46; border-color:#a7f3d0; }
+    .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
   </style>
-</head>
-<body>
-  <h1>マイページ</h1>
-  <div id="authInfo" class="card">認証状態を確認中…</div>
 
-  <div class="card">
-    <a href="index.html"><button>🏠 ルート・ログ一覧へ</button></a>
-  </div>
+  <script>
+    window.APP_VERSION = "2025-09-23-02";
+  </script>
 
-  <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+  <!-- Supabase UMD -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
 
-  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+    const V = () => encodeURIComponent(window.APP_VERSION || "");
+    const $ = (s)=>document.querySelector(s);
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    async function renderAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
-      const el = document.getElementById("authInfo");
-      if (!session?.user) {
-        el.innerHTML = `未ログインです。<a href="login.html">ログインへ</a>`;
-        return;
-      }
-      const u = session.user;
-      el.innerHTML = `
-        <div>ログイン中: <b>${u.email}</b></div>
-        <div><small>ID: ${u.id}</small></div>
-        <div style="margin-top:6px">
-          <button id="signOutBtn">Sign out</button>
-        </div>`;
-      document.getElementById("signOutBtn").onclick = async () => {
-        await supabase.auth.signOut();
-        renderAuth();
-      };
+    function visToBool(r) {
+      if (typeof r.is_public === "boolean") return r.is_public;
+      if (typeof r.visibility === "string") return r.visibility === "public";
+      return false;
     }
 
-    renderAuth();
-    supabase.auth.onAuthStateChange(() => renderAuth());
+    async function getSession() {
+      const { data:{ session } } = await client.auth.getSession();
+      return session;
+    }
+
+    async function getMyAccountId() {
+      const session = await getSession();
+      if (!session?.user) return null;
+      const { data, error } = await client.from("users").select("account_id").eq("id", session.user.id).single();
+      if (error) { console.warn("users.account_id error", error); return null; }
+      return data?.account_id ?? null;
+    }
+
+    async function renderGate() {
+      const gate = $("#gate");
+      const session = await getSession();
+      if (!session?.user) {
+        gate.innerHTML = `
+          未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>
+        `;
+        $("#list").innerHTML = "";
+        return false;
+      } else {
+        gate.innerHTML = `
+          ログイン中: <strong>${session.user.email || ""}</strong>
+          <span class="muted" style="margin-left:6px;">ID: ${session.user.id}</span>
+          <span style="margin-left:6px;"></span>
+          <a class="btn" href="index.html?v=${V()}">トップへ</a>
+          <button class="btn" id="btnSignOut">Sign out</button>
+        `;
+        $("#btnSignOut").onclick = async ()=>{ await client.auth.signOut(); await renderGate(); await loadMyRoutes(); };
+        return true;
+      }
+    }
+
+    async function loadMyRoutes() {
+      const box = $("#list");
+      if (!box) return;
+      const acc = await getMyAccountId();
+      if (!acc) { box.textContent = "未ログインのため表示できません。"; return; }
+      box.textContent = "読み込み中…";
+
+      // account_id or owner_account_id に対応
+      // 1) account_id
+      let { data, error } = await client
+        .from("routes")
+        .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
+        .eq("account_id", acc)
+        .order("created_at", { ascending:false });
+      if (error) {
+        // 2) owner_account_id
+        ({ data, error } = await client
+          .from("routes")
+          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
+          .eq("owner_account_id", acc)
+          .order("created_at", { ascending:false }));
+      }
+      if (error) { console.error("loadMyRoutes error", error); box.textContent = "読み込みに失敗しました"; return; }
+      const routes = data || [];
+      if (routes.length === 0) { box.textContent = "あなたのルートはまだありません。"; return; }
+
+      box.innerHTML = routes.map(r=>{
+        const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
+        const isPub = visToBool(r);
+        const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
+        return `
+          <div class="card">
+            <div>
+              <div style=\"font-weight:600;\">${r.name ?? "(無題ルート)"} <span class=\"muted\">#${r.id}</span></div>
+              <div class=\"muted\" style=\"font-size:12px;\">${when}</div>
+            </div>
+            <div style=\"display:flex; gap:8px; align-items:center;\">
+              ${badge}
+              <a class=\"btn\" href=\"detail.html?v=${V()}&id=${encodeURIComponent(r.id)}\">詳細</a>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function init() {
+      const ok = await renderGate();
+      if (ok) await loadMyRoutes();
+
+      // 認証変化で バー→一覧 をawait順で更新
+      client.auth.onAuthStateChange(async ()=>{
+        const ok2 = await renderGate();
+        if (ok2) { await loadMyRoutes(); }
+      });
+
+      // 戻る復帰時も更新
+      window.addEventListener("pageshow", async ()=>{
+        const ok3 = await renderGate();
+        if (ok3) { await loadMyRoutes(); }
+      });
+    }
+    document.addEventListener("DOMContentLoaded", init, { once:true });
   </script>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700;">My Page</div>
+    <div>
+      <a class="btn" href="index.html?v=2025-09-23-02">トップへ</a>
+    </div>
+  </header>
+
+  <div id="gate" class="card">認証状態を確認中…</div>
+
+  <section>
+    <h2 style="margin:10px 0;">あなたのルート</h2>
+    <div id="list" class="muted">読み込み中…</div>
+  </section>
+
+  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+  <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
 </body>
 </html>
+

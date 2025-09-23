@@ -4,130 +4,90 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login</title>
-  <script src="js/version.js"></script>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 16px}
-    form,.card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
-    input{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:8px}
-    button{padding:10px 14px;border-radius:10px;border:1px solid #ddd;cursor:pointer}
-    pre{background:#f7f7f7;padding:12px;border-radius:10px;overflow:auto}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 12px;color:#111827}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0;background:#fff}
+    label{display:block;margin-top:8px}
+    input{width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .btn{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer}
+    .muted{color:#6b7280}
   </style>
+
+  <script>
+    window.APP_VERSION = "2025-09-23-02";
+  </script>
+
+  <!-- Supabase UMD -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+
+    const V = () => encodeURIComponent(window.APP_VERSION || "");
+    const $ = (s)=>document.querySelector(s);
+
+    async function refreshStatus() {
+      const { data:{ session } } = await client.auth.getSession();
+      const user = session?.user ?? null;
+      $("#status").textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
+      if (!user) {
+        $("#links").innerHTML = `<a class="btn" href="index.html?v=${V()}">トップへ</a>`;
+      } else {
+        $("#links").innerHTML = `
+          <a class=\"btn\" href=\"index.html?v=${V()}\">トップへ</a>
+          <a class=\"btn\" href=\"mypage.html?v=${V()}\">マイページへ</a>`;
+      }
+    }
+
+    async function signIn() {
+      const email = $("#email").value.trim();
+      const password = $("#password").value;
+      if (!email || !password) { alert("メール/パスワードを入力してください"); return; }
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      if (error) { alert("Sign in error: " + error.message); return; }
+      await refreshStatus();
+      // 成功後はマイページへ
+      window.location.href = "mypage.html?v=" + V();
+    }
+
+    async function signOut() {
+      await client.auth.signOut();
+      await refreshStatus();
+      alert("Signed out");
+    }
+
+    async function init() {
+      $("#btnSignIn").onclick = signIn;
+      $("#btnSignOut").onclick = signOut;
+      await refreshStatus();
+      client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
+    }
+    document.addEventListener("DOMContentLoaded", init, { once:true });
+  </script>
 </head>
 <body>
   <h1>Login</h1>
 
   <div class="card">
-    <form id="login">
-      <label>メール</label>
-      <input name="email" type="email" required placeholder="you@example.com" />
-      <label>パスワード</label>
-      <input name="password" type="password" required placeholder="••••••••" />
-      <div class="row">
-<!-- 変更後 -->
-<button type="button" id="btnSignIn">Sign in</button>
-<button type="button" id="btnSignOut">Sign out</button>
-<button type="button" id="btnInsertRun">テストRunを登録（runs）</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="card">
+    <label>メール</label>
+    <input id="email" type="email" placeholder="you@example.com" />
+    <label>パスワード</label>
+    <input id="password" type="password" placeholder="••••••••" />
     <div class="row">
-      <button id="insertRun" onclick="insertRun()">テストRunを登録（runs）</button>
+      <button class="btn" id="btnSignIn">Sign in</button>
+      <button class="btn" id="btnSignOut">Sign out</button>
     </div>
-    <pre id="insertResult">未実行</pre>
   </div>
 
   <div class="card">
     <strong>現在の状態</strong>
-    <pre id="status">loading...</pre>
+    <pre id="status" class="muted">loading...</pre>
+    <div id="links" class="row"></div>
   </div>
 
-  <!-- ★ UMD版を読み込む -->
-<!-- UMD版ライブラリ -->
-<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script>
-  (function(){
-    // --- 設定 ---
-    const SUPABASE_URL  = "https://cqiqhczxuiyakptdjowr.supabase.co";
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
-
-    // --- ガード：ライブラリ読めてるか ---
-    if (!window.supabase || !window.supabase.createClient) {
-      alert("Supabaseライブラリの読み込みに失敗しました");
-      return;
-    }
-
-    // --- clientは一度だけ作る（再読込でも再利用）---
-    // これで「初期化前アクセス」や二重生成を回避
-    window.__sbClient = window.__sbClient || window.supabase.createClient(
-      SUPABASE_URL, SUPABASE_ANON_KEY,
-      { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }
-    );
-    const client = window.__sbClient;
-
-    // ヘルパ
-    const $ = (id)=>document.getElementById(id);
-    const show = (obj)=>{ const el=$("status"); if(el) el.textContent = JSON.stringify(obj,null,2); };
-
-    async function refresh(){
-      const { data:{ session } } = await client.auth.getSession();
-      const user = session?.user ?? null;
-      show({ user: user ? { id:user.id, email:user.email } : null });
-    }
-
-    async function signIn(){
-      try{
-        const email = document.querySelector('#login [name=email]').value.trim();
-        const password = document.querySelector('#login [name=password]').value;
-        if(!email || !password){ alert("メール/パスワードを入れてください"); return; }
-        await client.auth.signOut(); // 念のため
-        const { error } = await client.auth.signInWithPassword({ email, password });
-        if(error){ alert("Sign in error: " + error.message); return; }
-        await refresh();
-        // 成功したら index へ（キャッシュ避けに v 付き）
-        window.location.href = 'index.html?v=' + (window.__APP_VERSION__||window.APP_VERSION||'');
-      }catch(e){ console.error(e); alert("JS error: " + (e.message||e)); }
-    }
-
-    async function signOut(){
-      await client.auth.signOut();
-      await refresh();
-      alert("Signed out");
-    }
-
-    async function insertRun(){
-      const out = $("insertResult");
-      try{
-        const { data:{ session } } = await client.auth.getSession();
-        if(!session?.user) return alert("先にログインしてください");
-        const payload = {
-          name: "Dev Run " + new Date().toISOString(),
-          started_at: new Date().toISOString(),
-          ended_at: new Date().toISOString(),
-          distance_m: 100, duration_s: 10
-        };
-        const { data, error } = await client.from("runs").insert([payload]).select("id").maybeSingle();
-        if (error) throw error;
-        if(out) out.textContent = "runs inserted: id=" + data.id;
-      }catch(e){
-        console.error(e);
-        if(out) out.textContent = "ERROR: " + (e.message || JSON.stringify(e));
-      }
-      await refresh();
-    }
-
-    // --- DOM読み込み後にイベント紐付け（順序事故を完全回避）---
-    window.addEventListener('DOMContentLoaded', ()=>{
-      const si = $("btnSignIn");   if(si) si.addEventListener('click', signIn);
-      const so = $("btnSignOut");  if(so) so.addEventListener('click', signOut);
-      const ir = $("btnInsertRun");if(ir) ir.addEventListener('click', insertRun);
-      refresh();
-    });
-  })();
-</script>
-
-
+  <footer class="muted">v: <script>document.write(window.APP_VERSION)</script></footer>
 </body>
 </html>
+

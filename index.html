@@ -17,10 +17,7 @@
     #filters { margin: 8px 0 4px; display:flex; gap:10px; align-items:center; }
   </style>
 
-  <script>
-    // バージョン（全ページで ?v= に付与）
-    window.APP_VERSION = "2025-09-23-11";
-  </script>
+  <script src="js/version.js"></script>
 
   <!-- Supabase UMD -->
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -196,5 +193,11 @@
 
   <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
   <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js?v=' + (window.APP_VERSION||''))
+        .catch(err => console.error('SW register failed', err));
+    }
+  </script>
 </body>
 </html>

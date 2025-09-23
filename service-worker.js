@@ -17,15 +17,25 @@ self.addEventListener('activate', event => {
   })());
 });
 
+// HTMLはキャッシュしない（常に最新を取得）。静的資産のみキャッシュ。
 self.addEventListener('fetch', event => {
   const req = event.request;
-  event.respondWith(
-    fetch(req)
-      .then(res => {
-        const clone = res.clone();
+  const accept = req.headers.get('accept') || '';
+  const isHTML = req.mode === 'navigate' || accept.includes('text/html');
+
+  event.respondWith((async () => {
+    try {
+      const net = await fetch(req, isHTML ? { cache: 'no-store' } : undefined);
+      if (!isHTML) {
+        const clone = net.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-        return res;
-      })
-      .catch(() => caches.match(req))
-  );
+      }
+      return net;
+    } catch (e) {
+      // オフライン時などはキャッシュを試す（HTMLは通常入っていない想定）
+      const cached = await caches.match(req);
+      if (cached) return cached;
+      throw e;
+    }
+  })());
 });

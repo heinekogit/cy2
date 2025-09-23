@@ -77,30 +77,21 @@
       if (!acc) { box.textContent = "未ログインのため表示できません。"; return; }
       box.textContent = "読み込み中…";
 
-      // account_id or owner_account_id に対応
-      // 1) account_id
-      let { data, error } = await client
-        .from("routes")
-        .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-        .eq("account_id", acc)
-        .order("created_at", { ascending:false });
-      if (error) {
-        // 2) owner_account_id
-        ({ data, error } = await client
-          .from("routes")
-          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-          .eq("owner_account_id", acc)
-          .order("created_at", { ascending:false }));
-      }
-      if (error) { console.error("loadMyRoutes error", error); box.textContent = "読み込みに失敗しました"; return; }
-      const routes = data || [];
-      if (routes.length === 0) { box.textContent = "あなたのルートはまだありません。"; return; }
+      try{
+        const { data, error } = await client
+          .from('routes')
+          .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
+          .or(`account_id.eq.${acc},owner_account_id.eq.${acc}`)
+          .order('created_at', { ascending:false });
+        if (error) throw error;
+        const routes = data || [];
+        if (routes.length === 0) { box.textContent = "あなたのルートはまだありません。"; return; }
 
-      box.innerHTML = routes.map(r=>{
-        const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
-        const isPub = visToBool(r);
-        const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
-        return `
+        box.innerHTML = routes.map(r=>{
+          const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
+          const isPub = visToBool(r);
+          const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
+          return `
           <div class="card">
             <div>
               <div style=\"font-weight:600;\">${r.name ?? "(無題ルート)"} <span class=\"muted\">#${r.id}</span></div>
@@ -112,7 +103,11 @@
             </div>
           </div>
         `;
-      }).join("");
+        }).join("");
+      }catch(e){
+        console.error('loadMyRoutes error', e);
+        box.textContent = '読み込みに失敗しました';
+      }
     }
 
     async function init() {
@@ -153,4 +148,3 @@
   <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
 </body>
 </html>
-

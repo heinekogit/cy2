@@ -55,35 +55,41 @@
 
     // 認証バー
     async function renderAuthBar() {
-      const bar = $("#authBar");
-      if (!bar) return;
-      const session = await getSession();
-      if (!session?.user) {
-        bar.innerHTML = `
-          未ログインです。
-          <a class="btn" href="login.html?v=${V()}">ログインへ</a>
-        `;
-        $("#filters")?.classList.add("muted");
-        $("#mineOnlyWrap")?.classList.add("muted");
-        $("#mineOnly")?.disabled = true;
-      } else {
-        const email = session.user.email || "";
-        bar.innerHTML = `
-          ログイン中: <strong>${email}</strong>
-          <span class="muted" style="margin-left:6px;">ID: ${session.user.id}</span>
-          <span style="margin-left:8px;"></span>
-          <a class="btn" href="mypage.html?v=${V()}">マイページへ</a>
-          <button class="btn" id="btnSignOut" style="margin-left:6px;">Sign out</button>
-        `;
-        $("#mineOnly")?.removeAttribute("disabled");
-        $("#filters")?.classList.remove("muted");
-        $("#mineOnlyWrap")?.classList.remove("muted");
-        const btn = $("#btnSignOut");
-        if (btn) btn.onclick = async () => {
-          await client.auth.signOut();
-          await renderAuthBar();
-          await loadPublicRoutes($("#mineOnly")?.checked === true);
-        };
+      try{
+        const bar = $("#authBar");
+        if (!bar) return;
+        const session = await getSession();
+        if (!session?.user) {
+          bar.innerHTML = `
+            未ログインです。
+            <a class="btn" href="login.html?v=${V()}">ログインへ</a>
+          `;
+          $("#filters")?.classList.add("muted");
+          $("#mineOnlyWrap")?.classList.add("muted");
+          $("#mineOnly")?.disabled = true;
+        } else {
+          const email = session.user.email || "";
+          bar.innerHTML = `
+            ログイン中: <strong>${email}</strong>
+            <span class="muted" style="margin-left:6px;">ID: ${session.user.id}</span>
+            <span style="margin-left:8px;"></span>
+            <a class="btn" href="mypage.html?v=${V()}">マイページへ</a>
+            <button class="btn" id="btnSignOut" style="margin-left:6px;">Sign out</button>
+          `;
+          $("#mineOnly")?.removeAttribute("disabled");
+          $("#filters")?.classList.remove("muted");
+          $("#mineOnlyWrap")?.classList.remove("muted");
+          const btn = $("#btnSignOut");
+          if (btn) btn.onclick = async () => {
+            await client.auth.signOut();
+            await renderAuthBar();
+            await loadPublicRoutes($("#mineOnly")?.checked === true);
+          };
+        }
+      }catch(e){
+        console.error('renderAuthBar error', e);
+        const bar = $("#authBar");
+        if(bar) bar.textContent = '認証状態の取得に失敗しました';
       }
     }
 
@@ -92,85 +98,44 @@
       const box = $("#routesList");
       if (!box) return;
 
-      box.textContent = "読み込み中…";
+      try{
+        box.textContent = "読み込み中…";
 
-      let acc = null;
-      if (mineOnly) acc = await getMyAccountId();
+        let acc = null;
+        if (mineOnly) acc = await getMyAccountId();
 
-      // フィールド差異に耐えるフェッチ
-      async function fetchAllPublic() {
-        // 1) is_public=true があればそれを使う
-        let q = client.from("routes").select("id,name,visibility,is_public,owner_account_id,account_id,created_at").eq("is_public", true).order("created_at", { ascending:false });
-        let { data, error } = await q;
-        if (!error) return data || [];
+        let routes = [];
+        if (mineOnly && acc) {
+          // 自分の公開のみ（account_id/owner_account_id どちらでも拾う）
+          const { data, error } = await client
+            .from('routes')
+            .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
+            .or(`account_id.eq.${acc},owner_account_id.eq.${acc}`)
+            .or('is_public.eq.true,visibility.eq.public')
+            .order('created_at', { ascending:false });
+          if (error) throw error;
+          routes = data || [];
+        } else {
+          // 全公開
+          const { data, error } = await client
+            .from('routes')
+            .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
+            .or('is_public.eq.true,visibility.eq.public')
+            .order('created_at', { ascending:false });
+          if (error) throw error;
+          routes = data || [];
+        }
 
-        // 2) visibility='public'
-        ({ data, error } = await client.from("routes").select("id,name,visibility,is_public,owner_account_id,account_id,created_at").eq("visibility", "public").order("created_at", { ascending:false }));
-        if (!error) return data || [];
+        if (!routes || routes.length === 0) {
+          box.textContent = "該当ルートがありません。";
+          return;
+        }
 
-        console.error("fetchAllPublic error", error);
-        return [];
-      }
-
-      async function fetchMyPublic(accountId) {
-        // 可能なキーで自分のみに絞る（公開のみ）
-        // A) account_id + is_public
-        let { data, error } = await client
-          .from("routes")
-          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-          .eq("account_id", accountId)
-          .eq("is_public", true)
-          .order("created_at", { ascending:false });
-        if (!error) return data || [];
-
-        // B) owner_account_id + is_public
-        ({ data, error } = await client
-          .from("routes")
-          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-          .eq("owner_account_id", accountId)
-          .eq("is_public", true)
-          .order("created_at", { ascending:false }));
-        if (!error) return data || [];
-
-        // C) account_id + visibility='public'
-        ({ data, error } = await client
-          .from("routes")
-          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-          .eq("account_id", accountId)
-          .eq("visibility", "public")
-          .order("created_at", { ascending:false }));
-        if (!error) return data || [];
-
-        // D) owner_account_id + visibility='public'
-        ({ data, error } = await client
-          .from("routes")
-          .select("id,name,visibility,is_public,owner_account_id,account_id,created_at")
-          .eq("owner_account_id", accountId)
-          .eq("visibility", "public")
-          .order("created_at", { ascending:false }));
-        if (!error) return data || [];
-
-        console.error("fetchMyPublic error", error);
-        return [];
-      }
-
-      let routes = [];
-      if (mineOnly && acc) {
-        routes = await fetchMyPublic(acc);
-      } else {
-        routes = await fetchAllPublic();
-      }
-
-      if (!routes || routes.length === 0) {
-        box.textContent = "該当ルートがありません。";
-        return;
-      }
-
-      box.innerHTML = routes.map(r=>{
-        const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
-        const isPub = visToBool(r);
-        const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
-        return `
+        box.innerHTML = routes.map(r=>{
+          const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
+          const isPub = visToBool(r);
+          const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
+          return `
           <div class="card">
             <div>
               <div style="font-weight:600;">${r.name ?? "(無題ルート)"} <span class="muted">#${r.id}</span></div>
@@ -182,7 +147,11 @@
             </div>
           </div>
         `;
-      }).join("");
+        }).join("");
+      }catch(e){
+        console.error('loadPublicRoutes error', e);
+        box.textContent = '読み込みに失敗しました';
+      }
     }
 
     // 初期化
@@ -238,4 +207,3 @@
   <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
 </body>
 </html>
-

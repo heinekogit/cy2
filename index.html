@@ -26,6 +26,7 @@
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    window.client = client; // デバッグ用に公開
 
     // Util
     const V = () => encodeURIComponent(window.APP_VERSION || "");
@@ -139,7 +140,7 @@
             location.href = 'detail.html?id='+encodeURIComponent(id)+'&kind=route&v='+V();
           });
         });
-      }catch(e){ box.textContent='読み込みに失敗しました'; console.error('loadPublicRoutes error', e); }
+      }catch(e){ box.textContent='読み込みに失敗しました: ' + (e && e.message ? e.message : e); console.error('loadPublicRoutes error', e); }
     }
 
     // 初期化

@@ -28,6 +28,7 @@
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    window.client = client; // デバッグ用に公開
 
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (s)=>document.querySelector(s);
@@ -76,7 +77,7 @@
           return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${r.name||'(無題ルート)'} <span class=\"muted\">#${r.id}</span></div><div class=\"muted\" style=\"font-size:12px;\">${when}</div>${from?('<div>'+from+'</div>'):''}</div><div>${badge}</div></button>`;
         }).join('');
         document.querySelectorAll('#list-routes [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`; }); });
-      }catch(e){ box.textContent='読み込みに失敗しました'; console.error(e); }
+      }catch(e){ box.textContent='読み込みに失敗しました: ' + (e && e.message ? e.message : e); console.error(e); }
     }
 
     async function loadMyRuns(){
@@ -96,7 +97,7 @@
           return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${when}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
         }).join('');
         document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
-      }catch(e){ box.textContent='読み込みに失敗しました'; console.error(e); }
+      }catch(e){ box.textContent='読み込みに失敗しました: ' + (e && e.message ? e.message : e); console.error(e); }
     }
 
     async function init(){

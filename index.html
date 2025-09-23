@@ -94,65 +94,74 @@
     }
 
     // 公開ルート一覧
-    async function loadPublicRoutes(mineOnly=false) {
-      const box = $("#routesList");
-      if (!box) return;
+// 置き換え先: index.html の公開一覧取得ロジック
+async function loadPublicRoutes(mineOnly=false){
+  try{
+    const list = $("#routesWrap");
+    if (list) list.innerHTML = "読み込み中…";
 
-      try{
-        box.textContent = "読み込み中…";
+    // セッション
+    const { data:{ session } } = await client.auth.getSession();
+    const uid = session?.user?.id ?? null;
 
-        let acc = null;
-        if (mineOnly) acc = await getMyAccountId();
-
-        let routes = [];
-        if (mineOnly && acc) {
-          // 自分の公開のみ（account_id/owner_account_id どちらでも拾う）
-          const { data, error } = await client
-            .from('routes')
-            .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
-            .or(`account_id.eq.${acc},owner_account_id.eq.${acc}`)
-            .or('is_public.eq.true,visibility.eq.public')
-            .order('created_at', { ascending:false });
-          if (error) throw error;
-          routes = data || [];
-        } else {
-          // 全公開
-          const { data, error } = await client
-            .from('routes')
-            .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
-            .or('is_public.eq.true,visibility.eq.public')
-            .order('created_at', { ascending:false });
-          if (error) throw error;
-          routes = data || [];
-        }
-
-        if (!routes || routes.length === 0) {
-          box.textContent = "該当ルートがありません。";
-          return;
-        }
-
-        box.innerHTML = routes.map(r=>{
-          const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
-          const isPub = visToBool(r);
-          const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
-          return `
-          <div class="card">
-            <div>
-              <div style="font-weight:600;">${r.name ?? "(無題ルート)"} <span class="muted">#${r.id}</span></div>
-              <div class="muted" style="font-size:12px;">${when}</div>
-            </div>
-            <div style="display:flex; gap:8px; align-items:center;">
-              ${badge}
-              <a class="btn" href="detail.html?v=${V()}&id=${encodeURIComponent(r.id)}">詳細</a>
-            </div>
-          </div>
-        `;
-        }).join("");
-      }catch(e){
-        console.error('loadPublicRoutes error', e);
-        box.textContent = '読み込みに失敗しました';
+    // 自分の公開のみに必要: account_id を解決
+    let myAccountId = null;
+    if (mineOnly && uid){
+      const { data: urow, error: e1 } = await client
+        .from('users')
+        .select('account_id')
+        .eq('id', uid)
+        .maybeSingle();
+      if (e1) throw e1;
+      myAccountId = urow?.account_id ?? null;
+      if (!myAccountId){
+        if (list) list.innerHTML = "アカウント情報が見つかりません。";
+        return;
       }
     }
+
+    // 取得する列（必要に応じて調整）
+    const cols = 'id,name,created_at,account_id,visibility,is_public';
+
+    let q = client.from('routes').select(cols);
+
+    if (mineOnly && myAccountId){
+      // 自分の公開のみ：自分の account_id かつ 公開条件
+      q = q
+        .eq('account_id', myAccountId)
+        .or('is_public.eq.true,visibility.eq.public');
+    } else {
+      // すべての公開：公開条件のみ
+      q = q.or('is_public.eq.true,visibility.eq.public');
+    }
+
+    const { data: routes, error: e2 } = await q
+      .order('created_at', { ascending:false });
+
+    if (e2) throw e2;
+
+    if (!routes || routes.length === 0){
+      if (list) list.innerHTML = "公開ルートがありません。";
+      return;
+    }
+
+    // 描画
+    if (list){
+      list.innerHTML = `
+        <h2>公開ルート一覧${mineOnly ? '（自分のみ）' : ''}</h2>
+        <ul>${routes.map(r => `
+          <li>
+            ${r.name ?? '(無題)'}
+            <small class="muted"> ${new Date(r.created_at).toLocaleString()} </small>
+          </li>`).join('')}
+        </ul>`;
+    }
+  }catch(e){
+    console.error('loadPublicRoutes error', e);
+    const list = $("#routesWrap");
+    if (list) list.innerHTML = "読み込みに失敗しました";
+  }
+}
 
     // 初期化
     async function init() {

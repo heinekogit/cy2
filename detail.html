@@ -2,136 +2,134 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Route Detail</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Detail</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-  <script src="js/version.js"></script>
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 920px; margin: 20px auto; padding: 0 12px; color:#111827; }
+    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
+    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; }
+    #map { height: 60vh; border:1px solid #e5e7eb; border-radius:10px; }
+    .muted{ color:#6b7280; }
+  </style>
+
+  <script>
+    window.APP_VERSION = "2025-09-23-02";
+  </script>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+
+    const V = ()=> encodeURIComponent(window.APP_VERSION||'');
+    const $ = (s)=> document.querySelector(s);
+    const q = new URL(location.href).searchParams;
+    const id = Number(q.get('id'));
+    const kind = q.get('kind') || 'run';
+
+    async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
+    async function getMyAccountId(){ try{ const s=await getSession(); if(!s?.user) return null; const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle(); if(error){ console.error(error); return null; } return data?.account_id ?? null; }catch(e){ console.error(e); return null; } }
+
+    function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
+
+    async function renderAuthBar(){
+      const bar = $('#authBar');
+      try{
+        const s = await getSession();
+        if(!s?.user){ bar.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`; }
+        else { bar.innerHTML = `ログイン中: <strong>${s.user.email||''}</strong> <a class="btn" style="margin-left:8px;" href="index.html?v=${V()}">トップへ</a>`; }
+      }catch(e){ bar.textContent='認証状態の取得に失敗しました'; console.error(e); }
+    }
+
+    function drawLineOnMap(map, polyline, geojson){
+      try{
+        if(geojson){ let gj = typeof geojson==='string'? JSON.parse(geojson): geojson; L.geoJSON(gj, { style:{ color:'#ef4444', weight:5 }}).addTo(map); try{ const layer = L.geoJSON(gj); map.fitBounds(layer.getBounds(), { padding:[20,20] }); }catch(_){} return; }
+        if(polyline){ const latlngs = decodePolyline(polyline); if(latlngs.length){ const line=L.polyline(latlngs,{ color:'#ef4444', weight:5 }).addTo(map); map.fitBounds(line.getBounds(),{ padding:[20,20] }); } }
+      }catch(e){ console.error('draw error', e); }
+    }
+
+    async function loadRun(){
+      const box = $('#meta'); const btn = $('#btnToRoute');
+      try{
+        const { data: run, error } = await client.from('runs').select('id,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
+        if(error || !run){ box.textContent='読み込み失敗'; console.error(error); return; }
+        const when = run.ended_at ? new Date(run.ended_at).toLocaleString() : (run.started_at? new Date(run.started_at).toLocaleString():'-');
+        const km = run.distance_m!=null ? (Number(run.distance_m)/1000).toFixed(2)+' km' : '-';
+        const min = run.duration_s!=null ? Math.round(Number(run.duration_s)/60)+' 分' : '-';
+        box.innerHTML = `<div>日時: ${when}</div><div class=\"muted\">距離: ${km} ・ 時間: ${min}</div>`;
+        const map = L.map('map').setView([35.68,139.76], 12);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
+        drawLineOnMap(map, run.polyline, run.geojson);
+
+        // ルート化ボタン
+        btn.style.display='inline-block';
+        btn.onclick = async ()=>{
+          try{
+            const acc = await getMyAccountId(); if(!acc){ alert('ログインが必要です'); return; }
+            const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(run.ended_at||run.started_at||Date.now()));
+            const payload = { name: `Run ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: run.id, polyline: run.polyline ?? null, geojson: run.geojson ?? null };
+            const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
+            if(e2 || !newRow){ console.error(e2); alert('作成に失敗'); return; }
+            location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=route&v=${V()}`;
+          }catch(e){ console.error(e); alert('作成に失敗'); }
+        };
+      }catch(e){ box.textContent='読み込み失敗'; console.error(e); }
+    }
+
+    async function loadRoute(){
+      const box = $('#meta'); const toggleWrap = $('#toggleWrap'); const toggle = $('#visToggle');
+      try{
+        const { data: route, error } = await client.from('routes').select('id,name,created_at,account_id,is_public,polyline,geojson').eq('id', id).maybeSingle();
+        if(error || !route){ box.textContent='読み込み失敗'; console.error(error); return; }
+        const when = route.created_at ? new Date(route.created_at).toLocaleString() : '-';
+        box.innerHTML = `<div>名称: <strong>${route.name||'(無題ルート)'}</strong></div><div class=\"muted\">作成日: ${when}</div>`;
+        const map = L.map('map').setView([35.68,139.76], 12);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
+        drawLineOnMap(map, route.polyline, route.geojson);
+
+        // 自分のものだけトグル表示
+        const acc = await getMyAccountId();
+        if(acc && acc === route.account_id){
+          toggleWrap.style.display='block';
+          toggle.checked = route.is_public === true;
+          toggle.onchange = async ()=>{
+            try{ const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', route.id); if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; } }
+            catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
+          };
+        } else {
+          toggleWrap.style.display='none';
+        }
+      }catch(e){ box.textContent='読み込み失敗'; console.error(e); }
+    }
+
+    async function init(){
+      await renderAuthBar();
+      if(!id){ alert('id が不正です'); return; }
+      if(kind==='run') { await loadRun(); }
+      else { await loadRoute(); }
+      client.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); if(kind==='run') await loadRun(); else await loadRoute(); });
+    }
+    document.addEventListener('DOMContentLoaded', init, { once:true });
+  </script>
 </head>
 <body>
-  <header class="topbar" style="padding:10px;border-bottom:1px solid #e5e7eb;">
-    <button id="backBtn" class="btn" onclick="history.back()">← 戻る</button>
-    <span style="margin-left:8px;font-weight:700;">ルート詳細</span>
-  </header>
+  <header class="card" id="authBar">認証状態を確認中…</header>
 
-  <main style="padding:12px;">
-    <h1 id="name" style="margin:6px 0 2px;">(名称)</h1>
-    <div style="color:#6b7280;margin-bottom:8px;">
-      <span id="createdAt">—</span> ・
-      <span id="distance">—</span> ・
-      <span id="duration">—</span>
+  <main class="card">
+    <div id="meta" style="margin-bottom:8px;">読み込み中…</div>
+    <div id="toggleWrap" style="display:none; margin:8px 0;">
+      <label><input type="checkbox" id="visToggle" /> 公開する</label>
     </div>
-    <div id="map" style="height:60vh;border:1px solid #e5e7eb;border-radius:8px;"></div>
-
-    <section class="actions" style="margin-top:12px;">
-      <button id="promote" class="btn" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">
-        このログをルート化
-      </button>
-    </section>
+    <div style="margin:8px 0;">
+      <button id="btnToRoute" class="btn" style="display:none;">このログをルート化する</button>
+    </div>
+    <div id="map"></div>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-
-  <!-- Supabase 初期化（UMD版） → storage.js（順序重要） -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script>
-    (function(){
-      const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-      if (!window.supabase || !window.supabase.createClient) { console.error('Supabase UMD load failed (detail)'); return; }
-      window.supabase = window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_ANON_KEY,
-        { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } }
-      );
-      console.log('[INIT] supabase ok (detail UMD)');
-    })();
-  </script>
-  <script>
-    // 共有バージョンによる cache-busting（module を動的挿入）
-    (function(){
-      var s=document.createElement('script');
-      s.type='module';
-      s.src='js/storage.js?v=' + (window.__APP_VERSION__||window.APP_VERSION||'');
-      document.head.appendChild(s);
-    })();
-  </script>
-
-  <!-- 画面ロジック（重複なし・1本化） -->
-  <script type="module">
-    function getId() {
-      const u = new URL(location.href);
-      return Number(u.searchParams.get('id'));
-    }
-
-    async function promoteRunToRoute(runId) {
-      const { data: run, error: e1 } = await supabase
-        .from('runs').select('*').eq('id', runId).single();
-      if (e1) { alert('取得失敗'); console.error(e1); return; }
-
-      const payload = {
-        name: run.name || `ログ昇格 ${new Date(run.ended_at || run.created_at).toLocaleString()}`,
-        origin: 'from_log',
-        geojson: run.geojson ?? null,
-        polyline: run.polyline ?? null,
-        distance_m: run.distance_m ?? null,
-        duration_s: run.duration_s ?? null,
-        elev_profile: run.elev_profile ?? null,
-        bbox: run.bbox ?? null,
-        promoted_from_run: run.id
-      };
-
-      const { error: e2 } = await supabase.from('routes').insert([payload]);
-      if (e2) { alert('ルート化に失敗'); console.error(e2); return; }
-
-      await supabase.from('runs').update({ is_promoted: true }).eq('id', runId);
-      alert('ルートとして保存しました');
-    }
-
-    document.getElementById('promote').addEventListener('click', async () => {
-      const id = getId();
-      if (!id) return;
-      await promoteRunToRoute(id);
-    });
-
-    // 詳細の読み込み
-    (async () => {
-      const id = getId();
-      const run = await window.dbGetById('logs', id);
-      if (!run) { alert('データが見つかりません'); return; }
-
-      document.getElementById('name').textContent = run.name || `Run #${id}`;
-      const dist = (run.distance_m ?? run.distanceMeters);
-      const durS = (run.duration_s ?? run.durationSec);
-      document.getElementById('distance').textContent = dist ? (Number(dist)/1000).toFixed(2) + ' km' : '—';
-      document.getElementById('duration').textContent = durS ? Math.round(durS/60) + ' 分' : '—';
-      document.getElementById('createdAt').textContent = (run.ended_at || run.endedAt) ? new Date(run.ended_at || run.endedAt).toLocaleString() : '—';
-
-      const map = L.map('map').setView([35.7015,139.5665], 13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
-
-      const coords = (run.polyline && decodePolyline(run.polyline)) || [];
-      if (coords.length) {
-        const line = L.polyline(coords, { color:'#ef4444', weight:5 }).addTo(map);
-        map.fitBounds(line.getBounds(), { padding:[30,30] });
-      }
-
-      function decodePolyline(str){
-        try{
-          let idx=0, lat=0, lng=0, arr=[];
-          while(idx<str.length){
-            let b,shift=0,result=0;
-            do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
-            let dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
-            shift=0; result=0;
-            do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
-            let dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
-            lat += dlat; lng += dlng;
-            arr.push([lat/1e5, lng/1e5]);
-          }
-          return arr;
-        }catch(e){ console.error('decodePolyline error', e); return []; }
-      }
-    })();
-  </script>
+  <footer class="muted" style="margin-top:14px;">v: <script>document.write(window.APP_VERSION)</script></footer>
 </body>
 </html>
+

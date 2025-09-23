@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>My Page – 自分のルート</title>
+  <title>My Page – 自分のルート/ログ</title>
   <style>
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
     header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; }
@@ -13,6 +13,11 @@
     .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; }
     .badge.pub { background:#d1fae5; color:#065f46; border-color:#a7f3d0; }
     .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+    .tabs { display:flex; gap:8px; margin:8px 0; }
+    .tab { padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; cursor:pointer; }
+    .tab.active { background:#111827; color:#fff; border-color:#111827; }
+    .panel { display:none; }
+    .panel.active { display:block; }
   </style>
 
   <script>
@@ -29,104 +34,86 @@
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (s)=>document.querySelector(s);
 
-    function visToBool(r) {
-      if (typeof r.is_public === "boolean") return r.is_public;
-      if (typeof r.visibility === "string") return r.visibility === "public";
-      return false;
+    async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
+    async function getMyAccountId(){
+      try{
+        const s = await getSession(); if(!s?.user) return null;
+        const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle();
+        if(error){ console.error(error); return null; }
+        return data?.account_id ?? null;
+      }catch(e){ console.error(e); return null; }
     }
 
-    async function getSession() {
-      const { data:{ session } } = await client.auth.getSession();
-      return session;
-    }
+    function visToBool(r){ return r?.is_public===true || r?.visibility==='public'; }
+    const fmtKm = (m)=> m==null?'-':(Number(m)/1000).toFixed(2)+' km';
+    const fmtMin = (s)=> s==null?'-':Math.round(Number(s)/60)+' 分';
 
-    async function getMyAccountId() {
-      const session = await getSession();
-      if (!session?.user) return null;
-      const { data, error } = await client.from("users").select("account_id").eq("id", session.user.id).single();
-      if (error) { console.warn("users.account_id error", error); return null; }
-      return data?.account_id ?? null;
-    }
-
-    async function renderGate() {
-      const gate = $("#gate");
-      const session = await getSession();
-      if (!session?.user) {
-        gate.innerHTML = `
-          未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>
-        `;
-        $("#list").innerHTML = "";
-        return false;
-      } else {
-        gate.innerHTML = `
-          ログイン中: <strong>${session.user.email || ""}</strong>
-          <span class="muted" style="margin-left:6px;">ID: ${session.user.id}</span>
-          <span style="margin-left:6px;"></span>
-          <a class="btn" href="index.html?v=${V()}">トップへ</a>
-          <button class="btn" id="btnSignOut">Sign out</button>
-        `;
-        $("#btnSignOut").onclick = async ()=>{ await client.auth.signOut(); await renderGate(); await loadMyRoutes(); };
+    async function renderGate(){
+      const gate = $('#gate');
+      try{
+        const s = await getSession();
+        if(!s?.user){ gate.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`; $('#list-routes').innerHTML=''; $('#list-runs').innerHTML=''; return false; }
+        gate.innerHTML = `ログイン中: <strong>${s.user.email||''}</strong> <span class="muted" style="margin-left:6px;">ID: ${s.user.id}</span> <a class="btn" style="margin-left:8px;" href="index.html?v=${V()}">トップへ</a> <button class="btn" id="btnSignOut">Sign out</button>`;
+        $('#btnSignOut').onclick = async ()=>{ await client.auth.signOut(); await renderGate(); await loadMyRoutes(); };
         return true;
-      }
+      }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
     }
 
-    async function loadMyRoutes() {
-      const box = $("#list");
-      if (!box) return;
-      const acc = await getMyAccountId();
-      if (!acc) { box.textContent = "未ログインのため表示できません。"; return; }
-      box.textContent = "読み込み中…";
-
+    async function loadMyRoutes(){
+      const box = $('#list-routes'); if(!box) return;
+      const acc = await getMyAccountId(); if(!acc){ box.textContent='未ログインのため表示できません。'; return; }
+      box.textContent='読み込み中…';
       try{
         const { data, error } = await client
           .from('routes')
-          .select('id,name,visibility,is_public,owner_account_id,account_id,created_at')
-          .or(`account_id.eq.${acc},owner_account_id.eq.${acc}`)
+          .select('id,name,created_at,is_public,route_type,source_run_id,account_id')
+          .eq('account_id', acc)
           .order('created_at', { ascending:false });
-        if (error) throw error;
-        const routes = data || [];
-        if (routes.length === 0) { box.textContent = "あなたのルートはまだありません。"; return; }
-
+        if(error) throw error;
+        const routes = data||[]; if(!routes.length){ box.textContent='あなたのルートはまだありません。'; return; }
         box.innerHTML = routes.map(r=>{
-          const when = r.created_at ? new Date(r.created_at).toLocaleString() : "-";
-          const isPub = visToBool(r);
-          const badge = isPub ? `<span class="badge pub">公開</span>` : `<span class="badge prv">非公開</span>`;
-          return `
-          <div class="card">
-            <div>
-              <div style=\"font-weight:600;\">${r.name ?? "(無題ルート)"} <span class=\"muted\">#${r.id}</span></div>
-              <div class=\"muted\" style=\"font-size:12px;\">${when}</div>
-            </div>
-            <div style=\"display:flex; gap:8px; align-items:center;\">
-              ${badge}
-              <a class=\"btn\" href=\"detail.html?v=${V()}&id=${encodeURIComponent(r.id)}\">詳細</a>
-            </div>
-          </div>
-        `;
-        }).join("");
-      }catch(e){
-        console.error('loadMyRoutes error', e);
-        box.textContent = '読み込みに失敗しました';
-      }
+          const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+          const badge = r.is_public ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
+          const from = r.route_type ? `<span class="muted" style="font-size:12px;">${r.route_type}${r.source_run_id?(' #'+r.source_run_id):''}</span>` : '';
+          return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${r.name||'(無題ルート)'} <span class=\"muted\">#${r.id}</span></div><div class=\"muted\" style=\"font-size:12px;\">${when}</div>${from?('<div>'+from+'</div>'):''}</div><div>${badge}</div></button>`;
+        }).join('');
+        document.querySelectorAll('#list-routes [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`; }); });
+      }catch(e){ box.textContent='読み込みに失敗しました'; console.error(e); }
     }
 
-    async function init() {
-      const ok = await renderGate();
-      if (ok) await loadMyRoutes();
-
-      // 認証変化で バー→一覧 をawait順で更新
-      client.auth.onAuthStateChange(async ()=>{
-        const ok2 = await renderGate();
-        if (ok2) { await loadMyRoutes(); }
-      });
-
-      // 戻る復帰時も更新
-      window.addEventListener("pageshow", async ()=>{
-        const ok3 = await renderGate();
-        if (ok3) { await loadMyRoutes(); }
-      });
+    async function loadMyRuns(){
+      const box = $('#list-runs'); if(!box) return;
+      const acc = await getMyAccountId(); if(!acc){ box.textContent='未ログインのため表示できません。'; return; }
+      box.textContent='読み込み中…';
+      try{
+        const { data, error } = await client
+          .from('runs')
+          .select('id,started_at,ended_at,distance_m,duration_s,account_id')
+          .eq('account_id', acc)
+          .order('started_at', { ascending:false });
+        if(error) throw error;
+        const runs = data||[]; if(!runs.length){ box.textContent='あなたのログはまだありません。'; return; }
+        box.innerHTML = runs.map(r=>{
+          const when = r.ended_at ? new Date(r.ended_at).toLocaleString() : (r.started_at?new Date(r.started_at).toLocaleString():'-');
+          return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${when}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
+        }).join('');
+        document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
+      }catch(e){ box.textContent='読み込みに失敗しました'; console.error(e); }
     }
-    document.addEventListener("DOMContentLoaded", init, { once:true });
+
+    async function init(){
+      // タブ
+      const tabRoutes = $('#tab-routes'); const tabRuns = $('#tab-runs');
+      const panelRoutes = $('#panel-routes'); const panelRuns = $('#panel-runs');
+      const activate = (which)=>{ const r=which==='routes'; tabRoutes.classList.toggle('active',r); tabRuns.classList.toggle('active',!r); panelRoutes.classList.toggle('active',r); panelRuns.classList.toggle('active',!r); };
+      tabRoutes.onclick = ()=>{ activate('routes'); loadMyRoutes(); };
+      tabRuns.onclick = ()=>{ activate('runs'); loadMyRuns(); };
+
+      const ok = await renderGate(); if(ok) await loadMyRoutes();
+      client.auth.onAuthStateChange(async ()=>{ const ok2=await renderGate(); if(ok2){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
+      window.addEventListener('pageshow', async ()=>{ const ok3=await renderGate(); if(ok3){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
+    }
+    document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
 </head>
 <body>
@@ -139,12 +126,19 @@
 
   <div id="gate" class="card">認証状態を確認中…</div>
 
-  <section>
-    <h2 style="margin:10px 0;">あなたのルート</h2>
-    <div id="list" class="muted">読み込み中…</div>
+  <div class="tabs">
+    <button id="tab-routes" class="tab active">ルート</button>
+    <button id="tab-runs" class="tab">ログ</button>
+  </div>
+  <section id="panel-routes" class="panel active">
+    <div id="list-routes" class="muted">読み込み中…</div>
+  </section>
+  <section id="panel-runs" class="panel">
+    <div id="list-runs" class="muted">読み込み中…</div>
   </section>
 
   <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
-  <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
+  <script>document.getElementById('ver').textContent = window.APP_VERSION;</script>
 </body>
 </html>
+

@@ -80,7 +80,8 @@
           `;
           $("#filters")?.classList.add("muted");
           $("#mineOnlyWrap")?.classList.add("muted");
-          $("#mineOnly")?.disabled = true;
+          const moff = document.getElementById('mineOnly');
+          if (moff) moff.disabled = true;
         } else {
           const email = session.user.email || "";
           bar.innerHTML = `
@@ -90,7 +91,8 @@
             <a class="btn" href="mypage.html?v=${V()}">マイページへ</a>
             <button class="btn" id="btnSignOut" style="margin-left:6px;">Sign out</button>
           `;
-          $("#mineOnly")?.removeAttribute("disabled");
+          const mon = document.getElementById('mineOnly');
+          if (mon) mon.removeAttribute('disabled');
           $("#filters")?.classList.remove("muted");
           $("#mineOnlyWrap")?.classList.remove("muted");
           const btn = $("#btnSignOut");

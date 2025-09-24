@@ -109,11 +109,7 @@
           if (!myAccountId){ box.textContent = 'アカウント情報が見つかりません。'; return; }
         }
 
-   let q = client
-   .from('routes')
-   .select('id,name,created_at,account_id,is_public')
-   .eq('is_public', true)
-   .order('created_at', { ascending:false });
+        let q = client.from('routes').select('id,name,created_at,account_id,is_public,visibility').or('is_public.eq.true,visibility.eq.public').order('created_at', { ascending:false });
 
         if (mineOnly && myAccountId) q = q.eq('account_id', myAccountId);
 
@@ -168,6 +164,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", init, { once:true });
+    setTimeout(()=>{ try{ const t=document.getElementById('authBar')?.textContent||''; if(t.includes('認証状態を確認中')) renderAuthBar(); }catch(_){} }, 2000);
   </script>
 </head>
 <body>

@@ -118,6 +118,12 @@
       tabRoutes.onclick = ()=>{ activate('routes'); loadMyRoutes(); };
       tabRuns.onclick = ()=>{ activate('runs'); loadMyRuns(); };
 
+      // ヘッダのトップリンクに現在のバージョンを付与
+      try{
+        const lnTop = document.getElementById('lnTop');
+        if (lnTop) lnTop.href = 'index.html?v=' + encodeURIComponent(window.APP_VERSION||'');
+      }catch(e){ console.warn('set header link failed', e); }
+
       const ok = await renderGate(); if(ok) await loadMyRoutes();
       client.auth.onAuthStateChange(async ()=>{ const ok2=await renderGate(); if(ok2){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
       window.addEventListener('pageshow', async ()=>{ const ok3=await renderGate(); if(ok3){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
@@ -129,7 +135,7 @@
   <header>
     <div style="font-weight:700;">My Page</div>
     <div>
-      <a class="btn" href="index.html?v=2025-09-23-11">トップへ</a>
+      <a id="lnTop" class="btn" href="index.html">トップへ</a>
     </div>
   </header>
 

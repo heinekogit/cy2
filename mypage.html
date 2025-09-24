@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Page – 自分のルート/ログ</title>
+  <link rel="icon" href="data:,">
   <style>
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
     header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; }
@@ -21,6 +22,11 @@
   </style>
 
   <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
 
   <!-- Supabase UMD -->
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -33,7 +39,11 @@
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (s)=>document.querySelector(s);
 
-    async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
+    async function getSession(){
+      try{ const { data:{ session } } = await client.auth.getSession(); if(session?.user) return session; }catch(e){ console.warn('getSession(getSession) warn', e); }
+      try{ const { data:{ user } } = await client.auth.getUser(); if(user) return { user }; }catch(e){ console.warn('getSession(getUser) warn', e); }
+      return null;
+    }
     async function getMyAccountId(){
       try{
         const s = await getSession(); if(!s?.user) return null;

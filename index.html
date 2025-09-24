@@ -40,8 +40,17 @@
     const $ = (sel) => document.querySelector(sel);
 
     async function getSession() {
-      const { data:{ session } } = await client.auth.getSession();
-      return session;
+      // まずローカルのセッションを取得
+      try{
+        const { data:{ session } } = await client.auth.getSession();
+        if (session?.user) return session;
+      }catch(e){ console.warn('getSession(getSession) warn', e); }
+      // フォールバックで getUser を呼び、ユーザーだけでも判定
+      try{
+        const { data:{ user } } = await client.auth.getUser();
+        if (user) return { user };
+      }catch(e){ console.warn('getSession(getUser) warn', e); }
+      return null;
     }
 
     async function getMyAccountId() {

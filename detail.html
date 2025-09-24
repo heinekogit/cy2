@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Detail</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <style>
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 920px; margin: 20px auto; padding: 0 12px; color:#111827; }
@@ -14,6 +15,11 @@
   </style>
 
   <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>

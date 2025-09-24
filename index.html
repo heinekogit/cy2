@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Route MVP – 公開ルート一覧</title>
+  <link rel="icon" href="data:,">
   <style>
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
     header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; }
@@ -18,6 +19,12 @@
   </style>
 
   <script src="js/version.js"></script>
+  <script>
+    // Fallback when version.js is not yet deployed
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
 
   <!-- Supabase UMD -->
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -171,8 +178,8 @@
   <header>
     <div style="font-weight:700;">Route MVP</div>
     <div>
-      <a class="btn" href="login.html?v=2025-09-23-12">ログイン</a>
-      <a class="btn" href="mypage.html?v=2025-09-23-12">マイページ</a>
+      <a class="btn" href="login.html?v=2025-09-24-01">ログイン</a>
+      <a class="btn" href="mypage.html?v=2025-09-24-01">マイページ</a>
     </div>
   </header>
 

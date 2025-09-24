@@ -157,6 +157,14 @@
 
     // 初期化
     async function init() {
+      // ヘッダのリンクに現在のバージョンを付与
+      try{
+        const v = (window.APP_VERSION||'');
+        const lnLogin = document.getElementById('lnLogin');
+        const lnMy = document.getElementById('lnMyPage');
+        if (lnLogin) lnLogin.href = 'login.html?v=' + encodeURIComponent(v);
+        if (lnMy) lnMy.href = 'mypage.html?v=' + encodeURIComponent(v);
+      }catch(e){ console.warn('set header links failed', e); }
       // フィルタ切替
       const mineOnly = $("#mineOnly");
       if (mineOnly) mineOnly.onchange = async ()=> {
@@ -187,8 +195,8 @@
   <header>
     <div style="font-weight:700;">Route MVP</div>
     <div>
-      <a class="btn" href="login.html?v=2025-09-24-01">ログイン</a>
-      <a class="btn" href="mypage.html?v=2025-09-24-01">マイページ</a>
+      <a id="lnLogin" class="btn" href="login.html">ログイン</a>
+      <a id="lnMyPage" class="btn" href="mypage.html">マイページ</a>
     </div>
   </header>
 

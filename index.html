@@ -61,12 +61,6 @@
       return data?.account_id ?? null;
     }
 
-    function visToBool(r) {
-      if (typeof r.is_public === "boolean") return r.is_public;
-      if (typeof r.visibility === "string") return r.visibility === "public";
-      return false;
-    }
-
     // 認証バー
     async function renderAuthBar() {
       try{
@@ -127,7 +121,10 @@
           if (!myAccountId){ box.textContent = 'アカウント情報が見つかりません。'; return; }
         }
 
-        let q = client.from('routes').select('id,name,created_at,account_id,is_public,visibility').or('is_public.eq.true,visibility.eq.public').order('created_at', { ascending:false });
+        let q = client.from('routes')
+          .select('id,name,created_at,account_id,is_public')
+          .eq('is_public', true)
+          .order('created_at', { ascending:false });
 
         if (mineOnly && myAccountId) q = q.eq('account_id', myAccountId);
 
@@ -139,7 +136,7 @@
         let html = '';
         for (const r of routes){
           const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-          const isPub = (r && (r.is_public===true || r.visibility==='public'));
+          const isPub = r?.is_public === true;
           const badge = isPub ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
           html += '<button class="card" style="width:100%;text-align:left;" data-id="'+r.id+'">\n'
                +   '<div><div style="font-weight:600;">'+(r.name||'(無題ルート)')+' <span class="muted">#'+r.id+'</span></div>'

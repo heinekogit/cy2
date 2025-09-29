@@ -135,5 +135,11 @@
   </main>
 
   <footer class="muted" style="margin-top:14px;">v: <script>document.write(window.APP_VERSION)</script></footer>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js?v=' + (window.APP_VERSION||''))
+        .catch(err => console.error('SW register failed', err));
+    }
+  </script>
 </body>
 </html>

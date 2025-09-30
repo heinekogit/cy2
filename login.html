@@ -12,6 +12,12 @@
     .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
     .btn{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer}
     .muted{color:#6b7280}
+    .tabs{display:flex;gap:10px;margin-bottom:12px}
+    .tab{padding:8px 14px;border:1px solid #d1d5db;border-radius:999px;background:#f3f4f6;cursor:pointer;font-size:14px}
+    .tab.active{background:#111827;color:#fff;border-color:#111827}
+    form.auth-form{display:flex;flex-direction:column;gap:10px}
+    form.auth-form .actions{display:flex;gap:10px}
+    #signupAgreeWrap{display:flex;align-items:center;gap:6px;font-size:14px}
   </style>
 
   <script src="js/version.js"></script>
@@ -31,39 +37,115 @@
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (s)=>document.querySelector(s);
 
-    async function refreshStatus() {
-      const { data:{ session } } = await client.auth.getSession();
-      const user = session?.user ?? null;
-      $("#status").textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
-      if (!user) {
-        $("#links").innerHTML = `<a class="btn" href="index.html?v=${V()}">トップへ</a>`;
-      } else {
-        $("#links").innerHTML = `
-          <a class=\"btn\" href=\"index.html?v=${V()}\">トップへ</a>
-          <a class=\"btn\" href=\"mypage.html?v=${V()}\">マイページへ</a>`;
-      }
+    const SIGNUP_REDIRECT = (() => {
+      try {
+        const url = new URL('login.html', window.location.href);
+        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+      } catch(_){}
+      return 'https://heinekogit.github.io/cy2/login.html';
+    })();
+
+    function setActiveAuthTab(which='login') {
+      const isLogin = which === 'login';
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      if (loginForm) loginForm.style.display = isLogin ? '' : 'none';
+      if (signupForm) signupForm.style.display = isLogin ? 'none' : '';
+      tabLogin?.classList.toggle('active', isLogin);
+      tabSignup?.classList.toggle('active', !isLogin);
     }
 
-    async function signIn() {
-      const email = $("#email").value.trim();
-      const password = $("#password").value;
+    function resetAuthForms() {
+      document.getElementById('loginForm')?.reset();
+      document.getElementById('signupForm')?.reset();
+      const agree = document.getElementById('signupAgree');
+      if (agree) agree.checked = false;
+    }
+
+    function setAuthFormsDisabled(disabled) {
+      document.querySelectorAll('#authForms input, #authForms button').forEach(el => {
+        if (el.id === 'btnSignOut') return;
+        el.disabled = disabled;
+      });
+      document.getElementById('authForms')?.classList.toggle('muted', disabled);
+    }
+
+    async function signIn(event) {
+      event?.preventDefault();
+      const email = $("#loginForm [name=email]")?.value.trim() || '';
+      const password = $("#loginForm [name=password]")?.value || '';
       if (!email || !password) { alert("メール/パスワードを入力してください"); return; }
       const { error } = await client.auth.signInWithPassword({ email, password });
       if (error) { alert("Sign in error: " + error.message); return; }
       await refreshStatus();
-      // 成功後はマイページへ
       window.location.href = "mypage.html?v=" + V();
     }
 
-    async function signOut() {
+    async function signUp(event) {
+      event?.preventDefault();
+      const email = $("#signupForm [name=email]")?.value.trim() || '';
+      const password = $("#signupForm [name=password]")?.value || '';
+      const agree = document.getElementById('signupAgree')?.checked ?? false;
+      if (!email || !password) { alert('メール/パスワードを入力してください'); return; }
+      if (!agree) { alert('利用規約に同意してください'); return; }
+      const payload = { email, password };
+      if (SIGNUP_REDIRECT) payload.options = { emailRedirectTo: SIGNUP_REDIRECT };
+      let redirectFallback = false;
+      let { data, error } = await client.auth.signUp(payload);
+      if (error && SIGNUP_REDIRECT && /redirect/i.test(error.message || '')) {
+        redirectFallback = true;
+        console.warn('signUp redirect error, retrying without explicit redirect', error);
+        ({ data, error } = await client.auth.signUp({ email, password }));
+      }
+      if (error) { alert('登録エラー: ' + error.message); return; }
+      console.info('signUp succeeded', data?.user?.id || '(no user id)');
+      const msg = redirectFallback
+        ? '登録しました。確認メールを送信しました（※リダイレクトURLの設定が未許可のため、SupabaseのSite URLに遷移します）。'
+        : '登録しました。確認メールを送信しました。メール内のリンクを開いてください。';
+      alert(msg);
+      setActiveAuthTab('login');
+      const loginEmail = document.querySelector('#loginForm [name=email]');
+      if (loginEmail) loginEmail.value = email;
+      document.querySelector('#loginForm [name=password]')?.focus();
+      document.getElementById('signupForm')?.reset();
+    }
+
+    async function signOut(event) {
+      event?.preventDefault();
       await client.auth.signOut();
+      resetAuthForms();
       await refreshStatus();
-      alert("Signed out");
+      alert('Signed out');
+    }
+
+    async function refreshStatus() {
+      const { data:{ session } } = await client.auth.getSession();
+      const user = session?.user ?? null;
+      document.getElementById('status').textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
+      if (!user) {
+        $("#links").innerHTML = `<a class="btn" href="index.html?v=${V()}">トップへ</a>`;
+        setAuthFormsDisabled(false);
+      } else {
+        $("#links").innerHTML = `
+          <a class=\"btn\" href=\"index.html?v=${V()}\">トップへ</a>
+          <a class=\"btn\" href=\"mypage.html?v=${V()}\">マイページへ</a>`;
+        setAuthFormsDisabled(true);
+      }
+    }
+
+    function setupAuthForms() {
+      document.getElementById('tabLogin')?.addEventListener('click', () => setActiveAuthTab('login'));
+      document.getElementById('tabSignup')?.addEventListener('click', () => setActiveAuthTab('signup'));
+      document.getElementById('loginForm')?.addEventListener('submit', signIn);
+      document.getElementById('signupForm')?.addEventListener('submit', signUp);
+      setActiveAuthTab('login');
     }
 
     async function init() {
-      $("#btnSignIn").onclick = signIn;
-      $("#btnSignOut").onclick = signOut;
+      setupAuthForms();
+      document.getElementById('btnSignOut')?.addEventListener('click', signOut);
       await refreshStatus();
       client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
     }
@@ -73,21 +155,52 @@
 <body>
   <h1>Login</h1>
 
-  <div class="card">
-    <label>メール</label>
-    <input id="email" type="email" placeholder="you@example.com" />
-    <label>パスワード</label>
-    <input id="password" type="password" placeholder="••••••••" />
-    <div class="row">
-      <button class="btn" id="btnSignIn">Sign in</button>
-      <button class="btn" id="btnSignOut">Sign out</button>
+  <div id="authForms" class="card">
+    <div class="tabs">
+      <button type="button" id="tabLogin" class="tab active">ログイン</button>
+      <button type="button" id="tabSignup" class="tab">新規登録</button>
     </div>
+
+    <form id="loginForm" class="auth-form">
+      <div>
+        <label>メール</label>
+        <input id="loginEmail" name="email" type="email" placeholder="you@example.com" required />
+      </div>
+      <div>
+        <label>パスワード</label>
+        <input id="loginPassword" name="password" type="password" placeholder="••••••••" required />
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit" id="btnSignIn">Sign in</button>
+      </div>
+    </form>
+
+    <form id="signupForm" class="auth-form" style="display:none;">
+      <div>
+        <label>メール</label>
+        <input name="email" type="email" placeholder="you@example.com" required />
+      </div>
+      <div>
+        <label>パスワード</label>
+        <input name="password" type="password" placeholder="••••••••" required />
+      </div>
+      <div id="signupAgreeWrap">
+        <label><input type="checkbox" id="signupAgree" required /> 利用規約に同意する</label>
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit" id="btnSignUp">新規登録</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:0;">登録すると確認メールが送信されます。</p>
+    </form>
   </div>
 
   <div class="card">
     <strong>現在の状態</strong>
     <pre id="status" class="muted">loading...</pre>
     <div id="links" class="row"></div>
+    <div class="row">
+      <button class="btn" id="btnSignOut">Sign out</button>
+    </div>
   </div>
 
   <footer class="muted">v: <script>document.write(window.APP_VERSION)</script></footer>

@@ -16,14 +16,6 @@
     .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
     #routesWrap { margin-top: 14px; }
     #filters { margin: 8px 0 4px; display:flex; gap:10px; align-items:center; }
-    #authForms { display:flex; flex-direction:column; gap:12px; }
-    .tabs { display:flex; gap:8px; margin:4px 0 8px; }
-    .tab { padding:6px 12px; border:1px solid #d1d5db; border-radius:999px; background:#f9fafb; cursor:pointer; font-size:14px; }
-    .tab.active { background:#111827; color:#fff; border-color:#111827; }
-    #authForms form { display:flex; flex-direction:column; gap:10px; }
-    #authForms input[type="email"], #authForms input[type="password"] { width:100%; padding:8px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; }
-    #authForms label { font-size:14px; }
-    #authForms .actions { display:flex; gap:10px; }
   </style>
 
   <script src="js/version.js"></script>
@@ -69,103 +61,6 @@
       return data?.account_id ?? null;
     }
 
-    function toggleAuthForms(show) {
-      const wrap = document.getElementById('authForms');
-      if (!wrap) return;
-      wrap.hidden = !show;
-      if (show) {
-        setActiveAuthTab('login');
-      }
-    }
-
-    function setActiveAuthTab(which='login') {
-      const loginForm = document.getElementById('loginForm');
-      const signupForm = document.getElementById('signupForm');
-      const tabLogin = document.getElementById('tabLogin');
-      const tabSignup = document.getElementById('tabSignup');
-      const isLogin = which === 'login';
-      if (loginForm) loginForm.style.display = isLogin ? '' : 'none';
-      if (signupForm) signupForm.style.display = isLogin ? 'none' : '';
-      tabLogin?.classList.toggle('active', isLogin);
-      tabSignup?.classList.toggle('active', !isLogin);
-    }
-
-    function resetAuthForms() {
-      document.getElementById('loginForm')?.reset();
-      document.getElementById('signupForm')?.reset();
-      const agree = document.getElementById('signupAgree');
-      if (agree) agree.checked = false;
-    }
-
-    async function signIn(event) {
-      event?.preventDefault();
-      try {
-        const email = document.querySelector('#loginForm [name="email"]')?.value.trim() || '';
-        const password = document.querySelector('#loginForm [name="password"]')?.value || '';
-        if (!email || !password) { alert('メール/パスワードを入力してください'); return; }
-        const { error } = await client.auth.signInWithPassword({ email, password });
-        if (error) { alert('ログインエラー: ' + error.message); return; }
-        resetAuthForms();
-        toggleAuthForms(false);
-        await renderAuthBar();
-        await loadPublicRoutes(document.getElementById('mineOnly')?.checked === true);
-      } catch(e) {
-        console.error('signIn error', e);
-        alert('ログイン処理でエラーが発生しました');
-      }
-    }
-
-    const SIGNUP_REDIRECT = (() => {
-      try {
-        const url = new URL('login.html', window.location.href);
-        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
-      } catch(_){}
-      return 'https://heinekogit.github.io/cy2/login.html';
-    })();
-
-    async function signUp(event) {
-      event?.preventDefault();
-      try {
-        const email = document.querySelector('#signupForm [name="email"]')?.value.trim() || '';
-        const password = document.querySelector('#signupForm [name="password"]')?.value || '';
-        const agree = document.getElementById('signupAgree')?.checked ?? false;
-        if (!email || !password) { alert('メール/パスワードを入力してください'); return; }
-        if (!agree) { alert('利用規約へ同意してください'); return; }
-        const payload = { email, password };
-        if (SIGNUP_REDIRECT) payload.options = { emailRedirectTo: SIGNUP_REDIRECT };
-        let redirectFallback = false;
-        let { data, error } = await client.auth.signUp(payload);
-        if (error && SIGNUP_REDIRECT && /redirect/i.test(error.message || '')) {
-          redirectFallback = true;
-          console.warn('signUp redirect error, retrying without explicit redirect', error);
-          ({ data, error } = await client.auth.signUp({ email, password }));
-        }
-        if (error) { alert('登録エラー: ' + error.message); return; }
-        console.info('signUp succeeded', data?.user?.id || '(no user id)');
-        const msg = redirectFallback
-          ? '登録しました。確認メールを送信しました（※リダイレクトURLの設定が未許可のため、SupabaseのSite URLに遷移します）。'
-          : '登録しました。確認メールを送信しました。メール内のリンクを開いてください。';
-        alert(msg);
-        document.getElementById('signupForm')?.reset();
-        setActiveAuthTab('login');
-        const loginEmail = document.querySelector('#loginForm [name="email"]');
-        if (loginEmail) loginEmail.value = email;
-      } catch(e) {
-        console.error('signUp error', e);
-        alert('新規登録処理でエラーが発生しました');
-      }
-    }
-
-    function setupAuthForms() {
-      const tabLogin = document.getElementById('tabLogin');
-      const tabSignup = document.getElementById('tabSignup');
-      tabLogin?.addEventListener('click', () => setActiveAuthTab('login'));
-      tabSignup?.addEventListener('click', () => setActiveAuthTab('signup'));
-      document.getElementById('loginForm')?.addEventListener('submit', signIn);
-      document.getElementById('signupForm')?.addEventListener('submit', signUp);
-      setActiveAuthTab('login');
-    }
-
     // 認証バー
     async function renderAuthBar() {
       try{
@@ -177,8 +72,6 @@
             未ログインです。
             <a class="btn" href="login.html?v=${V()}">ログインへ</a>
           `;
-          resetAuthForms();
-          toggleAuthForms(true);
           $("#filters")?.classList.add("muted");
           $("#mineOnlyWrap")?.classList.add("muted");
           const moff = document.getElementById('mineOnly');
@@ -202,7 +95,6 @@
             await renderAuthBar();
             await loadPublicRoutes($("#mineOnly")?.checked === true);
           };
-          toggleAuthForms(false);
         }
       }catch(e){
         console.error('renderAuthBar error', e);
@@ -278,8 +170,6 @@
         await loadPublicRoutes(mineOnly.checked === true);
       };
 
-      setupAuthForms();
-
       await renderAuthBar();
       await loadPublicRoutes(mineOnly?.checked === true);
 
@@ -310,47 +200,6 @@
   </header>
 
   <div id="authBar" class="card">認証状態を確認中…</div>
-
-  <section id="authForms" class="card" hidden>
-    <h2 style="font-size:18px; margin:0;">ログイン / 新規登録</h2>
-    <div class="tabs">
-      <button type="button" id="tabLogin" class="tab active">ログイン</button>
-      <button type="button" id="tabSignup" class="tab">新規登録</button>
-    </div>
-
-    <form id="loginForm">
-      <div>
-        <label class="muted" style="display:block;">メールアドレス</label>
-        <input type="email" name="email" placeholder="you@example.com" required />
-      </div>
-      <div>
-        <label class="muted" style="display:block;">パスワード</label>
-        <input type="password" name="password" placeholder="••••••••" required />
-      </div>
-      <div class="actions">
-        <button class="btn" type="submit">ログイン</button>
-      </div>
-    </form>
-
-    <form id="signupForm" style="display:none;">
-      <div>
-        <label class="muted" style="display:block;">メールアドレス</label>
-        <input type="email" name="email" placeholder="you@example.com" required />
-      </div>
-      <div>
-        <label class="muted" style="display:block;">パスワード</label>
-        <input type="password" name="password" placeholder="••••••••" required />
-      </div>
-      <div>
-        <label><input type="checkbox" id="signupAgree" required /> 利用規約に同意する</label>
-      </div>
-      <div class="actions">
-        <button class="btn" type="submit">新規登録</button>
-      </div>
-    </form>
-
-    <p class="muted" style="font-size:12px; margin:0;">登録後は確認メールのリンクを開いてください。</p>
-  </section>
 
   <section id="routesWrap">
     <div id="filters">

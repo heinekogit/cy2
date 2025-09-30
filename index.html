@@ -115,6 +115,8 @@
       }
     }
 
+    const SIGNUP_REDIRECT = 'https://heinekogit.github.io/cy2/login.html';
+
     async function signUp(event) {
       event?.preventDefault();
       try {
@@ -123,7 +125,11 @@
         const agree = document.getElementById('signupAgree')?.checked ?? false;
         if (!email || !password) { alert('メール/パスワードを入力してください'); return; }
         if (!agree) { alert('利用規約へ同意してください'); return; }
-        const { error } = await client.auth.signUp({ email, password });
+        const { error } = await client.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: SIGNUP_REDIRECT }
+        });
         if (error) { alert('登録エラー: ' + error.message); return; }
         alert('登録しました。確認メールを送信しました。メール内のリンクを開いてください。');
         document.getElementById('signupForm')?.reset();

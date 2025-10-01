@@ -44,8 +44,29 @@
       const bar = $('#authBar');
       try{
         const s = await getSession();
-        if(!s?.user){ bar.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`; }
-        else { bar.innerHTML = `ログイン中: <strong>${s.user.email||''}</strong> <a class="btn" style="margin-left:8px;" href="index.html?v=${V()}">トップへ</a>`; }
+        if(!s?.user){
+          bar.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`;
+          return;
+        }
+        const email = s.user.email || '';
+        bar.innerHTML = `
+          ログイン中: <strong>${email}</strong>
+          <button id="btnSignOut" class="btn" style="margin-left:8px">Sign out</button>
+          <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
+          <a class="btn" style="margin-left:6px" href="index.html?v=${V()}">トップへ</a>
+        `;
+        const btn = $('#btnSignOut');
+        if (btn) btn.onclick = async ()=>{
+          try{
+            btn.disabled = true;
+            btn.textContent = 'Signing out…';
+            await client.auth.signOut();
+          }catch(e){
+            console.error(e);
+          }finally{
+            location.href = 'index.html?v=' + V();
+          }
+        };
       }catch(e){ bar.textContent='認証状態の取得に失敗しました'; console.error(e); }
     }
 

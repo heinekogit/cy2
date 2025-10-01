@@ -76,24 +76,29 @@
           $("#mineOnlyWrap")?.classList.add("muted");
           const moff = document.getElementById('mineOnly');
           if (moff) moff.disabled = true;
+          return;
         } else {
+          $("#filters")?.classList.remove("muted");
+          $("#mineOnlyWrap")?.classList.remove("muted");
+          const mon = document.getElementById('mineOnly');
+          if (mon) mon.removeAttribute('disabled');
           const email = session.user.email || "";
           bar.innerHTML = `
             ログイン中: <strong>${email}</strong>
-            <span class="muted" style="margin-left:6px;">ID: ${session.user.id}</span>
-            <span style="margin-left:8px;"></span>
-            <a class="btn" href="mypage.html?v=${V()}">マイページへ</a>
-            <button class="btn" id="btnSignOut" style="margin-left:6px;">Sign out</button>
+            <button id="btnSignOut" class="btn" style="margin-left:8px">Sign out</button>
+            <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
           `;
-          const mon = document.getElementById('mineOnly');
-          if (mon) mon.removeAttribute('disabled');
-          $("#filters")?.classList.remove("muted");
-          $("#mineOnlyWrap")?.classList.remove("muted");
           const btn = $("#btnSignOut");
           if (btn) btn.onclick = async () => {
-            await client.auth.signOut();
-            await renderAuthBar();
-            await loadPublicRoutes($("#mineOnly")?.checked === true);
+            try {
+              btn.disabled = true;
+              btn.textContent = 'Signing out…';
+              await client.auth.signOut();
+            } catch(e) {
+              console.error('signOut error', e);
+            } finally {
+              location.href = 'index.html?v=' + V();
+            }
           };
         }
       }catch(e){

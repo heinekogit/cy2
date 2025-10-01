@@ -61,9 +61,30 @@
       const gate = $('#gate');
       try{
         const s = await getSession();
-        if(!s?.user){ gate.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`; $('#list-routes').innerHTML=''; $('#list-runs').innerHTML=''; return false; }
-        gate.innerHTML = `ログイン中: <strong>${s.user.email||''}</strong> <span class="muted" style="margin-left:6px;">ID: ${s.user.id}</span> <a class="btn" style="margin-left:8px;" href="index.html?v=${V()}">トップへ</a> <button class="btn" id="btnSignOut">Sign out</button>`;
-        $('#btnSignOut').onclick = async ()=>{ await client.auth.signOut(); await renderGate(); await loadMyRoutes(); };
+        if(!s?.user){
+          gate.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`;
+          $('#list-routes').innerHTML='';
+          $('#list-runs').innerHTML='';
+          return false;
+        }
+        const email = s.user.email || '';
+        gate.innerHTML = `
+          ログイン中: <strong>${email}</strong>
+          <button class="btn" id="btnSignOut" style="margin-left:8px">Sign out</button>
+          <a class="btn" style="margin-left:6px;" href="index.html?v=${V()}">トップへ</a>
+        `;
+        const btn = $('#btnSignOut');
+        if (btn) btn.onclick = async ()=>{
+          try{
+            btn.disabled = true;
+            btn.textContent = 'Signing out…';
+            await client.auth.signOut();
+          }catch(e){
+            console.error(e);
+          }finally{
+            location.href = 'index.html?v=' + V();
+          }
+        };
         return true;
       }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
     }

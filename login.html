@@ -72,15 +72,26 @@
       document.getElementById('authForms')?.classList.toggle('muted', disabled);
     }
 
+    function showStatusMessage(msg){
+      const box = document.getElementById('status');
+      if (box) box.textContent = msg;
+    }
+
     async function signIn(event) {
       event?.preventDefault();
       const email = $("#loginForm [name=email]")?.value.trim() || '';
       const password = $("#loginForm [name=password]")?.value || '';
       if (!email || !password) { alert("メール/パスワードを入力してください"); return; }
-      const { error } = await client.auth.signInWithPassword({ email, password });
-      if (error) { alert("Sign in error: " + error.message); return; }
-      await refreshStatus();
-      window.location.href = "mypage.html?v=" + V();
+      try {
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) { alert("Sign in error: " + error.message); return; }
+        console.info('signIn succeeded', data?.user?.id || '(no user id)');
+        await refreshStatus();
+        window.location.href = "mypage.html?v=" + V();
+      } catch (err) {
+        console.error('signIn unexpected error', err);
+        alert('Sign in error: ' + (err?.message || err));
+      }
     }
 
     async function signUp(event) {
@@ -93,45 +104,60 @@
       const payload = { email, password };
       if (SIGNUP_REDIRECT) payload.options = { emailRedirectTo: SIGNUP_REDIRECT };
       let redirectFallback = false;
-      let { data, error } = await client.auth.signUp(payload);
-      if (error && SIGNUP_REDIRECT && /redirect/i.test(error.message || '')) {
-        redirectFallback = true;
-        console.warn('signUp redirect error, retrying without explicit redirect', error);
-        ({ data, error } = await client.auth.signUp({ email, password }));
+      try {
+        let { data, error } = await client.auth.signUp(payload);
+        if (error && SIGNUP_REDIRECT && /redirect/i.test(error.message || '')) {
+          redirectFallback = true;
+          console.warn('signUp redirect error, retrying without explicit redirect', error);
+          ({ data, error } = await client.auth.signUp({ email, password }));
+        }
+        if (error) { alert('登録エラー: ' + error.message); return; }
+        console.info('signUp succeeded', data?.user?.id || '(no user id)');
+        const msg = redirectFallback
+          ? '登録しました。確認メールを送信しました（※リダイレクトURLの設定が未許可のため、SupabaseのSite URLに遷移します）。'
+          : '登録しました。確認メールを送信しました。メール内のリンクを開いてください。';
+        alert(msg);
+        setActiveAuthTab('login');
+        const loginEmail = document.querySelector('#loginForm [name=email]');
+        if (loginEmail) loginEmail.value = email;
+        document.querySelector('#loginForm [name=password]')?.focus();
+        document.getElementById('signupForm')?.reset();
+      } catch (err) {
+        console.error('signUp unexpected error', err);
+        alert('登録エラー: ' + (err?.message || err));
       }
-      if (error) { alert('登録エラー: ' + error.message); return; }
-      console.info('signUp succeeded', data?.user?.id || '(no user id)');
-      const msg = redirectFallback
-        ? '登録しました。確認メールを送信しました（※リダイレクトURLの設定が未許可のため、SupabaseのSite URLに遷移します）。'
-        : '登録しました。確認メールを送信しました。メール内のリンクを開いてください。';
-      alert(msg);
-      setActiveAuthTab('login');
-      const loginEmail = document.querySelector('#loginForm [name=email]');
-      if (loginEmail) loginEmail.value = email;
-      document.querySelector('#loginForm [name=password]')?.focus();
-      document.getElementById('signupForm')?.reset();
     }
 
     async function signOut(event) {
       event?.preventDefault();
-      await client.auth.signOut();
-      resetAuthForms();
-      await refreshStatus();
-      alert('Signed out');
+      try {
+        await client.auth.signOut();
+        resetAuthForms();
+        await refreshStatus();
+        alert('Signed out');
+      } catch (err) {
+        console.error('signOut error', err);
+        alert('Sign out error: ' + (err?.message || err));
+      }
     }
 
     async function refreshStatus() {
-      const { data:{ session } } = await client.auth.getSession();
-      const user = session?.user ?? null;
-      document.getElementById('status').textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
-      if (!user) {
-        $("#links").innerHTML = `<a class="btn" href="index.html?v=${V()}">トップへ</a>`;
-        setAuthFormsDisabled(false);
-      } else {
-        $("#links").innerHTML = `
-          <a class=\"btn\" href=\"index.html?v=${V()}\">トップへ</a>
-          <a class=\"btn\" href=\"mypage.html?v=${V()}\">マイページへ</a>`;
-        setAuthFormsDisabled(true);
+      try {
+        const { data:{ session } } = await client.auth.getSession();
+        const user = session?.user ?? null;
+        document.getElementById('status').textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
+        if (!user) {
+          $("#links").innerHTML = `<a class="btn" href="index.html?v=${V()}">トップへ</a>`;
+          setAuthFormsDisabled(false);
+        } else {
+          $("#links").innerHTML = `
+            <a class=\"btn\" href=\"index.html?v=${V()}\">トップへ</a>
+            <a class=\"btn\" href=\"mypage.html?v=${V()}\">マイページへ</a>`;
+          setAuthFormsDisabled(true);
+        }
+      } catch (err) {
+        console.error('refreshStatus error', err);
+        showStatusMessage('error: ' + (err?.message || err));
       }
     }
 

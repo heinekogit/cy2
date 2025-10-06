@@ -17,6 +17,33 @@ self.addEventListener('activate', event => {
   })());
 });
 
+// ✅ fetch：HTMLだけはキャッシュしない（ここを追加）
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  const isHTML =
+    req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+
+  event.respondWith((async () => {
+    try {
+      // HTMLは no-store で都度ネット取得
+      const net = await fetch(req, isHTML ? { cache: 'no-store' } : undefined);
+
+      // HTML以外のみキャッシュへ保存
+      if (!isHTML) {
+        const clone = net.clone();
+        caches.open(CACHE_NAME).then(c => c.put(req, clone));
+      }
+
+      return net;
+    } catch {
+      // オフライン時のフォールバック
+      const cache = await caches.match(req);
+      return cache || Response.error();
+    }
+  })());
+});
+
 // HTMLはキャッシュしない（常に最新を取得）。静的資産のみキャッシュ。
 self.addEventListener('fetch', event => {
   const req = event.request;

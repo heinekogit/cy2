@@ -134,10 +134,11 @@
         await client.auth.signOut();
         resetAuthForms();
         await refreshStatus();
-        alert('Signed out');
       } catch (err) {
         console.error('signOut error', err);
         alert('Sign out error: ' + (err?.message || err));
+      } finally {
+        window.location.href = 'index.html?v=' + V();
       }
     }
 

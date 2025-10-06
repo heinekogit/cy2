@@ -108,7 +108,16 @@
           return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${r.name||'(無題ルート)'} <span class=\"muted\">#${r.id}</span></div><div class=\"muted\" style=\"font-size:12px;\">${when}</div>${from?('<div>'+from+'</div>'):''}</div><div>${badge}</div></button>`;
         }).join('');
         document.querySelectorAll('#list-routes [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`; }); });
-      }catch(e){ box.textContent='読み込みに失敗しました: ' + (e && e.message ? e.message : e); console.error(e); }
+      }catch(e){
+        const msg = (e && e.message ? e.message : String(e||'')).toLowerCase();
+        if (msg.includes('runs.account_id')) {
+          console.warn('loadMyRuns: account_id column missing, treating as empty list');
+          box.textContent = 'あなたのログはまだありません。';
+        } else {
+          box.textContent = '読み込みに失敗しました: ' + (e && e.message ? e.message : e);
+        }
+        console.error(e);
+      }
     }
 
     async function loadMyRuns(){

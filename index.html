@@ -97,7 +97,8 @@
             } catch(e) {
               console.error('signOut error', e);
             } finally {
-              location.href = 'index.html?v=' + V();
+              const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+              location.replace(url);
             }
           };
         }

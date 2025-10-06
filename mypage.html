@@ -82,7 +82,8 @@
           }catch(e){
             console.error(e);
           }finally{
-            location.href = 'index.html?v=' + V();
+            const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+            location.replace(url);
           }
         };
         return true;
@@ -109,14 +110,16 @@
         }).join('');
         document.querySelectorAll('#list-routes [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`; }); });
       }catch(e){
-        const msg = (e && e.message ? e.message : String(e||'')).toLowerCase();
-        if (msg.includes('runs.account_id')) {
+        const message = e && e.message ? e.message : String(e||'');
+        const code = e && e.code ? String(e.code) : '';
+        const normalized = message.toLowerCase();
+        if (code === '42703' || normalized.includes('runs.account_id')) {
           console.warn('loadMyRuns: account_id column missing, treating as empty list');
           box.textContent = 'あなたのログはまだありません。';
         } else {
-          box.textContent = '読み込みに失敗しました: ' + (e && e.message ? e.message : e);
+          box.textContent = '読み込みに失敗しました: ' + message;
         }
-        console.error(e);
+        console.error('loadMyRuns error', e);
       }
     }
 

@@ -138,7 +138,8 @@
         console.error('signOut error', err);
         alert('Sign out error: ' + (err?.message || err));
       } finally {
-        window.location.href = 'index.html?v=' + V();
+        const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+        window.location.replace(url);
       }
     }
 

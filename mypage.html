@@ -140,7 +140,18 @@
           return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${when}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
         }).join('');
         document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
-      }catch(e){ box.textContent='読み込みに失敗しました: ' + (e && e.message ? e.message : e); console.error(e); }
+      }catch(e){
+        const message = e && e.message ? e.message : String(e||'');
+        const code = e && e.code ? String(e.code) : '';
+        const normalized = message.toLowerCase();
+        if (code === '42703' || normalized.includes('runs.account_id')) {
+          console.warn('loadMyRuns: account_id column missing, treating as empty list');
+          box.textContent = 'あなたのログはまだありません。';
+        } else {
+          box.textContent = '読み込みに失敗しました: ' + message;
+        }
+        console.error('loadMyRuns error', e);
+      }
     }
 
     async function init(){
@@ -158,7 +169,18 @@
       }catch(e){ console.warn('set header link failed', e); }
 
       const ok = await renderGate(); if(ok) await loadMyRoutes();
-      client.auth.onAuthStateChange(async ()=>{ const ok2=await renderGate(); if(ok2){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
+      client.auth.onAuthStateChange(async (_event, session)=>{
+        if (!session?.user) {
+          const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+          location.replace(url);
+          return;
+        }
+        const ok2 = await renderGate();
+        if(ok2){
+          if(tabRoutes.classList.contains('active')) await loadMyRoutes();
+          else await loadMyRuns();
+        }
+      });
       window.addEventListener('pageshow', async ()=>{ const ok3=await renderGate(); if(ok3){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });

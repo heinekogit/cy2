@@ -90,15 +90,21 @@
           `;
           const btn = $("#btnSignOut");
           if (btn) btn.onclick = async () => {
+            btn.disabled = true;
+            btn.textContent = 'Signing out…';
             try {
-              btn.disabled = true;
-              btn.textContent = 'Signing out…';
               await client.auth.signOut();
             } catch(e) {
               console.error('signOut error', e);
             } finally {
-              const url = 'index.html?v=' + V() + '&ts=' + Date.now();
-              location.replace(url);
+              try {
+                const mineOnly = document.getElementById('mineOnly');
+                if (mineOnly) mineOnly.checked = false;
+                await renderAuthBar();
+                await loadPublicRoutes(false);
+              } catch (refreshErr) {
+                console.error('post sign-out refresh failed', refreshErr);
+              }
             }
           };
         }

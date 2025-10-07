@@ -12,9 +12,12 @@
     .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
     .btn{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer}
     .muted{color:#6b7280}
-    .tabs{display:flex;gap:10px;margin-bottom:12px}
-    .tab{padding:8px 14px;border:1px solid #d1d5db;border-radius:999px;background:#f3f4f6;cursor:pointer;font-size:14px}
-    .tab.active{background:#111827;color:#fff;border-color:#111827}
+    .tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #e5e7eb}
+    .tab{padding:10px 16px;font-size:14px;font-weight:600;background:transparent;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;margin-bottom:-1px;transition:color .15s ease,border-color .15s ease}
+    .tab + .tab{margin-left:12px}
+    .tab:hover{color:#111827}
+    .tab.active{color:#111827;border-bottom-color:#2563eb}
+    .tab:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
     form.auth-form{display:flex;flex-direction:column;gap:10px}
     form.auth-form .actions{display:flex;gap:10px}
     #signupAgreeWrap{display:flex;align-items:center;gap:6px;font-size:14px}

@@ -90,21 +90,15 @@
           `;
           const btn = $("#btnSignOut");
           if (btn) btn.onclick = async () => {
-            btn.disabled = true;
-            btn.textContent = 'Signing out…';
             try {
+              btn.disabled = true;
+              btn.textContent = 'Signing out…';
               await client.auth.signOut();
             } catch(e) {
               console.error('signOut error', e);
             } finally {
-              try {
-                const mineOnly = document.getElementById('mineOnly');
-                if (mineOnly) mineOnly.checked = false;
-                await renderAuthBar();
-                await loadPublicRoutes(false);
-              } catch (refreshErr) {
-                console.error('post sign-out refresh failed', refreshErr);
-              }
+              const v = window.APP_VERSION || '';
+              location.href = `index.html?v=${v}&t=${Date.now()}`;
             }
           };
         }
@@ -186,9 +180,13 @@
       await loadPublicRoutes(mineOnly?.checked === true);
 
       // 認証変化で バー→一覧 をawait順で更新
-      client.auth.onAuthStateChange(async ()=>{
+      client.auth.onAuthStateChange(async (_event, session)=>{
         await renderAuthBar();
         await loadPublicRoutes($("#mineOnly")?.checked === true);
+        if (!session?.user) {
+          const v = window.APP_VERSION || '';
+          location.href = `index.html?v=${v}&t=${Date.now()}`;
+        }
       });
 
       // 履歴復帰（BFCache）時の再描画

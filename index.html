@@ -180,10 +180,11 @@
       await loadPublicRoutes(mineOnly?.checked === true);
 
       // 認証変化で バー→一覧 をawait順で更新
-      client.auth.onAuthStateChange(async (_event, session)=>{
+      client.auth.onAuthStateChange(async (event, session)=>{
         await renderAuthBar();
         await loadPublicRoutes($("#mineOnly")?.checked === true);
-        if (!session?.user) {
+        const shouldRedirect = event === 'SIGNED_OUT' || event === 'USER_DELETED';
+        if (shouldRedirect) {
           const v = window.APP_VERSION || '';
           location.href = `index.html?v=${v}&t=${Date.now()}`;
         }

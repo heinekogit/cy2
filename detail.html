@@ -34,6 +34,7 @@
     const q = new URL(location.href).searchParams;
     const id = Number(q.get('id'));
     const kind = q.get('kind') || 'run';
+    let __map;
 
     async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
     async function getMyAccountId(){ try{ const s=await getSession(); if(!s?.user) return null; const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle(); if(error){ console.error(error); return null; } return data?.account_id ?? null; }catch(e){ console.error(e); return null; } }
@@ -86,9 +87,18 @@
         const km = run.distance_m!=null ? (Number(run.distance_m)/1000).toFixed(2)+' km' : '-';
         const min = run.duration_s!=null ? Math.round(Number(run.duration_s)/60)+' 分' : '-';
         box.innerHTML = `<div>日時: ${when}</div><div class=\"muted\">距離: ${km} ・ 時間: ${min}</div>`;
-        const map = L.map('map').setView([35.68,139.76], 12);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
-        drawLineOnMap(map, run.polyline, run.geojson);
+        const mapEl = document.getElementById('map');
+        if (__map) {
+          __map.remove();
+          __map = undefined;
+        }
+        if (mapEl && mapEl._leaflet_id) {
+          mapEl._leaflet_id = null;
+          mapEl.innerHTML = '';
+        }
+        __map = L.map('map').setView([35.68,139.76], 12);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
+        drawLineOnMap(__map, run.polyline, run.geojson);
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -140,9 +150,18 @@
           ${ownerBlock}
           ${sourceBlock}
         `;
-        const map = L.map('map').setView([35.68,139.76], 12);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
-        drawLineOnMap(map, route.polyline, route.geojson);
+        const mapEl = document.getElementById('map');
+        if (__map) {
+          __map.remove();
+          __map = undefined;
+        }
+        if (mapEl && mapEl._leaflet_id) {
+          mapEl._leaflet_id = null;
+          mapEl.innerHTML = '';
+        }
+        __map = L.map('map').setView([35.68,139.76], 12);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
+        drawLineOnMap(__map, route.polyline, route.geojson);
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{

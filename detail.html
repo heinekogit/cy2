@@ -144,19 +144,29 @@
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(map);
         drawLineOnMap(map, route.polyline, route.geojson);
 
-        // 自分のものだけトグル表示
-        const acc = await getMyAccountId();
-        if(acc && acc === route.account_id){
-          toggleWrap.style.display='block';
-          toggle.checked = route.is_public === true;
-          toggle.onchange = async ()=>{
-            try{ const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', route.id); if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; } }
-            catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
-          };
-        } else {
+        // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
+        try{
+          const acc = await getMyAccountId();
+          if(acc && acc === route.account_id){
+            toggleWrap.style.display='block';
+            toggle.checked = route.is_public === true;
+            toggle.onchange = async ()=>{
+              try{
+                const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', route.id);
+                if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; }
+              }catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
+            };
+          } else {
+            toggleWrap.style.display='none';
+          }
+        }catch(toggleErr){
+          console.warn('owner toggle skipped', toggleErr);
           toggleWrap.style.display='none';
         }
-      }catch(e){ box.textContent='読み込み失敗'; console.error('loadRoute error', e); }
+      }catch(e){
+        box.textContent='読み込み失敗';
+        console.error('loadRoute error', e);
+      }
     }
 
     async function init(){

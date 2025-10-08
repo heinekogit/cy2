@@ -147,7 +147,7 @@
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
           const acc = await getMyAccountId();
-          if(acc && acc === route.account_id){
+          if(acc && String(acc) === String(route.account_id)){
             toggleWrap.style.display='block';
             toggle.checked = route.is_public === true;
             toggle.onchange = async ()=>{

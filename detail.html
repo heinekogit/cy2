@@ -109,7 +109,7 @@
       const box = $('#meta'); const toggleWrap = $('#toggleWrap'); const toggle = $('#visToggle');
       try{
         const { data: route, error } = await client.from('routes')
-          .select('id,name,description,created_at,account_id,is_public,route_type,source_run_id,distance_m,duration_s,polyline,geojson')
+          .select('*')
           .eq('id', id).maybeSingle();
         if(error || !route){ box.textContent='読み込み失敗'; console.error(error); return; }
         const when = route.created_at ? new Date(route.created_at).toLocaleString() : '-';
@@ -156,7 +156,7 @@
         } else {
           toggleWrap.style.display='none';
         }
-      }catch(e){ box.textContent='読み込み失敗'; console.error(e); }
+      }catch(e){ box.textContent='読み込み失敗'; console.error('loadRoute error', e); }
     }
 
     async function init(){

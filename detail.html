@@ -12,6 +12,35 @@
     .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; }
     #map { height: 60vh; border:1px solid #e5e7eb; border-radius:10px; }
     .muted{ color:#6b7280; }
+
+/* --- 描画モード：地図を実質フルスクリーン化 --- */
+body.mode-draw #map { height: calc(var(--vh, 1vh) * 100); }
+
+/* 描画ツールバー（パレット） */
+.draw-toolbar{
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 10px;
+  display: flex; gap: 8px; flex-wrap: wrap;
+  background: rgba(255,255,255,.96);
+  border: 1px solid #e5e7eb; border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.1);
+  z-index: 5000;
+}
+.draw-toolbar .btn { padding:8px 12px; border-radius:10px; }
+
+/* スマホ最適化 */
+@media (max-width: 600px) {
+  .draw-toolbar{ top: 8px; padding: 10px 12px; }
+  .draw-toolbar .btn{ padding: 10px 14px; }
+}
+
+/* 既存：閲覧/記録モードの高さ基準（そのまま利用） */
+#map { height: 50vh; transition: height .2s ease; }
+@media (max-width: 600px) { #map{ height: 45vh; } }
+body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
   </style>
 
   <script src="js/version.js"></script>
@@ -186,6 +215,8 @@
         box.textContent='読み込み失敗';
         console.error('loadRoute error', e);
       }
+
+      window.__currentRouteId = route.id;  // ← 保存時に使う
     }
 
     async function init(){
@@ -197,6 +228,124 @@
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
+
+<script>
+// --- モバイルvh補正（既に入れていなければ有効化） ---
+function setVH(){ document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px'); }
+window.addEventListener('resize', setVH, {passive:true}); setVH();
+
+// === 描画モード 管理 ===
+const Draw = {
+  active:false,
+  pts:[],            // {lat, lng} の配列
+  line:null,         // L.Polyline
+  markers:[],        // L.CircleMarker[]
+  _clickHandler:null
+};
+function updateDrawLayers(){
+  try{
+    if (!window.__map) return;
+    // 線
+    if (!Draw.line){
+      Draw.line = L.polyline(Draw.pts, {weight:5}).addTo(__map);
+    } else {
+      Draw.line.setLatLngs(Draw.pts);
+    }
+    // マーカー
+    Draw.markers.forEach(m=>m.remove());
+    Draw.markers = Draw.pts.map(p=> L.circleMarker([p.lat, p.lng], {radius:5, weight:2, fillOpacity:1}).addTo(__map));
+    // 表示範囲
+    if (Draw.pts.length>=2){
+      const b = L.latLngBounds(Draw.pts);
+      __map.fitBounds(b, {padding:[20,20], maxZoom:16});
+    } else if (Draw.pts.length===1){
+      __map.setView(Draw.pts[0], 16);
+    }
+    // ステータス
+    document.getElementById('drawStat').textContent = `点: ${Draw.pts.length} ・ 距離: ${fmtKm(sumDistance(Draw.pts))} km`;
+  }catch(e){ console.warn(e); }
+}
+function fmtKm(m){ return (m/1000).toFixed(2); }
+function haversine(a, b){
+  const R=6371000, toRad=(x)=>x*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat), dLng=toRad(b.lng-a.lng);
+  const s1=Math.sin(dLat/2), s2=Math.sin(dLng/2);
+  const h=s1*s1 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function sumDistance(pts){
+  if (pts.length<2) return 0;
+  let m=0; for(let i=1;i<pts.length;i++) m += haversine(pts[i-1], pts[i]);
+  return m;
+}
+
+function enterDrawMode(){
+  if (!window.__map){ alert('地図が初期化されていません'); return; }
+  document.body.classList.add('mode-draw');
+  document.getElementById('drawUI').style.display = 'flex';
+  Draw.active = true;
+  // 地図クリックで頂点追加
+  Draw._clickHandler = (ev)=>{
+    Draw.pts.push({ lat: ev.latlng.lat, lng: ev.latlng.lng });
+    updateDrawLayers();
+  };
+  __map.on('click', Draw._clickHandler);
+  setTimeout(()=> __map.invalidateSize(true), 220);
+}
+function exitDrawMode(){
+  Draw.active = false;
+  document.getElementById('drawUI').style.display = 'none';
+  document.body.classList.remove('mode-draw');
+  if (Draw._clickHandler && window.__map){ __map.off('click', Draw._clickHandler); }
+  Draw._clickHandler = null;
+  // レイヤは残してもよいが、通常画面を軽く保つため消去（好みで）
+  if (Draw.line){ Draw.line.remove(); Draw.line=null; }
+  Draw.markers.forEach(m=>m.remove());
+  Draw.markers=[];
+  setTimeout(()=> __map.invalidateSize(true), 220);
+}
+
+// 操作ボタン
+document.getElementById('btnDrawExit').onclick = exitDrawMode;
+document.getElementById('btnDrawUndo').onclick = ()=>{ if(Draw.pts.length){ Draw.pts.pop(); updateDrawLayers(); } };
+document.getElementById('btnDrawClear').onclick = ()=>{ Draw.pts=[]; updateDrawLayers(); };
+
+// 保存：GeoJSON LineString と距離を routes に保存（polyline は null に）
+async function saveDrawnRoute(){
+  try{
+    if (!window.__currentRouteId){ alert('ルートIDを特定できません'); return; }
+    if (Draw.pts.length<2){ alert('少なくとも2点以上が必要です'); return; }
+    // GeoJSON（[lng,lat]）
+    const coords = Draw.pts.map(p=> [p.lng, p.lat]);
+    const gj = { type:'LineString', coordinates: coords };
+    const distance_m = Math.round(sumDistance(Draw.pts));
+    const payload = { geojson: gj, polyline: null, distance_m };
+    const { error } = await window.client.from('routes').update(payload).eq('id', window.__currentRouteId);
+    if (error){ console.error(error); alert('保存に失敗しました'); return; }
+    alert('保存しました');
+    exitDrawMode();
+    // 再描画（最新値の反映）
+    if (typeof loadRoute === 'function') await loadRoute();
+  }catch(e){ console.error(e); alert('保存に失敗しました'); }
+}
+document.getElementById('btnDrawSave').onclick = saveDrawnRoute;
+
+// ページに「描画モード」開始ボタンを生やす（既存ボタン群の近くに）
+document.addEventListener('DOMContentLoaded', ()=>{
+  const host = document.querySelector('main .card') || document.querySelector('main');
+  const bar = document.createElement('div');
+  bar.style.margin = '8px 0';
+  // ルート詳細時のみ有効（run では非表示）
+  const canDraw = (new URL(location.href).searchParams.get('kind') || 'run') === 'route';
+  bar.innerHTML = canDraw ? `<button id="btnStartDraw" class="btn">描画モード</button>` : '';
+  if (bar.innerHTML){
+    const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
+    (tgt?.parentElement || host).insertBefore(bar, tgt);
+    document.getElementById('btnStartDraw').onclick = enterDrawMode;
+  }
+});
+</script>
+
 </head>
 <body>
   <header class="card" id="authBar"></header>
@@ -210,6 +359,16 @@
       <button id="btnToRoute" class="btn" style="display:none;">このログをルート化する</button>
     </div>
     <div id="map"></div>
+
+<!-- 描画モード用 パレット（必要時だけ表示） -->
+<div id="drawUI" class="draw-toolbar" style="display:none;">
+  <button id="btnDrawExit" class="btn">通常画面に戻る</button>
+  <button id="btnDrawUndo" class="btn">取り消し</button>
+  <button id="btnDrawClear" class="btn">全消去</button>
+  <button id="btnDrawSave" class="btn" style="background:#eef2ff;">保存</button>
+  <span class="muted" id="drawStat" style="align-self:center;">点: 0 ・ 距離: 0.00 km</span>
+</div>
+
   </main>
 
   <footer class="muted" style="margin-top:14px;">v: <script>document.write(window.APP_VERSION)</script></footer>

@@ -44,7 +44,37 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
   </style>
 
   <script src="js/version.js"></script>
-  <script>
+
+<script>
+  // 1) バージョン管理：変わったらSWもCacheも全消し → 強制再読込
+  async function hardRefreshIfVersionChanged() {
+    try {
+      const v = String(window.APP_VERSION || '');
+      const prev = localStorage.getItem('APP_VERSION');
+      if (prev && prev !== v) {
+        // 既存SWを全部解除
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        // 既存Cacheを全削除
+        if (window.caches?.keys) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        localStorage.setItem('APP_VERSION', v);
+        // ハードリロード
+        location.replace(location.pathname + '?v=' + encodeURIComponent(v) + '&t=' + Date.now());
+        return;
+      }
+      localStorage.setItem('APP_VERSION', v);
+    } catch (e) { console.warn('hardRefreshIfVersionChanged', e); }
+  }
+
+  // 2) すぐ実行（SW登録より先に）
+  hardRefreshIfVersionChanged();
+</script>
+<script>
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
     }
@@ -372,11 +402,39 @@ document.addEventListener('DOMContentLoaded', ()=>{
   </main>
 
   <footer class="muted" style="margin-top:14px;">v: <script>document.write(window.APP_VERSION)</script></footer>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./service-worker.js?v=' + (window.APP_VERSION||''))
-        .catch(err => console.error('SW register failed', err));
-    }
-  </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    // いったん既存SWを解除してから、バージョン付きURLで登録
+    (async () => {
+      try {
+        const v = window.APP_VERSION || '';
+        // 念のため登録前に不要SWを掃除（1度だけでOK）
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+
+        const swUrl = `./service-worker.js?v=${encodeURIComponent(v)}`;
+        const reg = await navigator.serviceWorker.register(swUrl, { scope: './' });
+
+        // すぐに新SWへ切替
+        if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); }
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              // 新SWが入ったので即時乗り換えを依頼
+              reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+
+        // 明示的にアップデートを促す
+        await reg.update();
+      } catch (e) {
+        console.error('SW register failed', e);
+      }
+    })();
+  }
+</script>
 </body>
 </html>

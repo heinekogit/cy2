@@ -1,68 +1,67 @@
-// 即時更新型 Service Worker（ネット優先・オフライン時のみキャッシュ）
-// index.html 側で `service-worker.js?v=__APP_VERSION__` で登録される前提。
-// その `v` を参照してキャッシュ名に反映し、デプロイ毎に自動ローテーションする。
-const VERSION = (()=>{
-  try { return new URL(self.location.href).searchParams.get('v') || 'dev'; }
-  catch(_) { return 'dev'; }
-})();
-const CACHE_NAME = `app-cache-${VERSION}`;
+// service-worker.js
+// 注意：このファイルもコミット毎に内容が何かしら変わる（例えば下の CACHE_VERSION を書き換える）ようにしてください。
+// あるいは登録時の ?v=APP_VERSION が変わるので、それでも十分です。
 
-self.addEventListener('install', event => { self.skipWaiting(); });
+const CACHE_VERSION = (new URL(self.location)).searchParams.get('v') || 'dev';
+const STATIC_CACHE = `static-${CACHE_VERSION}`;
 
-self.addEventListener('activate', event => {
-  event.waitUntil((async ()=>{
+// 即時適用
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // 旧SWの待機をスキップ
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    // 古いキャッシュ全部消す（自バージョン以外）
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
-    await self.clients.claim();
+    await Promise.all(keys.filter(k => k !== STATIC_CACHE).map(k => caches.delete(k)));
+    await self.clients.claim(); // すぐコントロール
   })());
 });
 
-// ✅ fetch：HTMLだけはキャッシュしない（ここを追加）
-self.addEventListener('fetch', event => {
+// 重要：HTML(=navigate)は必ずネットワーク優先 + no-store
+self.addEventListener('fetch', (event) => {
   const req = event.request;
-  const isHTML =
-    req.mode === 'navigate' ||
-    (req.headers.get('accept') || '').includes('text/html');
 
-  event.respondWith((async () => {
-    try {
-      // HTMLは no-store で都度ネット取得
-      const net = await fetch(req, isHTML ? { cache: 'no-store' } : undefined);
-
-      // HTML以外のみキャッシュへ保存
-      if (!isHTML) {
-        const clone = net.clone();
-        caches.open(CACHE_NAME).then(c => c.put(req, clone));
+  // ナビゲーション（HTML）
+  if (req.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        return await fetch(req, { cache: 'no-store' });
+      } catch (e) {
+        // オフライン時は最後のキャッシュ（あれば）→なければ簡易オフライン
+        const cached = await caches.match(req);
+        return cached || new Response('<h1>Offline</h1>', { headers: { 'Content-Type': 'text/html' }});
       }
+    })());
+    return;
+  }
 
-      return net;
-    } catch {
-      // オフライン時のフォールバック
-      const cache = await caches.match(req);
-      return cache || Response.error();
-    }
-  })());
-});
+  // 画像/JS/CSS など同一オリジン静的は Cache First（v付与で更新保証済み）
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
+  const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(url.pathname);
 
-// HTMLはキャッシュしない（常に最新を取得）。静的資産のみキャッシュ。
-self.addEventListener('fetch', event => {
-  const req = event.request;
-  const accept = req.headers.get('accept') || '';
-  const isHTML = req.mode === 'navigate' || accept.includes('text/html');
-
-  event.respondWith((async () => {
-    try {
-      const net = await fetch(req, isHTML ? { cache: 'no-store' } : undefined);
-      if (!isHTML) {
-        const clone = net.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-      }
-      return net;
-    } catch (e) {
-      // オフライン時などはキャッシュを試す（HTMLは通常入っていない想定）
-      const cached = await caches.match(req);
+  if (isStatic) {
+    event.respondWith((async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      const cached = await cache.match(req);
       if (cached) return cached;
-      throw e;
-    }
-  })());
+      const res = await fetch(req);
+      // OKなものだけ保存
+      if (res && res.status === 200) cache.put(req, res.clone());
+      return res;
+    })());
+    return;
+  }
+
+  // それ以外（APIなど）はネットワーク優先で良い
+  event.respondWith(fetch(req).catch(() => caches.match(req)));
+});
+
+// ページからのメッセージ（skipWaiting 等）
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

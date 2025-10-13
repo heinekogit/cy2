@@ -41,7 +41,27 @@ body.mode-draw #map { height: calc(var(--vh, 1vh) * 100); }
 #map { height: 50vh; transition: height .2s ease; }
 @media (max-width: 600px) { #map{ height: 45vh; } }
 body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
-  </style>
+
+.rec-overlay {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  display: none; gap: 8px;
+  background: rgba(255,255,255,.92);
+  border: 1px solid #e5e7eb; border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+  z-index: 5000;
+}
+.rec-overlay .stat { font-size: 12px; color: #374151; }
+.rec-overlay .stat strong { font-size: 14px; }
+@media (max-width: 600px) {
+  .rec-overlay { bottom: 10px; padding: 10px 12px; }
+  .rec-overlay .btn { padding: 10px 14px; border-radius: 12px; }
+}
+
+</style>
 
   <script src="js/version.js"></script>
 
@@ -399,7 +419,176 @@ document.addEventListener('DOMContentLoaded', ()=>{
   <span class="muted" id="drawStat" style="align-self:center;">点: 0 ・ 距離: 0.00 km</span>
 </div>
 
+<!-- 実走記録中にだけ出る小さなオーバーレイUI -->
+<div id="recUI" class="rec-overlay">
+  <div class="stat">時間: <strong id="recTime">0:00</strong></div>
+  <div class="stat">距離: <strong id="recDist">0.00 km</strong></div>
+  <button id="btnStopRec" class="btn">停止して保存</button>
+</div>
+
   </main>
+
+<script>
+// ==== 実走記録（Run 作成） ====
+// 依存: window.client（Supabase）, getMyAccountId(), __map（Leaflet）
+
+// 画面に「実走を記録」ボタンを生やす（既存ボタンの近くに）
+document.addEventListener('DOMContentLoaded', () => {
+  const host = document.querySelector('main .card') || document.querySelector('main');
+  const bar  = document.createElement('div');
+  bar.style.margin = '8px 0';
+  bar.innerHTML = `<button id="btnStartRec" class="btn">実走を記録</button>`;
+  const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
+  (tgt?.parentElement || host).insertBefore(bar, tgt);
+
+  document.getElementById('btnStartRec').onclick = startRunRecording;
+  document.getElementById('btnStopRec').onclick  = stopRunRecordingAndSave;
+});
+
+// 状態
+let _watchId = null, _timerId = null;
+let _recStartMs = 0;
+let _track = [];         // {lat,lng,ts,acc}[]
+let _meters = 0;
+let _lineLayer = null;   // L.Polyline
+let _lastP = null;
+
+function fmtMinSec(sec){ const m = Math.floor(sec/60), s = sec%60|0; return `${m}:${String(s).padStart(2,'0')}`; }
+function fmtKm(m){ return (m/1000).toFixed(2); }
+function haversine(a,b){
+  const R=6371000, toRad=x=>x*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat), dLng=toRad(b.lng-a.lng);
+  const s1=Math.sin(dLat/2), s2=Math.sin(dLng/2);
+  const h=s1*s1 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*s2*s2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+
+function showRecUI(show){ document.getElementById('recUI').style.display = show ? 'flex' : 'none'; }
+
+// 実走開始
+async function startRunRecording(){
+  // 認証チェック
+  const acc = await getMyAccountId();
+  if (!acc) { alert('ログインが必要です'); return; }
+
+  if (!navigator.geolocation) { alert('この端末は位置情報に対応していません'); return; }
+
+  // 状態初期化
+  _track = []; _meters = 0; _lastP = null; _recStartMs = Date.now();
+  document.getElementById('recTime').textContent = '0:00';
+  document.getElementById('recDist').textContent = '0.00 km';
+  showRecUI(true);
+
+  // 地図描画レイヤ初期化
+  try {
+    if (_lineLayer) { _lineLayer.remove(); _lineLayer = null; }
+    if (window.__map) { _lineLayer = L.polyline([], { color:'#ef4444', weight:5 }).addTo(__map); }
+  } catch(e){ console.warn(e); }
+
+  // 経過時間UI
+  _timerId = setInterval(()=>{
+    const sec = ((Date.now()-_recStartMs)/1000)|0;
+    document.getElementById('recTime').textContent = fmtMinSec(sec);
+    document.getElementById('recDist').textContent = `${fmtKm(_meters)} km`;
+  }, 1000);
+
+  // 位置追従（高精度）
+  _watchId = navigator.geolocation.watchPosition(onPos, onPosError, {
+    enableHighAccuracy:true, maximumAge:1000, timeout:10000
+  });
+
+  // ボタン無効化（多重起動防止）
+  const btn = document.getElementById('btnStartRec'); if (btn) btn.disabled = true;
+}
+
+function onPosError(err){ console.warn('geo error', err); }
+
+// 位置更新
+function onPos(pos){
+  const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now(), acc: pos.coords.accuracy||0 };
+
+  // 粗悪な精度を除外（acc > 50m はスキップ）
+  if (p.acc && p.acc > 50) return;
+
+  // 最初の点
+  if (!_lastP){
+    _track.push(p);
+    _lastP = p;
+    if (__map) {
+      __map.setView([p.lat, p.lng], 16);
+      _lineLayer?.setLatLngs(_track.map(x=>[x.lat,x.lng]));
+    }
+    return;
+  }
+
+  // 距離フィルタ（小刻みなブレを排除：10m未満は追加しない）
+  const d = haversine(_lastP, p);
+  if (d < 10) return;
+
+  _meters += d;
+  _track.push(p);
+  _lastP = p;
+
+  // 地図更新
+  try{
+    if (_lineLayer) _lineLayer.setLatLngs(_track.map(x=>[x.lat,x.lng]));
+    if (__map) __map.panTo([p.lat, p.lng], { animate:false });
+  }catch(e){ console.warn(e); }
+}
+
+// 停止＆保存
+async function stopRunRecordingAndSave(){
+  try{
+    if (_watchId!=null){ navigator.geolocation.clearWatch(_watchId); _watchId = null; }
+    if (_timerId!=null){ clearInterval(_timerId); _timerId = null; }
+    showRecUI(false);
+
+    // 記録が短すぎる場合
+    if (_track.length < 2) { alert('記録が短すぎます（2点以上必要）'); return; }
+
+    const acc = await getMyAccountId();
+    if (!acc) { alert('ログインが必要です'); return; }
+
+    // 走行時間
+    const endedMs = Date.now();
+    const duration_s = Math.max(1, ((endedMs - _recStartMs)/1000)|0);
+    const distance_m = Math.round(_meters);
+
+    // GeoJSON LineString（[lng,lat]）
+    const coords = _track.map(p => [p.lng, p.lat]);
+    const gj = { type:'LineString', coordinates: coords };
+
+    // レコード作成
+    const payload = {
+      account_id: acc,
+      started_at: new Date(_recStartMs).toISOString(),
+      ended_at:   new Date(endedMs).toISOString(),
+      distance_m,
+      duration_s,
+      geojson: gj,     // polyline は未使用。必要なら後で encode を足せます
+      polyline: null
+    };
+
+    const { data:newRow, error } = await client.from('runs')
+      .insert([payload]).select('id').maybeSingle();
+
+    if (error || !newRow){ console.error(error); alert('保存に失敗しました'); return; }
+
+    // Run 詳細へ遷移（既存UIに合わせて kind=run）
+    location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=run&v=${V()}`;
+
+  }catch(e){
+    console.error(e);
+    alert('保存に失敗しました');
+  }finally{
+    // 後片付け
+    try{
+      if (_lineLayer){ _lineLayer.remove(); _lineLayer = null; }
+    }catch(_){}
+    const btn = document.getElementById('btnStartRec'); if (btn) btn.disabled = false;
+  }
+}
+</script>
 
   <footer class="muted" style="margin-top:14px;">v: <script>document.write(window.APP_VERSION)</script></footer>
 <script>

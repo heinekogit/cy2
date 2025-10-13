@@ -63,7 +63,16 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
 </style>
 
-  <script src="js/version.js"></script>
+<script src="js/version.js"></script>
+
+<script>
+  const COLORS = {
+    routePlanned: '#3b82f6', // 青
+    runRecorded:  '#ef4444', // 既存（履歴Runの表示に使用：赤）
+    liveOnRoute:  '#10b981', // 実走オンルート：緑
+    liveOffRoute: '#ef4444'  // 実走逸脱：赤
+  };
+</script>
 
 <script>
   // 1) バージョン管理：変わったらSWもCacheも全消し → 強制再読込
@@ -119,6 +128,59 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     async function getMyAccountId(){ try{ const s=await getSession(); if(!s?.user) return null; const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle(); if(error){ console.error(error); return null; } return data?.account_id ?? null; }catch(e){ console.error(e); return null; } }
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
+    function extractLatLngsFromRoute(route){
+      try{
+        if (route?.geojson){
+          const g = typeof route.geojson==='string' ? JSON.parse(route.geojson) : route.geojson;
+          const out = [];
+          const walk = (geom)=>{
+            if(!geom) return;
+            const t = geom.type;
+            const co = geom.coordinates;
+            if (t==='LineString'){
+              co.forEach(([lng,lat])=> out.push({lat,lng}));
+            } else if (t==='MultiLineString'){
+              co.forEach(line=> line.forEach(([lng,lat])=> out.push({lat,lng})));
+            } else if (t==='GeometryCollection'){
+              (geom.geometries||[]).forEach(walk);
+            }
+          };
+          if (g.type==='Feature') walk(g.geometry);
+          else if (g.type==='FeatureCollection') (g.features||[]).forEach(f=> walk(f.geometry));
+          else walk(g);
+          if (out.length) return out;
+        }
+      }catch(e){ console.warn('extract geojson', e); }
+      if (route?.polyline){
+        return decodePolyline(route.polyline).map(([lat,lng])=>({lat,lng}));
+      }
+      return [];
+    }
+    function distancePointToSegmentMeters(p, a, b){
+      const latFactor = 111320;
+      const lonFactor = 111320 * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+      const ax = a.lng * lonFactor, ay = a.lat * latFactor;
+      const bx = b.lng * lonFactor, by = b.lat * latFactor;
+      const px = p.lng * lonFactor, py = p.lat * latFactor;
+      const vx = bx - ax, vy = by - ay;
+      const wx = px - ax, wy = py - ay;
+      const c1 = vx * wx + vy * wy;
+      const c2 = vx * vx + vy * vy;
+      let t = c2 > 0 ? (c1 / c2) : 0;
+      t = Math.max(0, Math.min(1, t));
+      const sx = ax + t * vx, sy = ay + t * vy;
+      const dx = px - sx, dy = py - sy;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    function distancePointToPolylineMeters(p, line){
+      if (!line || line.length < 2) return Infinity;
+      let best = Infinity;
+      for (let i = 1; i < line.length; i++){
+        const d = distancePointToSegmentMeters(p, line[i-1], line[i]);
+        if (d < best) best = d;
+      }
+      return best;
+    }
 
     async function renderAuthBar(){
       const bar = $('#authBar');
@@ -150,13 +212,6 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }catch(e){ bar.textContent='認証状態の取得に失敗しました'; console.error(e); }
     }
 
-    function drawLineOnMap(map, polyline, geojson){
-      try{
-        if(geojson){ let gj = typeof geojson==='string'? JSON.parse(geojson): geojson; L.geoJSON(gj, { style:{ color:'#ef4444', weight:5 }}).addTo(map); try{ const layer = L.geoJSON(gj); map.fitBounds(layer.getBounds(), { padding:[20,20] }); }catch(_){} return; }
-        if(polyline){ const latlngs = decodePolyline(polyline); if(latlngs.length){ const line=L.polyline(latlngs,{ color:'#ef4444', weight:5 }).addTo(map); map.fitBounds(line.getBounds(),{ padding:[20,20] }); } }
-      }catch(e){ console.error('draw error', e); }
-    }
-
     async function loadRun(){
       const box = $('#meta'); const btn = $('#btnToRoute');
       try{
@@ -177,7 +232,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        drawLineOnMap(__map, run.polyline, run.geojson);
+        drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -240,7 +295,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        drawLineOnMap(__map, route.polyline, route.geojson);
+        drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
@@ -429,6 +484,27 @@ document.addEventListener('DOMContentLoaded', ()=>{
   </main>
 
 <script>
+  function drawLineOnMap(map, polyline, geojson, color){
+    try{
+      const col = color || COLORS.routePlanned;
+      if(geojson){
+        let gj = typeof geojson==='string'? JSON.parse(geojson): geojson;
+        L.geoJSON(gj, { style:{ color: col, weight:5 }}).addTo(map);
+        try{ const layer = L.geoJSON(gj); map.fitBounds(layer.getBounds(), { padding:[20,20], maxZoom:16 }); }catch(_){}
+        return;
+      }
+      if(polyline){
+        const latlngs = decodePolyline(polyline);
+        if(latlngs.length){
+          const line = L.polyline(latlngs,{ color: col, weight:5 }).addTo(map);
+          map.fitBounds(line.getBounds(),{ padding:[20,20], maxZoom:16 });
+        }
+      }
+    }catch(e){ console.error('draw error', e); }
+  }
+</script>
+
+<script>
 // ==== 実走記録（Run 作成） ====
 // 依存: window.client（Supabase）, getMyAccountId(), __map（Leaflet）
 
@@ -448,10 +524,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // 状態
 let _watchId = null, _timerId = null;
 let _recStartMs = 0;
-let _track = [];         // {lat,lng,ts,acc}[]
+let _track = [];             // 全点（保存用）
 let _meters = 0;
-let _lineLayer = null;   // L.Polyline
+let _okLayer = null;         // 緑（オンルート）
+let _offLayer = null;        // 赤（逸脱）
 let _lastP = null;
+let _planned = [];           // 予定ルートの座標配列（kind=route 時のみセット）
+const OFF_THRESHOLD_M = 30;  // 逸脱判定の閾値（お好みで 20〜50m）
 
 function fmtMinSec(sec){ const m = Math.floor(sec/60), s = sec%60|0; return `${m}:${String(s).padStart(2,'0')}`; }
 function fmtKm(m){ return (m/1000).toFixed(2); }
@@ -467,37 +546,48 @@ function showRecUI(show){ document.getElementById('recUI').style.display = show 
 
 // 実走開始
 async function startRunRecording(){
-  // 認証チェック
   const acc = await getMyAccountId();
   if (!acc) { alert('ログインが必要です'); return; }
-
   if (!navigator.geolocation) { alert('この端末は位置情報に対応していません'); return; }
 
-  // 状態初期化
   _track = []; _meters = 0; _lastP = null; _recStartMs = Date.now();
   document.getElementById('recTime').textContent = '0:00';
   document.getElementById('recDist').textContent = '0.00 km';
   showRecUI(true);
 
-  // 地図描画レイヤ初期化
-  try {
-    if (_lineLayer) { _lineLayer.remove(); _lineLayer = null; }
-    if (window.__map) { _lineLayer = L.polyline([], { color:'#ef4444', weight:5 }).addTo(__map); }
-  } catch(e){ console.warn(e); }
+  // 予定ルート（kind=routeの時だけ取得）
+  try{
+    const q = new URL(location.href).searchParams;
+    const kind = (q.get('kind')||'run');
+    if (kind === 'route') {
+      const id = Number(q.get('id'));
+      const { data: route } = await client.from('routes').select('*').eq('id', id).maybeSingle();
+      _planned = route ? extractLatLngsFromRoute(route) : [];
+    } else {
+      _planned = [];
+    }
+  }catch(e){ console.warn('planned fetch', e); }
 
-  // 経過時間UI
+  // 地図レイヤ初期化（緑／赤）
+  try{
+    if (_okLayer){ _okLayer.remove(); _okLayer = null; }
+    if (_offLayer){ _offLayer.remove(); _offLayer = null; }
+    if (window.__map){
+      _okLayer  = L.polyline([], { color: COLORS.liveOnRoute,  weight:5 }).addTo(__map);
+      _offLayer = L.polyline([], { color: COLORS.liveOffRoute, weight:5 }).addTo(__map);
+    }
+  }catch(e){ console.warn(e); }
+
   _timerId = setInterval(()=>{
     const sec = ((Date.now()-_recStartMs)/1000)|0;
     document.getElementById('recTime').textContent = fmtMinSec(sec);
     document.getElementById('recDist').textContent = `${fmtKm(_meters)} km`;
   }, 1000);
 
-  // 位置追従（高精度）
   _watchId = navigator.geolocation.watchPosition(onPos, onPosError, {
     enableHighAccuracy:true, maximumAge:1000, timeout:10000
   });
 
-  // ボタン無効化（多重起動防止）
   const btn = document.getElementById('btnStartRec'); if (btn) btn.disabled = true;
 }
 
@@ -507,21 +597,16 @@ function onPosError(err){ console.warn('geo error', err); }
 function onPos(pos){
   const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now(), acc: pos.coords.accuracy||0 };
 
-  // 粗悪な精度を除外（acc > 50m はスキップ）
   if (p.acc && p.acc > 50) return;
 
-  // 最初の点
   if (!_lastP){
     _track.push(p);
     _lastP = p;
-    if (__map) {
-      __map.setView([p.lat, p.lng], 16);
-      _lineLayer?.setLatLngs(_track.map(x=>[x.lat,x.lng]));
-    }
+    if (__map) __map.setView([p.lat, p.lng], 16);
+    pushToLiveLayer(p);
     return;
   }
 
-  // 距離フィルタ（小刻みなブレを排除：10m未満は追加しない）
   const d = haversine(_lastP, p);
   if (d < 10) return;
 
@@ -529,10 +614,32 @@ function onPos(pos){
   _track.push(p);
   _lastP = p;
 
-  // 地図更新
+  pushToLiveLayer(p);
+
   try{
-    if (_lineLayer) _lineLayer.setLatLngs(_track.map(x=>[x.lat,x.lng]));
     if (__map) __map.panTo([p.lat, p.lng], { animate:false });
+  }catch(e){ console.warn(e); }
+}
+
+// 予定ルートへの距離で緑/赤に振り分け
+function pushToLiveLayer(p){
+  try{
+    if (_planned && _planned.length >= 2){
+      const dist = distancePointToPolylineMeters(p, _planned);
+      if (dist <= OFF_THRESHOLD_M){
+        const pts = _okLayer?.getLatLngs?.() || [];
+        pts.push([p.lat, p.lng]);
+        _okLayer?.setLatLngs?.(pts);
+      } else {
+        const pts = _offLayer?.getLatLngs?.() || [];
+        pts.push([p.lat, p.lng]);
+        _offLayer?.setLatLngs?.(pts);
+      }
+    } else {
+      const pts = _okLayer?.getLatLngs?.() || [];
+      pts.push([p.lat, p.lng]);
+      _okLayer?.setLatLngs?.(pts);
+    }
   }catch(e){ console.warn(e); }
 }
 
@@ -581,9 +688,9 @@ async function stopRunRecordingAndSave(){
     console.error(e);
     alert('保存に失敗しました');
   }finally{
-    // 後片付け
     try{
-      if (_lineLayer){ _lineLayer.remove(); _lineLayer = null; }
+      _okLayer?.remove(); _okLayer = null;
+      _offLayer?.remove(); _offLayer = null;
     }catch(_){}
     const btn = document.getElementById('btnStartRec'); if (btn) btn.disabled = false;
   }

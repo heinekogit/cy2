@@ -123,6 +123,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     const id = Number(q.get('id'));
     const kind = q.get('kind') || 'run';
     let __map;
+    let __currentRoute = null;
 
     async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
     async function getMyAccountId(){ try{ const s=await getSession(); if(!s?.user) return null; const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle(); if(error){ console.error(error); return null; } return data?.account_id ?? null; }catch(e){ console.error(e); return null; } }
@@ -193,22 +194,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         const email = s.user.email || '';
         bar.innerHTML = `
           ログイン中: <strong>${email}</strong>
-          <button id="btnSignOut" class="btn" style="margin-left:8px">Sign out</button>
+          <button class="btn" data-signout style="margin-left:8px">Sign out</button>
           <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
           <a class="btn" style="margin-left:6px" href="index.html?v=${V()}">トップへ</a>
         `;
-        const btn = $('#btnSignOut');
-        if (btn) btn.onclick = async ()=>{
-          try{
-            btn.disabled = true;
-            btn.textContent = 'Signing out…';
-            await client.auth.signOut();
-          }catch(e){
-            console.error(e);
-          }finally{
-            location.href = 'index.html?v=' + V();
-          }
-        };
       }catch(e){ bar.textContent='認証状態の取得に失敗しました'; console.error(e); }
     }
 
@@ -256,6 +245,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           .select('*')
           .eq('id', id).maybeSingle();
         if(error || !route){ box.textContent='読み込み失敗'; console.error(error); return; }
+        __currentRoute = route;
         const when = route.created_at ? new Date(route.created_at).toLocaleString() : '-';
         const km = route.distance_m != null ? (Number(route.distance_m)/1000).toFixed(2)+' km' : '-';
         const min = route.duration_s != null ? Math.round(Number(route.duration_s)/60)+' 分' : '-';
@@ -333,6 +323,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
+
+<!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'index.html' });
+</script>
 
 <script>
 // --- モバイルvh補正（既に入れていなければ有効化） ---
@@ -555,14 +551,25 @@ async function startRunRecording(){
   document.getElementById('recDist').textContent = '0.00 km';
   showRecUI(true);
 
+  if (!__map){
+    alert('地図の初期化が完了していません。少し待ってから再度お試しください。');
+    showRecUI(false);
+    return;
+  }
+
+  _planned = [];
   // 予定ルート（kind=routeの時だけ取得）
   try{
     const q = new URL(location.href).searchParams;
     const kind = (q.get('kind')||'run');
     if (kind === 'route') {
-      const id = Number(q.get('id'));
-      const { data: route } = await client.from('routes').select('*').eq('id', id).maybeSingle();
-      _planned = route ? extractLatLngsFromRoute(route) : [];
+      if (__currentRoute){
+        _planned = extractLatLngsFromRoute(__currentRoute) || [];
+      } else {
+        const id = Number(q.get('id'));
+        const { data: route } = await client.from('routes').select('*').eq('id', id).maybeSingle();
+        _planned = route ? extractLatLngsFromRoute(route) : [];
+      }
     } else {
       _planned = [];
     }
@@ -572,10 +579,8 @@ async function startRunRecording(){
   try{
     if (_okLayer){ _okLayer.remove(); _okLayer = null; }
     if (_offLayer){ _offLayer.remove(); _offLayer = null; }
-    if (window.__map){
-      _okLayer  = L.polyline([], { color: COLORS.liveOnRoute,  weight:5 }).addTo(__map);
-      _offLayer = L.polyline([], { color: COLORS.liveOffRoute, weight:5 }).addTo(__map);
-    }
+    _okLayer  = L.polyline([], { color: COLORS.liveOnRoute,  weight:5 }).addTo(__map);
+    _offLayer = L.polyline([], { color: COLORS.liveOffRoute, weight:5 }).addTo(__map);
   }catch(e){ console.warn(e); }
 
   _timerId = setInterval(()=>{
@@ -627,18 +632,12 @@ function pushToLiveLayer(p){
     if (_planned && _planned.length >= 2){
       const dist = distancePointToPolylineMeters(p, _planned);
       if (dist <= OFF_THRESHOLD_M){
-        const pts = _okLayer?.getLatLngs?.() || [];
-        pts.push([p.lat, p.lng]);
-        _okLayer?.setLatLngs?.(pts);
+        _okLayer?.addLatLng?.([p.lat, p.lng]);
       } else {
-        const pts = _offLayer?.getLatLngs?.() || [];
-        pts.push([p.lat, p.lng]);
-        _offLayer?.setLatLngs?.(pts);
+        _offLayer?.addLatLng?.([p.lat, p.lng]);
       }
     } else {
-      const pts = _okLayer?.getLatLngs?.() || [];
-      pts.push([p.lat, p.lng]);
-      _okLayer?.setLatLngs?.(pts);
+      _okLayer?.addLatLng?.([p.lat, p.lng]);
     }
   }catch(e){ console.warn(e); }
 }

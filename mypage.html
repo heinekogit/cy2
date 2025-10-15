@@ -70,22 +70,9 @@
         const email = s.user.email || '';
         gate.innerHTML = `
           ログイン中: <strong>${email}</strong>
-          <button class="btn" id="btnSignOut" style="margin-left:8px">Sign out</button>
+          <button class="btn" data-signout style="margin-left:8px">Sign out</button>
           <a class="btn" style="margin-left:6px;" href="index.html?v=${V()}">トップへ</a>
         `;
-        const btn = $('#btnSignOut');
-        if (btn) btn.onclick = async ()=>{
-          try{
-            btn.disabled = true;
-            btn.textContent = 'Signing out…';
-            await client.auth.signOut();
-          }catch(e){
-            console.error(e);
-          }finally{
-            const url = 'index.html?v=' + V() + '&ts=' + Date.now();
-            location.replace(url);
-          }
-        };
         return true;
       }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
     }
@@ -185,6 +172,13 @@
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'index.html' });
+</script>
+
 </head>
 <body>
   <header>

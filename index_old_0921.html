@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Route MVP – Supabase 版</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script>window.__APP_VERSION__='2025-09-14-03';</script>
+<style>
+  :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --accent:#111827; --ok:#065f46; --okbg:#d1fae5; --warn:#92400e; --warnbg:#fef3c7; --off:#991b1b; --offbg:#fee2e2; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP"; }
+  #app { height:100%; display:flex; flex-direction:column; }
+  header { padding:10px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  header .tabs { display:flex; gap:8px; }
+  .tab { padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; cursor:pointer; background:#fff; }
+  .tab.active { background:#111827; color:#fff; border-color:#111827; }
+  main { flex:1; display:flex; }
+  #home, #run { flex:1; display:none; }
+  #home.active, #run.active { display:flex; }
+  #home { flex-direction:column; }
+  .list { padding:12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
+  .card { border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; background:#fff; }
+  .card.highlight { outline:3px solid #93c5fd; }
+  .meta { font-size:12px; color:var(--muted); }
+  .btn { border:none; border-radius:10px; padding:8px 10px; font-size:14px; cursor:pointer; }
+  .btn.primary { background:#111827; color:#fff; }
+  .btn.ghost { background:#fff; color:#111827; border:1px solid #e5e7eb; }
+  .btn.danger { background:#ef4444; color:#fff; }
+  #run { position:relative; }
+  #map { position:absolute; inset:0; }
+  .badgewrap { position:fixed; left:8px; right:8px; top:env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
+  .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
+  .badge.ok{background:var(--okbg); color:var(--ok);}
+  .badge.warn{background:var(--warnbg); color:var(--warn);}
+  .badge.off{background:var(--offbg); color:var(--off);}
+  .dock { position:fixed; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
+  .btn.big { padding:12px 14px; font-weight:700; }
+  .btn.stop { background:#ef4444; color:#fff; }
+  .toolbar { position:fixed; left:8px; bottom:8px; z-index:1000; display:flex; gap:8px; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; z-index:1100; display:none; }
+  .hint { position:fixed; left:8px; bottom:60px; background:#ffffffd8; padding:6px 10px; border-radius:10px; font-size:12px; z-index:999; }
+  footer { padding:6px 10px; font-size:12px; color:#6b7280; border-top:1px solid #e5e7eb; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div style="font-weight:700">Route MVP</div>
+    <div class="tabs">
+      <button class="tab active" id="tabRoutes">ルート</button>
+      <button class="tab" id="tabLogs">実走ログ</button>
+    </div>
+    <div>
+      <!-- ★ インライン onclick は削除（JS側で登録） -->
+      <button id="btnGoRun" class="btn ghost">すぐ実走画面へ</button>
+    </div>
+  </header>
+
+  <!-- 追加: ログインバー -->
+<!-- 認証バー -->
+<div id="authBar" style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:10px;margin:10px 0;">
+  認証状態を確認中…
+</div>
+
+<!-- ルート一覧（ログイン者） -->
+<section style="margin-top:12px;">
+  <h2 style="font-size:18px;margin:6px 0;">あなたのルート</h2>
+  <div id="routesList">読み込み中…</div>
+</section>
+
+
+  <main>
+    <section id="home" class="active" aria-label="home">
+      <div id="routesList" class="list" hidden></div>
+      <div id="logsList" class="list" hidden></div>
+    </section>
+    <section id="run" aria-label="run">
+      <div id="map"></div>
+      <div class="badgewrap"><div id="courseBadge" class="badge">準備中…</div></div>
+      <div class="dock">
+        <button id="startBtn" class="btn primary big">▶ 記録開始</button>
+        <button id="stopBtn" class="btn stop big">■ 停止</button>
+        <button id="followBtn" class="btn ghost">🔁 追従 OFF</button>
+        <button id="locateBtn" class="btn ghost">📍 現在地だけ</button>
+        <button id="backHomeBtn" class="btn ghost">🏠 ホームへ</button>
+      </div>
+      <div class="toolbar"><button id="editToggleBtn" class="btn ghost">✏️ 編集モード</button></div>
+      <div class="hint">▶でGPS+記録+追従ON。■停止で保存確認→保存後はホーム（実走ログ）へ。</div>
+      <div id="toast" class="toast"></div>
+    </section>
+  </main>
+
+  <footer>
+    v: <script>document.write(window.__APP_VERSION__)</script>
+  </footer>
+</div>
+
+<!-- ライブラリ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+
+<!-- 1) Supabase 初期化（必ず最初） -->
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';  /* ← あなたのURL */
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';                /* ← あなたのanon key */
+  window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log('[INIT] supabase ok');
+
+  // 追加: ログイン導線＆状態表示
+const LOGIN_URL = 'login_inline_client.html'; // ← 働いてる方のログインページ
+
+async function renderAuthBar() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  const el = document.getElementById('authBar');
+  if (!el) return;
+
+  if (session?.user) {
+    const u = session.user;
+    el.innerHTML = `
+      ログイン中: <code>${u.email ?? ''}</code>
+      <br/><small>ID: ${u.id}</small>
+      <div style="margin-top:6px">
+        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
+      </div>`;
+    document.getElementById('signOutBtn').onclick = async () => {
+      await supabase.auth.signOut();
+      await renderAuthBar();
+    };
+  } else {
+    el.innerHTML = `
+      未ログインです。
+      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+  }
+
+// ===== 認証バー（ログイン導線/ID表示） =====
+const LOGIN_URL = 'login_inline_client.html'; // ← 動く方のログインページ
+
+async function renderAuthBar() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  const el = document.getElementById('authBar');
+  if (!el) return;
+
+  if (!session?.user) {
+    el.innerHTML = `
+      未ログインです。
+      <a href="${LOGIN_URL}" style="margin-left:8px;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">ログインへ</a>`;
+  } else {
+    const u = session.user;
+    el.innerHTML = `
+      ログイン中: <code>${u.email ?? ''}</code><br/>
+      <small>ID: ${u.id}</small>
+      <div style="margin-top:6px">
+        <button id="signOutBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;">Sign out</button>
+      </div>`;
+    document.getElementById('signOutBtn').onclick = async () => {
+      await supabase.auth.signOut();
+      await renderAuthBar();
+      await loadRoutesForCurrentUser(); // 一覧も更新
+    };
+  }
+}
+
+// ===== ルート一覧（自分のprivate + 公開） =====
+async function getMyAccountId() {
+  const { data:{ session } } = await supabase.auth.getSession();
+  if (!session?.user) return null;
+  const { data, error } = await supabase.from('users')
+    .select('account_id').eq('id', session.user.id).single();
+  if (error) { console.error(error); return null; }
+  return data?.account_id ?? null;
+}
+
+async function loadRoutesForCurrentUser() {
+  const box = document.getElementById('routesList');
+  if (!box) return;
+
+  const myAcc = await getMyAccountId();
+  if (!myAcc) {
+    box.innerHTML = '未ログインのため表示できません。上の「ログインへ」からログインしてください。';
+    return;
+  }
+
+  // 自分のprivate or 公開 をORで取得
+  const { data, error } = await supabase.from('routes')
+    .select('id, name, visibility, created_at, owner_account_id')
+    .or(`owner_account_id.eq.${myAcc},visibility.eq.public`)
+    .order('created_at', { ascending:false })
+    .limit(50);
+
+  if (error) {
+    console.error(error);
+    box.textContent = '読み込みに失敗しました';
+    return;
+  }
+  if (!data || data.length === 0) {
+    box.textContent = 'ルートがありません。';
+    return;
+  }
+
+  // レンダリング
+  box.innerHTML = data.map(r => {
+    const when = new Date(r.created_at).toLocaleString();
+    const vis = r.visibility === 'public' ? '公開' : '非公開';
+    return `
+      <div style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0;">
+        <div style="font-weight:600;">${r.name ?? '(無題ルート)'} <span style="color:#6b7280;font-weight:400;">#${r.id}</span></div>
+        <div style="color:#6b7280;font-size:12px;">${when}・${vis}</div>
+        <div style="margin-top:6px;">
+          <a href="detail.html?id=${r.id}" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;display:inline-block;">詳細</a>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// 初期表示＋認証状態変化で更新
+await renderAuthBar();
+await loadRoutesForCurrentUser();
+supabase.auth.onAuthStateChange(async () => {
+  await renderAuthBar();
+  await loadRoutesForCurrentUser();
+});
+
+
+}
+
+// 初期表示＋状態変化で更新
+await renderAuthBar();
+supabase.auth.onAuthStateChange(renderAuthBar);
+</script>
+
+<!-- 2) Supabase版ストレージ（window.db* を公開） -->
+<script type="module" src="js/storage.js?v=20250914-03"></script>
+
+<!-- 3) アプリ本体（UI・地図・記録ロジック） -->
+<script>
+/* ========= ユーティリティ ========= */
+const fmtDate = (d)=> new Date(d).toLocaleString();
+const pad = (n)=> String(n).padStart(2,'0');
+function ymd() { const t=new Date(); return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`; }
+function showToast(msg){ const el=document.getElementById('toast'); el.textContent=msg; el.style.display='block'; setTimeout(()=>el.style.display='none',2000); }
+const m2deg = (m)=> m/111320;
+
+/* polyline encode/decode（簡易 try/catch 追加） */
+function encodePolyline(latlngs){
+  try{
+    let lastLat=0,lastLng=0, res='';
+    for(const [lat,lng] of latlngs){
+      let iLat=Math.round(lat*1e5), iLng=Math.round(lng*1e5);
+      let dLat=iLat-lastLat, dLng=iLng-lastLng;
+      for(let v of [dLat,dLng]){
+        v = v<0 ? ~(v<<1) : v<<1;
+        while(v>=0x20){ res += String.fromCharCode((0x20 | (v & 0x1f))+63); v >>= 5; }
+        res += String.fromCharCode(v+63);
+      }
+      lastLat=iLat; lastLng=iLng;
+    }
+    return res;
+  }catch(e){ console.error('encodePolyline error', e); return ''; }
+}
+function decodePolyline(str){
+  try{
+    let idx=0, lat=0, lng=0, coords=[];
+    while(idx<str.length){
+      let b,shift=0,result=0;
+      do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+      let dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift=0; result=0;
+      do{ b=str.charCodeAt(idx++)-63; result |= (b & 0x1f) << shift; shift += 5; }while(b>=0x20);
+      let dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+      lat += dlat; lng += dlng;
+      coords.push([lat/1e5, lng/1e5]);
+    }
+    return coords;
+  }catch(e){ console.error('decodePolyline error', e); return []; }
+}
+
+/* 平滑化/重複除去/距離リサンプル */
+function movingAverage(latlngs){
+  if(latlngs.length<3) return latlngs.slice();
+  const out = latlngs.map(p=>p.slice());
+  for(let i=1;i<latlngs.length-1;i++){
+    out[i][0] = (latlngs[i-1][0]+latlngs[i][0]+latlngs[i+1][0])/3;
+    out[i][1] = (latlngs[i-1][1]+latlngs[i][1]+latlngs[i+1][1])/3;
+  }
+  return out;
+}
+function dedupeTinyMoves(latlngs){
+  if(latlngs.length<2) return latlngs.slice();
+  const out=[latlngs[0]];
+  for(let i=1;i<latlngs.length;i++){
+    const a=L.latLng(out[out.length-1][0], out[out.length-1][1]);
+    const b=L.latLng(latlngs[i][0], latlngs[i][1]);
+    if(a.distanceTo(b)>=2) out.push(latlngs[i]);
+  }
+  return out;
+}
+function resampleByDistance(latlngs, stepMeters){
+  if(latlngs.length<2) return latlngs.slice();
+  const ls = turf.lineString(latlngs.map(([la,ln])=>[ln,la]));
+  const lenKm = turf.length(ls, {units:'kilometers'});
+  const stepKm = stepMeters/1000;
+  const pts=[];
+  for(let d=0; d<=lenKm; d+=stepKm){
+    const p = turf.along(ls, d, {units:'kilometers'});
+    const [lng,lat] = p.geometry.coordinates;
+    pts.push([lat,lng]);
+  }
+  return pts.length?pts:latlngs.slice();
+}
+
+/* ========= 一覧UI（SupabaseのdbGetAllを使用） ========= */
+const tabRoutes = document.getElementById('tabRoutes');
+const tabLogs   = document.getElementById('tabLogs');
+const routesList= document.getElementById('routesList');
+const logsList  = document.getElementById('logsList');
+const btnGoRun  = document.getElementById('btnGoRun');
+let lastSavedLogId = null;
+
+function setHomeTab(which){
+  tabRoutes.classList.toggle('active', which==='routes');
+  tabLogs.classList.toggle('active', which==='logs');
+  routesList.hidden = which!=='routes';
+  logsList.hidden   = which!=='logs';
+  renderLists(which);
+}
+async function renderLists(which){
+  if(which==='routes'){
+    routesList.innerHTML = '';
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `<div><div>三鷹↔玉川上水（サンプル）</div><div class="meta">ローカルサンプル · 編集可</div></div>
+      <div><button class="btn ghost" id="openSample">実走画面で開く</button></div>`;
+    routesList.appendChild(card);
+    card.querySelector('#openSample').onclick = ()=>{ showRun(); };
+  } else {
+    logsList.innerHTML = '';
+    const logs = await window.dbGetAll('logs');  // Supabase版
+    if(!logs.length){
+      const empty=document.createElement('div');
+      empty.className='meta';
+      empty.textContent='保存された実走ログはまだありません。▶で記録し、停止→保存してください。';
+      logsList.appendChild(empty);
+      return;
+    }
+    for(const log of logs){
+      const card = document.createElement('div');
+      card.className = 'card' + (log.id===lastSavedLogId ? ' highlight' : '');
+      const km = log.distanceMeters ? (log.distanceMeters/1000).toFixed(2) : (log.distance_m ? (Number(log.distance_m)/1000).toFixed(2) : '-');
+      const durSec = log.durationSec ?? log.duration_s;
+      const dur = durSec ? `${Math.floor(durSec/60)}分` : '-';
+      const ended = log.endedAt ?? log.ended_at;
+      card.innerHTML = `<div>
+          <div>${log.name||'実走ログ'}</div>
+          <div class="meta">${ended ? new Date(ended).toLocaleString() : '—'} · ${km} km · ${dur}</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <a href="detail.html?src=routes&id=${row.id}">開く</a>
+          <button class="btn danger" data-del="${log.id}">削除</button>
+        </div>`;
+      logsList.appendChild(card);
+      if(log.id===lastSavedLogId){ setTimeout(()=>{ card.classList.remove('highlight'); lastSavedLogId=null; }, 2500); }
+    }
+  }
+
+  logsList.querySelectorAll('button[data-open]').forEach(btn=>{
+    btn.onclick = ()=>{ const id = btn.dataset.open; location.href = `detail.html?id=${encodeURIComponent(id)}`; };
+  });
+  logsList.querySelectorAll('button[data-del]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const id = Number(btn.dataset.del);
+      if(confirm('この実走ログを削除しますか？')){
+        await window.dbDelete('logs', id);
+        renderLists('logs');
+      }
+    };
+  });
+}
+
+/* ========= RUN画面（地図・記録） ========= */
+const home = document.getElementById('home');
+const run  = document.getElementById('run');
+const backHomeBtn = document.getElementById('backHomeBtn');
+
+function clearWatchIfAny(){
+  if(window.watchId){
+    navigator.geolocation.clearWatch(window.watchId);
+    window.watchId = null;
+  }
+}
+
+function showHome(tab='logs'){
+  run.classList.remove('active');
+  home.classList.add('active');
+  clearWatchIfAny();                         // ★ ホーム戻りでGPS解除
+  window.__logStartedAt = null;              // ★ 開始時刻もクリア
+  setHomeTab(tab);
+}
+function showRun(options={}){
+  home.classList.remove('active');
+  run.classList.add('active');
+  initMapOnce();
+  if(options.replay){ drawReplay(options.replay.coords); } else { resetRunLayers(); }
+}
+window.showRun = showRun; // ★ 必要ならインライン等から呼べる
+
+let map, badge, routePts, routeLine, editMode=false, recording=false, follow=false;
+window.watchId = null;
+let dot=null, accCircle=null, lastLatLng=null;
+let traced=[], tracedLine=null, lastAddTs=0;
+const ACC_LIMIT=100, MIN_MOVE=3, MIN_INTERVAL_MS=1000;
+
+function initMapOnce(){
+  if(map) return;
+  map = L.map('map').setView([35.7015,139.5665], 15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
+  badge = document.getElementById('courseBadge');
+  // サンプル青ルート
+  routePts = [
+    [35.7032,139.5608],[35.7019,139.5630],[35.7015,139.5658],[35.7012,139.5686],
+    [35.7009,139.5705],[35.7006,139.5718],[35.7002,139.5732],[35.7000,139.5745],
+    [35.6994,139.5740],[35.6996,139.5710],[35.6999,139.5680],[35.7003,139.5652],
+    [35.7007,139.5627],[35.7025,139.5609],[35.7032,139.5608]
+  ];
+  routeLine = L.polyline(routePts, { color:'#2563eb', weight:4 }).addTo(map);
+  map.fitBounds(routeLine.getBounds(), { padding:[30,30] });
+
+  map.on('click', (e)=>{
+    if(!editMode || recording) return;
+    routePts.push([e.latlng.lat, e.latlng.lng]);
+    routeLine.setLatLngs(routePts);
+    if(lastLatLng) updateCourseStatus(lastLatLng);
+  });
+  map.on('dragstart', ()=>{ if(follow){ follow=false; followBtn.textContent='🔁 追従 OFF'; }});
+}
+
+/* バッジ & コース判定 */
+function setBadge(state,text){ badge.className='badge '+(state||''); badge.textContent=text; }
+function distToRouteMeters(lat,lng){
+  if(!routePts || routePts.length<2) return null;
+  const p = turf.point([lng,lat]);
+  const line = turf.lineString(routePts.map(([la,ln])=>[ln,la]));
+  return turf.pointToLineDistance(p, line, {units:'meters'});
+}
+function updateCourseStatus(latlng){
+  const d = distToRouteMeters(latlng.lat, latlng.lng);
+  if(d==null){ setBadge('', 'ルート未作成'); return; }
+  if (d<=30) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
+  else if (d<=60) setBadge('warn', `注意：${Math.round(d)}m外`);
+  else setBadge('off', `ルート外：${Math.round(d)}m`);
+}
+
+/* リプレイ/リセット */
+function resetRunLayers(){
+  if(tracedLine){ map.removeLayer(tracedLine); tracedLine=null; }
+  traced=[]; lastAddTs=0; recording=false;
+  setEditMode(false);
+  setBadge('','サンプル：✏️で編集、▶で記録、■で停止保存／📍で現在地追従');
+}
+function drawReplay(coords){
+  resetRunLayers();
+  if(tracedLine) map.removeLayer(tracedLine);
+  tracedLine = L.polyline(coords, { color:'#ef4444', weight:5 }).addTo(map);
+  map.fitBounds(L.latLngBounds(coords), { padding:[30,30] });
+  setBadge('','保存済みログを表示中');
+}
+
+/* GPS */
+function onPos(pos){
+  const { latitude:lat, longitude:lng, accuracy:acc } = pos.coords;
+  const latlng = L.latLng(lat,lng);
+  lastLatLng = latlng;
+
+  if(!dot){
+    dot = L.circleMarker(latlng,{ radius:6, weight:2, color:'#2563eb', fillColor:'#3b82f6', fillOpacity:1 }).addTo(map);
+    accCircle = L.circle(latlng,{ radius:acc, color:'#93c5fd', weight:1, fillColor:'#bfdbfe', fillOpacity:0.25 }).addTo(map);
+  }else{
+    dot.setLatLng(latlng); accCircle.setLatLng(latlng).setRadius(acc);
+  }
+  if(follow) map.panTo(latlng,{animate:true});
+
+  const now = Date.now();
+  if(recording && acc<=ACC_LIMIT && (now-lastAddTs)>=MIN_INTERVAL_MS){
+    const prev = traced[traced.length-1];
+    const moved = !prev || latlng.distanceTo(L.latLng(prev[0],prev[1]))>=MIN_MOVE;
+    if(moved){
+      traced.push([lat,lng]); lastAddTs=now;
+      if(tracedLine) tracedLine.setLatLngs(traced);
+      else tracedLine = L.polyline(traced,{ color:'#ef4444', weight:5 }).addTo(map);
+    }
+  }
+  updateCourseStatus(latlng);
+}
+function onErr(){ showToast('位置情報エラー'); clearWatchIfAny(); }
+
+/* ボタン */
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const followBtn= document.getElementById('followBtn');
+const locateBtn= document.getElementById('locateBtn');
+const editToggleBtn=document.getElementById('editToggleBtn');
+
+function setEditMode(on){
+  editMode = !!on;
+  editToggleBtn.textContent = editMode ? '✅ 編集終了（ロック）' : '✏️ 編集モード';
+}
+startBtn.onclick = ()=>{
+  if(!('geolocation' in navigator)){ alert('この端末では位置情報が使えません'); return; }
+  follow = true; followBtn.textContent='🔁 追従 ON';
+  clearWatchIfAny();
+  window.watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+
+  setEditMode(false);
+  recording = true; traced=[]; lastAddTs=0;
+  if(tracedLine){ map.removeLayer(tracedLine); tracedLine=null; }
+  window.__logStartedAt = new Date().toISOString();
+  setBadge('warn','記録中：オンコース判定有効');
+  showToast('記録を開始しました');
+};
+stopBtn.onclick = async ()=>{
+  if(!recording){ showToast('記録は開始されていません'); return; }
+  recording = false;
+
+  // ★ 記録停止時に GPS ウォッチ解除
+  clearWatchIfAny();
+
+  const count = traced.length;
+  const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
+  if(!ok){ setBadge('','記録停止'); showToast('保存せず終了'); window.__logStartedAt=null; return; }
+
+  const startedAt = window.__logStartedAt || new Date().toISOString();
+  const endedAt   = new Date().toISOString();
+  let pts = dedupeTinyMoves(traced);
+  pts = movingAverage(pts);
+  const tolDeg = m2deg(6);
+  let ls = turf.lineString(pts.map(([la,ln])=>[ln,la]));
+  ls = turf.simplify(ls, {tolerance: tolDeg, highQuality: true});
+  let simp = ls.geometry.coordinates.map(([lng,lat])=>[lat,lng]); // 注意：turf座標は[lng,lat]
+  simp = resampleByDistance(simp, 5);
+
+  const ls2 = turf.lineString(simp.map(([la,ln])=>[ln,la]));
+  const lenMeters = turf.length(ls2,{units:'kilometers'})*1000;
+  const bbox = turf.bbox(ls2);
+  const polyline = encodePolyline(simp);
+  const durationSec = Math.max(1, Math.round((new Date(endedAt)-new Date(startedAt))/1000));
+
+  const nameDefault = `${ymd()} 実走 01`;
+  const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
+
+  // Supabaseへ保存
+  const record = {
+    name,
+    startedAt, endedAt,
+    polyline,
+    pointCount: simp.length,
+    distanceMeters: Math.round(lenMeters),
+    durationSec,
+    bbox
+  };
+  try{
+    await window.dbPut('logs', record);
+    showToast('保存しました');
+  }catch(e){
+    console.error('save error', e);
+    alert('保存に失敗しました');
+  }finally{
+    window.__logStartedAt = null;     // ★ クリア
+  }
+  showHome('logs');
+};
+
+followBtn.onclick = ()=>{ follow=!follow; followBtn.textContent = follow?'🔁 追従 ON':'🔁 追従 OFF'; };
+locateBtn.onclick = ()=>{
+  if(!('geolocation' in navigator)) { alert('この端末では位置情報が使えません'); return; }
+  clearWatchIfAny();
+  follow = true; followBtn.textContent='🔁 追従 ON';
+  window.watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+};
+editToggleBtn.onclick = ()=>{ if(recording){ alert('記録中は編集できません'); return; } setEditMode(!editMode); };
+backHomeBtn.onclick = ()=> showHome('logs');
+
+/* 初期表示 */
+function init(){
+  document.getElementById('tabRoutes').onclick = ()=> setHomeTab('routes');
+  document.getElementById('tabLogs').onclick   = ()=> setHomeTab('logs');
+  btnGoRun.addEventListener('click', ()=> showRun()); // ★ JS側でのみ登録（重複回避）
+  setHomeTab('logs');
+}
+document.addEventListener('DOMContentLoaded', init, { once:true });
+</script>
+
+<!-- Service Worker（ルート直下 / パス固定） -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => console.log('Service Worker registered:', reg))
+      .catch(err => console.error('Service Worker registration failed:', err));
+  }
+</script>
+
+</body>
+</html>

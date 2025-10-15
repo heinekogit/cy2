@@ -69,7 +69,7 @@
 
     function setAuthFormsDisabled(disabled) {
       document.querySelectorAll('#authForms input, #authForms button').forEach(el => {
-        if (el.id === 'btnSignOut') return;
+        if (el.dataset && el.dataset.signout !== undefined) return;
         el.disabled = disabled;
       });
       document.getElementById('authForms')?.classList.toggle('muted', disabled);
@@ -179,12 +179,18 @@
 
     async function init() {
       setupAuthForms();
-      document.getElementById('btnSignOut')?.addEventListener('click', signOut);
       await refreshStatus();
       client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
     }
     document.addEventListener("DOMContentLoaded", init, { once:true });
   </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'index.html' });
+</script>
+
 </head>
 <body>
   <h1>Login</h1>
@@ -233,7 +239,7 @@
     <pre id="status" class="muted">loading...</pre>
     <div id="links" class="row"></div>
     <div class="row">
-      <button class="btn" id="btnSignOut">Sign out</button>
+      <button class="btn" data-signout>Sign out</button>
     </div>
   </div>
 

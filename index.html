@@ -85,22 +85,9 @@
           const email = session.user.email || "";
           bar.innerHTML = `
             ログイン中: <strong>${email}</strong>
-            <button id="btnSignOut" class="btn" style="margin-left:8px">Sign out</button>
+            <button class="btn" data-signout style="margin-left:8px">Sign out</button>
             <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
           `;
-          const btn = $("#btnSignOut");
-          if (btn) btn.onclick = async () => {
-            try {
-              btn.disabled = true;
-              btn.textContent = 'Signing out…';
-              await client.auth.signOut();
-            } catch(e) {
-              console.error('signOut error', e);
-            } finally {
-              const v = window.APP_VERSION || '';
-              location.href = `index.html?v=${v}&t=${Date.now()}`;
-            }
-          };
         }
       }catch(e){
         console.error('renderAuthBar error', e);
@@ -202,6 +189,13 @@
     document.addEventListener("DOMContentLoaded", init, { once:true });
     setTimeout(()=>{ try{ const t=document.getElementById('authBar')?.textContent||''; if(t.includes('認証状態を確認中')) renderAuthBar(); }catch(_){} }, 2000);
   </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'index.html' });
+</script>
+
 </head>
 <body>
   <header>

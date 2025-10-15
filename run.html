@@ -108,6 +108,13 @@
       window.supabase = client;
     })();
   </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
+</script>
+
   <script>
     (function() {
       const version = encodeURIComponent(window.APP_VERSION || '');
@@ -262,36 +269,23 @@
             `;
             startBtn.disabled = true;
             stopBtn.disabled = true;
-          } else {
-            isLoggedIn = true;
-            const email = session.user.email || '';
-            authBar.innerHTML = `
-              ログイン中: <strong>${escapeHtml(email)}</strong>
-              <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
-                <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
-                <button id="btnSignOut" class="btn ghost" type="button">Sign out</button>
-              </div>
-            `;
-            startBtn.disabled = false;
-            stopBtn.disabled = false;
-            const btn = document.getElementById('btnSignOut');
-            if (btn) {
-              btn.onclick = async () => {
-                try {
-                  btn.disabled = true;
-                  await supabase.auth.signOut();
-                  showToast('サインアウトしました');
-                } finally {
-                  await renderAuthBar();
-                  await renderLogs();
-                }
-              };
-            }
-          }
-        } catch (e) {
-          console.error('renderAuthBar error', e);
-          authBar.textContent = '認証状態の取得に失敗しました';
+        } else {
+          isLoggedIn = true;
+          const email = session.user.email || '';
+          authBar.innerHTML = `
+            ログイン中: <strong>${escapeHtml(email)}</strong>
+            <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+              <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
+              <button class="btn ghost" data-signout type="button">Sign out</button>
+            </div>
+          `;
+          startBtn.disabled = false;
+          stopBtn.disabled = false;
         }
+      } catch (e) {
+        console.error('renderAuthBar error', e);
+        authBar.textContent = '認証状態の取得に失敗しました';
+      }
       }
 
       async function renderLogs() {
@@ -377,7 +371,10 @@
         loadPlannedRouteIfAny();
       }
 
-      async function loadPlannedRouteIfAny() {
+      let plannedRouteLoaded = false;
+
+      async function loadPlannedRouteIfAny(force = false) {
+        if (!map) return;
         try {
           const rid = Number(new URL(location.href).searchParams.get('route'));
           if (!rid) {
@@ -386,15 +383,21 @@
               plannedLayer.remove();
               plannedLayer = null;
             }
+            plannedRouteLoaded = false;
             return;
           }
+          if (plannedRouteLoaded && !force) return;
           const { data: route, error } = await supabase
-            .from('routes').select('*').eq('id', rid).maybeSingle();
+            .from('routes')
+            .select('*')
+            .eq('id', rid)
+            .maybeSingle();
           if (error || !route) return;
 
           const pts = extractLatLngsFromRoute(route);
           if (!pts.length) return;
           planned = pts;
+          plannedRouteLoaded = true;
 
           if (plannedLayer) {
             plannedLayer.remove();
@@ -646,14 +649,6 @@ const updateCourseStatus = (latlng) => {
         showToast('記録を開始しました');
       };
 
-// 実走ライン（2本）を初期化
-try {
-  if (layerOn)  { layerOn.remove();  layerOn = null; }
-  if (layerOff) { layerOff.remove(); layerOff = null; }
-  layerOn  = L.polyline([], { color: COLORS.liveOn,  weight: 5 }).addTo(map);
-  layerOff = L.polyline([], { color: COLORS.liveOff, weight: 5 }).addTo(map);
-} catch (_) {}
-
       stopBtn.onclick = async () => {
         if (!recording) {
           showToast('記録は開始されていません');
@@ -770,9 +765,13 @@ try {
 
       renderAuthBar();
       renderLogs();
-      supabase.auth.onAuthStateChange(async () => {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
         await renderAuthBar();
         await renderLogs();
+        if (session?.user) {
+          plannedRouteLoaded = false;
+          await loadPlannedRouteIfAny(true);
+        }
       });
 
       setTab('logs');

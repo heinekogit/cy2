@@ -710,15 +710,9 @@ function ensureLineMin2(pts) {
           return;
         }
 
-        const accountId = await (window.getMyAccountId ? window.getMyAccountId() : null);
-        if (!accountId) {
-          alert('ログインが切れました。再ログインしてください');
-          window.__logStartedAt = null;
-          location.replace('index.html?v=' + encodeURIComponent(window.APP_VERSION || ''));
-          return;
-        }
-
-        const raw = rawTrack.length ? rawTrack : traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }));
+        const raw = rawTrack.length
+          ? rawTrack
+          : traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }));
         const linePts = ensureLineMin2(raw);
         if (linePts.length < 2) {
           alert('位置が取得できませんでした。');
@@ -762,7 +756,9 @@ function ensureLineMin2(pts) {
         let redirected = false;
         try {
           console.log('実走ログを保存します', record);
-          const saved = await window.dbPut('logs', record);
+          const json = JSON.stringify(record);
+          const payload = JSON.parse(json);
+          const saved = await window.dbPut('logs', payload);
           if (saved?.id) {
             location.href = `detail.html?id=${encodeURIComponent(saved.id)}&kind=run&v=${V()}`;
             redirected = true;
@@ -773,7 +769,6 @@ function ensureLineMin2(pts) {
         } catch (e) {
           console.error('RUN SAVE ERROR', e, record);
           alert('保存に失敗: ' + (e?.message || '不明なエラー'));
-          window.__logStartedAt = null;
           return;
         } finally {
           window.__logStartedAt = null;

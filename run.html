@@ -642,7 +642,14 @@ function appendLivePoint(lat, lng) {
 }
 
 function ensureLineMin2(pts) {
-  if (!Array.isArray(pts) || pts.length === 0) return [];
+  if (!Array.isArray(pts) || pts.length === 0) {
+    const alt =
+      (planned && planned.length ? { lat: planned[0].lat, lng: planned[0].lng } :
+        (map ? { lat: map.getCenter().lat, lng: map.getCenter().lng } : null));
+    if (!alt) return [];
+    const base = { lat: alt.lat, lng: alt.lng, ts: Date.now(), acc: 999 };
+    return [base, { lat: base.lat, lng: base.lng, ts: base.ts + 1, acc: base.acc }];
+  }
   if (pts.length >= 2) return pts;
   const p = pts[0];
   return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];
@@ -650,8 +657,11 @@ function ensureLineMin2(pts) {
 
       const onErr = (err) => {
         console.warn('geolocation error', err);
-        showToast('位置情報エラー');
+        showToast('位置情報を取得できませんでした');
         clearWatchIfAny();
+        recording = false;
+        showRecUI && showRecUI(false);
+        setBadge('off', '位置情報エラー');
       };
 
       startBtn.onclick = () => {

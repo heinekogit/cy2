@@ -112,8 +112,8 @@
   <!-- ✅ ここから共通化パート -->
   <script src="js/auth-common.js"></script>
   <script>
-  AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
-  window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
+    AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
   </script>
 
   <script>
@@ -125,7 +125,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       const supabase = window.supabase;
       const V = () => encodeURIComponent(window.APP_VERSION || '');
 
@@ -808,21 +808,25 @@ function ensureLineMin2(pts) {
         resetRunLayers();
       };
 
-      renderAuthBar();
-      renderLogs();
-      setTimeout(() => {
+      const safeRender = async () => {
         try {
-          const authTxt = authBar?.textContent || '';
-          if (authTxt.includes('認証状態を確認中')) renderAuthBar();
-          const logsTxt = logsList?.textContent || '';
-          if (logsTxt.includes('読み込み中')) renderLogs();
+          await renderAuthBar();
         } catch (e) {
-          console.warn('retry render after delay', e);
+          console.error('renderAuthBar failure', e);
+          if (authBar) authBar.textContent = '認証状態の取得に失敗しました';
         }
-      }, 2000);
+        try {
+          await renderLogs();
+        } catch (e) {
+          console.error('renderLogs failure', e);
+          if (logsList) logsList.textContent = 'ログの読み込みに失敗しました';
+        }
+      };
+
+      await safeRender();
+
       supabase.auth.onAuthStateChange(async (_event, session) => {
-        await renderAuthBar();
-        await renderLogs();
+        await safeRender();
         if (session?.user) {
           plannedRouteLoaded = false;
           await loadPlannedRouteIfAny(true);
@@ -830,8 +834,7 @@ function ensureLineMin2(pts) {
       });
       window.addEventListener('pageshow', async () => {
         try {
-          await renderAuthBar();
-          await renderLogs();
+          await safeRender();
           if (map) {
             plannedRouteLoaded = false;
             await loadPlannedRouteIfAny(true);

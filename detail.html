@@ -513,8 +513,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
   (tgt?.parentElement || host).insertBefore(bar, tgt);
 
-  document.getElementById('btnStartRec').onclick = startRunRecording;
-  document.getElementById('btnStopRec').onclick  = stopRunRecordingAndSave;
+  const btn = document.getElementById('btnStartRec');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const url = new URL('run.html', location.href);
+      url.searchParams.set('v', window.APP_VERSION || '');
+      if (kind === 'route' && Number.isFinite(id)) {
+        url.searchParams.set('route', String(id));
+      }
+      url.searchParams.set('ts', String(Date.now()));
+      location.href = url.toString();
+    });
+  }
 });
 
 // 状態

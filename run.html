@@ -454,12 +454,26 @@
       }
 
       function clearLiveLayers() {
+        if (!map) return;
         ensureLiveLayers();
-        layerOn.setLatLngs([]);
-        layerOff.setLatLngs([]);
-        layerOn.bringToFront();
-        layerOff.bringToFront();
+        if (layerOn) {
+          layerOn.setLatLngs([]);
+          layerOn.bringToFront();
+        }
+        if (layerOff) {
+          layerOff.setLatLngs([]);
+          layerOff.bringToFront();
+        }
       }
+
+      const cleanupRun = () => {
+        try { clearWatchIfAny(); } catch (_) {}
+        try { clearLiveLayers(); } catch (_) {}
+        recording = false;
+        traced = [];
+        lastAddTs = 0;
+        plannedRouteLoaded = false;
+      };
 
       const m2deg = (m) => m / 111320;
       const encodePolyline = (latlngs) => {
@@ -765,6 +779,16 @@ const updateCourseStatus = (latlng) => {
 
       renderAuthBar();
       renderLogs();
+      setTimeout(() => {
+        try {
+          const authTxt = authBar?.textContent || '';
+          if (authTxt.includes('認証状態を確認中')) renderAuthBar();
+          const logsTxt = logsList?.textContent || '';
+          if (logsTxt.includes('読み込み中')) renderLogs();
+        } catch (e) {
+          console.warn('retry render after delay', e);
+        }
+      }, 2000);
       supabase.auth.onAuthStateChange(async (_event, session) => {
         await renderAuthBar();
         await renderLogs();
@@ -773,6 +797,20 @@ const updateCourseStatus = (latlng) => {
           await loadPlannedRouteIfAny(true);
         }
       });
+      window.addEventListener('pageshow', async () => {
+        try {
+          await renderAuthBar();
+          await renderLogs();
+          if (map) {
+            plannedRouteLoaded = false;
+            await loadPlannedRouteIfAny(true);
+          }
+        } catch (e) {
+          console.warn('pageshow refresh error', e);
+        }
+      });
+      window.addEventListener('pagehide', cleanupRun, { passive: true });
+      window.addEventListener('beforeunload', cleanupRun);
 
       setTab('logs');
     });

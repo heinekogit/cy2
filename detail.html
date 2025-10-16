@@ -231,7 +231,11 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(run.ended_at||run.started_at||Date.now()));
             const payload = { name: `Run ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: run.id, polyline: run.polyline ?? null, geojson: run.geojson ?? null };
             const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
-            if(e2 || !newRow){ console.error(e2); alert('作成に失敗'); return; }
+            if(e2 || !newRow){
+              console.error('ROUTE FROM RUN INSERT ERROR', e2, payload);
+              alert('作成に失敗: ' + (e2?.message || '不明なエラー'));
+              return;
+            }
             location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=route&v=${V()}`;
           }catch(e){ console.error(e); alert('作成に失敗'); }
         };

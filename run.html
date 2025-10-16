@@ -734,8 +734,10 @@ const updateCourseStatus = (latlng) => {
           lastSavedLogId = saved?.id ?? null;
           showToast('保存しました');
         } catch (e) {
-          console.error('save log error', e);
-          alert('保存に失敗しました');
+          console.error('RUN SAVE ERROR', e, record);
+          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
+          window.__logStartedAt = null;
+          return;
         } finally {
           window.__logStartedAt = null;
           await renderLogs();

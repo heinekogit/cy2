@@ -126,7 +126,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     let __currentRoute = null;
 
     async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
-    async function getMyAccountId(){ try{ const s=await getSession(); if(!s?.user) return null; const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle(); if(error){ console.error(error); return null; } return data?.account_id ?? null; }catch(e){ console.error(e); return null; } }
+    async function getMyAccountId(){
+      return AuthCommon.getMyAccountId(client);
+    }
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
     function extractLatLngsFromRoute(route){
@@ -194,7 +196,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         const email = s.user.email || '';
         bar.innerHTML = `
           ログイン中: <strong>${email}</strong>
-          <button class="btn" data-signout style="margin-left:8px">Sign out</button>
+          <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
           <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
           <a class="btn" style="margin-left:6px" href="index.html?v=${V()}">トップへ</a>
         `;
@@ -332,6 +334,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 <script src="js/auth-common.js"></script>
 <script>
   AuthCommon.init(client, { redirectUrl: 'index.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
 </script>
 
 <script>
@@ -508,26 +511,25 @@ document.addEventListener('DOMContentLoaded', ()=>{
 // ==== 実走記録（Run 作成） ====
 // 依存: window.client（Supabase）, getMyAccountId(), __map（Leaflet）
 
-// 画面に「実走を記録」ボタンを生やす（既存ボタンの近くに）
+// ルート詳細時のみ実走への導線を追加
 document.addEventListener('DOMContentLoaded', () => {
+  if (kind !== 'route') return;
   const host = document.querySelector('main .card') || document.querySelector('main');
-  const bar  = document.createElement('div');
+  if (!host) return;
+  const bar = document.createElement('div');
   bar.style.margin = '8px 0';
-  bar.innerHTML = `<button id="btnStartRec" class="btn">実走を記録</button>`;
+  bar.innerHTML = `<a id="btnRunThis" class="btn" href="#">このルートで実走する</a>`;
   const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
   (tgt?.parentElement || host).insertBefore(bar, tgt);
 
-  const btn = document.getElementById('btnStartRec');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      const url = new URL('run.html', location.href);
-      url.searchParams.set('v', window.APP_VERSION || '');
-      if (kind === 'route' && Number.isFinite(id)) {
-        url.searchParams.set('route', String(id));
-      }
-      url.searchParams.set('ts', String(Date.now()));
-      location.href = url.toString();
-    });
+  const rid = window.__currentRouteId || Number(new URL(location.href).searchParams.get('id'));
+  const a = document.getElementById('btnRunThis');
+  if (a && Number.isFinite(rid)) {
+    const v = encodeURIComponent(window.APP_VERSION || '');
+    a.href = `run.html?route=${encodeURIComponent(rid)}&v=${v}`;
+    a.rel = 'noopener';
+  } else if (a) {
+    a.remove();
   }
 });
 

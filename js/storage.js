@@ -4,6 +4,7 @@ window.dbPut = async function(store, obj) {
   if (store !== 'logs') return;
 
   const row = {
+    account_id: obj.accountId ?? null,
     name: obj.name ?? null,
     started_at: obj.startedAt ? new Date(obj.startedAt).toISOString() : null,
     ended_at:   obj.endedAt   ? new Date(obj.endedAt).toISOString()   : null,

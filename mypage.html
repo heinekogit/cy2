@@ -45,12 +45,7 @@
       return null;
     }
     async function getMyAccountId(){
-      try{
-        const s = await getSession(); if(!s?.user) return null;
-        const { data, error } = await client.from('users').select('account_id').eq('id', s.user.id).maybeSingle();
-        if(error){ console.error(error); return null; }
-        return data?.account_id ?? null;
-      }catch(e){ console.error(e); return null; }
+      return AuthCommon.getMyAccountId(client);
     }
 
     function visToBool(r){ return r?.is_public===true || r?.visibility==='public'; }
@@ -70,7 +65,7 @@
         const email = s.user.email || '';
         gate.innerHTML = `
           ログイン中: <strong>${email}</strong>
-          <button class="btn" data-signout style="margin-left:8px">Sign out</button>
+          <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
           <a class="btn" style="margin-left:6px;" href="index.html?v=${V()}">トップへ</a>
         `;
         return true;
@@ -152,7 +147,10 @@
       // ヘッダのトップリンクに現在のバージョンを付与
       try{
         const lnTop = document.getElementById('lnTop');
-        if (lnTop) lnTop.href = 'index.html?v=' + encodeURIComponent(window.APP_VERSION||'');
+        const lnRun = document.getElementById('lnRun');
+        const v = encodeURIComponent(window.APP_VERSION || '');
+        if (lnTop) lnTop.href = 'index.html?v=' + v;
+        if (lnRun) lnRun.href = 'run.html?v=' + v;
       }catch(e){ console.warn('set header link failed', e); }
 
       const ok = await renderGate(); if(ok) await loadMyRoutes();
@@ -177,6 +175,7 @@
 <script src="js/auth-common.js"></script>
 <script>
   AuthCommon.init(client, { redirectUrl: 'index.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
 </script>
 
 </head>
@@ -184,6 +183,7 @@
   <header>
     <div style="font-weight:700;">My Page</div>
     <div>
+      <a id="lnRun" class="btn" href="run.html">実走を始める</a>
       <a id="lnTop" class="btn" href="index.html">トップへ</a>
     </div>
   </header>

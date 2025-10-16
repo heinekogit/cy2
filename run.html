@@ -110,10 +110,11 @@
   </script>
 
   <!-- ✅ ここから共通化パート -->
-<script src="js/auth-common.js"></script>
-<script>
+  <script src="js/auth-common.js"></script>
+  <script>
   AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
-</script>
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
+  </script>
 
   <script>
     (function() {
@@ -162,6 +163,7 @@
       let lastAddTs = 0;
       let lastSavedLogId = null;
       let isLoggedIn = false;
+      let rawTrack = [];
 
       // 追従ルート＆ラインレイヤ
       let planned = [];        // 予定ルート（{lat,lng}[]）
@@ -276,7 +278,7 @@
             ログイン中: <strong>${escapeHtml(email)}</strong>
             <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
               <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
-              <button class="btn ghost" data-signout type="button">Sign out</button>
+              <button class="btn ghost" data-signout type="button">サインアウト</button>
             </div>
           `;
           startBtn.disabled = false;
@@ -342,10 +344,12 @@
         }
       }
 
+      let _watchId = null;
+
       const clearWatchIfAny = () => {
-        if (window.watchId) {
-          navigator.geolocation.clearWatch(window.watchId);
-          window.watchId = null;
+        if (_watchId != null) {
+          navigator.geolocation.clearWatch(_watchId);
+          _watchId = null;
         }
       };
 
@@ -372,11 +376,17 @@
       }
 
       let plannedRouteLoaded = false;
+      const initialRouteId = (() => {
+        const val = new URL(location.href).searchParams.get('route');
+        if (val == null) return null;
+        const num = Number(val);
+        return Number.isFinite(num) ? num : null;
+      })();
 
       async function loadPlannedRouteIfAny(force = false) {
         if (!map) return;
         try {
-          const rid = Number(new URL(location.href).searchParams.get('route'));
+          const rid = initialRouteId;
           if (!rid) {
             planned = [];
             if (plannedLayer) {
@@ -473,6 +483,7 @@
         traced = [];
         lastAddTs = 0;
         plannedRouteLoaded = false;
+        rawTrack = [];
       };
 
       const m2deg = (m) => m / 111320;
@@ -602,6 +613,7 @@ const updateCourseStatus = (latlng) => {
           const moved = !prev || latlng.distanceTo(L.latLng(prev[0], prev[1])) >= MIN_MOVE;
           if (moved) {
             traced.push([lat, lng]);
+            rawTrack.push({ lat, lng, acc, ts: now });
             lastAddTs = now;
             appendLivePoint(lat, lng);
           }
@@ -609,11 +621,11 @@ const updateCourseStatus = (latlng) => {
         updateCourseStatus(latlng);
       };
 
-      function appendLivePoint(lat, lng) {
-        ensureLiveLayers();
-        let isOn = true;
-        const ref = currentFollowLineLatLngs();
-        if (ref.length >= 2) {
+function appendLivePoint(lat, lng) {
+  ensureLiveLayers();
+  let isOn = true;
+  const ref = currentFollowLineLatLngs();
+  if (ref.length >= 2) {
           try {
             const point = turf.point([lng, lat]);
             const line = turf.lineString(ref.map(([la, ln]) => [ln, la]));
@@ -626,8 +638,15 @@ const updateCourseStatus = (latlng) => {
         if (isOn) layerOn.addLatLng([lat, lng]);
         else layerOff.addLatLng([lat, lng]);
         layerOn.bringToFront();
-        layerOff.bringToFront();
-      }
+  layerOff.bringToFront();
+}
+
+function ensureLineMin2(pts) {
+  if (!Array.isArray(pts) || pts.length === 0) return [];
+  if (pts.length >= 2) return pts;
+  const p = pts[0];
+  return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];
+}
 
       const onErr = (err) => {
         console.warn('geolocation error', err);
@@ -647,12 +666,13 @@ const updateCourseStatus = (latlng) => {
         follow = true;
         followBtn.textContent = '🔁 追従 ON';
         clearWatchIfAny();
-        window.watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
+        _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
 
         setEditMode(false);
         recording = true;
         traced = [];
         lastAddTs = 0;
+        rawTrack = [];
         if (tracedLine) {
           map.removeLayer(tracedLine);
           tracedLine = null;
@@ -680,57 +700,64 @@ const updateCourseStatus = (latlng) => {
           return;
         }
 
-        if (!isLoggedIn) {
-          alert('ログインしていないため保存できません。');
+        const accountId = await (window.getMyAccountId ? window.getMyAccountId() : null);
+        if (!accountId) {
+          alert('ログインが切れました。再ログインしてください');
+          window.__logStartedAt = null;
+          location.replace('index.html?v=' + encodeURIComponent(window.APP_VERSION || ''));
+          return;
+        }
+
+        const raw = rawTrack.length ? rawTrack : traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }));
+        const linePts = ensureLineMin2(raw);
+        if (linePts.length < 2) {
+          alert('位置が取得できませんでした。');
           window.__logStartedAt = null;
           return;
         }
 
-        if (traced.length < 2) {
-          alert('記録されたポイントが少なすぎます（2点以上必要）。');
-          window.__logStartedAt = null;
-          return;
+        let distance_m = 0;
+        for (let i = 1; i < linePts.length; i++) {
+          const a = linePts[i - 1];
+          const b = linePts[i];
+          distance_m += (a.lat === b.lat && a.lng === b.lng) ? 0 : haversine(a, b);
         }
+        distance_m = Math.round(distance_m);
 
-        const startedAt = window.__logStartedAt || new Date().toISOString();
-        const endedAt = new Date().toISOString();
-        let pts = dedupeTinyMoves(traced);
-        pts = movingAverage(pts);
-        const tolDeg = m2deg(6);
-        let ls = turf.lineString(pts.map(([la, ln]) => [ln, la]));
-        ls = turf.simplify(ls, { tolerance: tolDeg, highQuality: true });
-        let simp = ls.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-        simp = resampleByDistance(simp, 5);
+        const startTs = linePts[0].ts || Date.now();
+        const endTs = linePts[linePts.length - 1].ts || Date.now();
+        const durationSec = Math.max(1, ((endTs - startTs) / 1000) | 0);
 
-        if (simp.length < 2) {
-          alert('ログの処理に失敗しました（データ不足）。');
-          window.__logStartedAt = null;
-          return;
-        }
-
-        const ls2 = turf.lineString(simp.map(([la, ln]) => [ln, la]));
-        const lenMeters = turf.length(ls2, { units: 'kilometers' }) * 1000;
-        const bbox = turf.bbox(ls2);
-        const polyline = encodePolyline(simp);
-        const durationSec = Math.max(1, Math.round((new Date(endedAt) - new Date(startedAt)) / 1000));
+        const coords = linePts.map(p => [p.lng, p.lat]);
+        const gj = { type: 'LineString', coordinates: coords };
 
         const today = new Date();
         const nameDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')} 実走`;
         const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
 
         const record = {
+          accountId,
           name,
-          startedAt,
-          endedAt,
-          polyline,
-          pointCount: simp.length,
-          distanceMeters: Math.round(lenMeters),
+          startedAt: new Date(startTs).toISOString(),
+          endedAt: new Date(endTs).toISOString(),
+          polyline: encodePolyline(linePts.map(p => [p.lat, p.lng])),
+          geojson: gj,
+          pointCount: linePts.length,
+          distanceMeters: distance_m,
           durationSec,
-          bbox
+          bbox: null,
+          routeId: planned && planned.length && initialRouteId ? initialRouteId : null
         };
 
+        let redirected = false;
         try {
+          console.log('実走ログを保存します', record);
           const saved = await window.dbPut('logs', record);
+          if (saved?.id) {
+            location.href = `detail.html?id=${encodeURIComponent(saved.id)}&kind=run&v=${V()}`;
+            redirected = true;
+            return;
+          }
           lastSavedLogId = saved?.id ?? null;
           showToast('保存しました');
         } catch (e) {
@@ -740,8 +767,10 @@ const updateCourseStatus = (latlng) => {
           return;
         } finally {
           window.__logStartedAt = null;
-          await renderLogs();
-          setTab('logs');
+          if (!redirected) {
+            await renderLogs();
+            setTab('logs');
+          }
         }
       };
 
@@ -758,7 +787,7 @@ const updateCourseStatus = (latlng) => {
         clearWatchIfAny();
         follow = true;
         followBtn.textContent = '🔁 追従 ON';
-        window.watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
+        _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
       };
 
       editToggleBtn.onclick = () => {

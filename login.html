@@ -131,21 +131,6 @@
       }
     }
 
-    async function signOut(event) {
-      event?.preventDefault();
-      try {
-        await client.auth.signOut();
-        resetAuthForms();
-        await refreshStatus();
-      } catch (err) {
-        console.error('signOut error', err);
-        alert('Sign out error: ' + (err?.message || err));
-      } finally {
-        const url = 'index.html?v=' + V() + '&ts=' + Date.now();
-        window.location.replace(url);
-      }
-    }
-
     async function refreshStatus() {
       try {
         const { data:{ session } } = await client.auth.getSession();
@@ -189,6 +174,7 @@
 <script src="js/auth-common.js"></script>
 <script>
   AuthCommon.init(client, { redirectUrl: 'index.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
 </script>
 
 </head>
@@ -239,7 +225,7 @@
     <pre id="status" class="muted">loading...</pre>
     <div id="links" class="row"></div>
     <div class="row">
-      <button class="btn" data-signout>Sign out</button>
+      <button class="btn" data-signout>サインアウト</button>
     </div>
   </div>
 

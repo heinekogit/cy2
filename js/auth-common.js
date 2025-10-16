@@ -10,24 +10,43 @@
   }
 
   Auth.init = function (client, opts = {}) {
+    if (window.__auth_init) return;
+    window.__auth_init = true;
+
     const target = opts.redirectUrl || 'index.html';
 
-    // 全ページ共通のサインアウトボタン
     document.addEventListener('click', async (ev) => {
       const el = ev.target.closest('[data-signout]');
       if (!el) return;
       ev.preventDefault();
-      try { await client.auth.signOut(); } catch(e){ console.warn(e); }
+      try { await client.auth.signOut(); } catch (e) { console.warn(e); }
       location.replace(withV(target));
-    }, { capture:true });
+    }, { capture: true });
 
-    // 他タブでサインアウトされた時にも発火
     client.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
-        const isLogin = /login\.html$/.test(location.pathname);
-        if (!isLogin) location.replace(withV(target));
+        if (!/index\.html$|login\.html$/.test(location.pathname)) {
+          location.replace(withV(target));
+        }
       }
     });
+  };
+
+  Auth.getMyAccountId = async function (client) {
+    try {
+      const { data: { session } } = await client.auth.getSession();
+      if (!session?.user?.id) return null;
+      const { data, error } = await client
+        .from('users')
+        .select('account_id')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.account_id || null;
+    } catch (e) {
+      console.warn('getMyAccountId failed', e);
+      return null;
+    }
   };
 
   global.AuthCommon = Auth;

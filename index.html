@@ -53,13 +53,9 @@
       return null;
     }
 
-    async function getMyAccountId() {
-      const session = await getSession();
-      if (!session?.user) return null;
-      const { data, error } = await client.from("users").select("account_id").eq("id", session.user.id).single();
-      if (error) { console.warn("users.account_id error", error); return null; }
-      return data?.account_id ?? null;
-    }
+async function getMyAccountId() {
+  return AuthCommon.getMyAccountId(client);
+}
 
     // 認証バー
     async function renderAuthBar() {
@@ -85,7 +81,7 @@
           const email = session.user.email || "";
           bar.innerHTML = `
             ログイン中: <strong>${email}</strong>
-            <button class="btn" data-signout style="margin-left:8px">Sign out</button>
+            <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
             <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
           `;
         }
@@ -194,6 +190,7 @@
 <script src="js/auth-common.js"></script>
 <script>
   AuthCommon.init(client, { redirectUrl: 'index.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
 </script>
 
 </head>

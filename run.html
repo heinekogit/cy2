@@ -679,9 +679,15 @@ function ensureLineMin2(pts) {
         recording = false;
         showRecUI && showRecUI(false);
         setBadge('off', '位置情報エラー');
+        if (stopBtn) stopBtn.disabled = true;
+        if (startBtn && accountId) startBtn.disabled = false;
       };
 
       startBtn.onclick = () => {
+        if (recording) {
+          showToast('すでに記録中です');
+          return;
+        }
         if (!isLoggedIn) {
           alert('ログイン後に記録できます。先にログインしてください。');
           return;
@@ -694,24 +700,49 @@ function ensureLineMin2(pts) {
           alert('この端末では位置情報が使えません');
           return;
         }
-        follow = true;
-        followBtn.textContent = '🔁 追従 ON';
-        clearWatchIfAny();
-        _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
+        setBadge('', '現在地を取得中…');
+        showToast('現在地を取得しています…');
+        if (startBtn) startBtn.disabled = true;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            try {
+              onPos(pos);
+            } catch (e) {
+              console.warn('geolocation first fix onPos failed', e);
+            }
+            follow = true;
+            followBtn.textContent = '🔁 追従 ON';
+            clearWatchIfAny();
+            _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
 
-        setEditMode(false);
-        recording = true;
-        traced = [];
-        lastAddTs = 0;
-        rawTrack = [];
-        if (tracedLine) {
-          map.removeLayer(tracedLine);
-          tracedLine = null;
-        }
-        clearLiveLayers();
-        window.__logStartedAt = new Date().toISOString();
-        setBadge('warn', '記録中：オンコース判定有効');
-        showToast('記録を開始しました');
+            setEditMode(false);
+            recording = true;
+            traced = [];
+            lastAddTs = 0;
+            rawTrack = [];
+            if (tracedLine) {
+              map.removeLayer(tracedLine);
+              tracedLine = null;
+            }
+            clearLiveLayers();
+            window.__logStartedAt = new Date().toISOString();
+            setBadge('warn', '記録中：オンコース判定有効');
+            showToast('記録を開始しました');
+            if (startBtn) startBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = false;
+          },
+          (err) => {
+            console.warn('geolocation first fix error', err);
+            clearWatchIfAny();
+            recording = false;
+            const detail = err?.message ? `\n(${err.message})` : '';
+            alert(`位置情報が特定できません。位置情報の利用を許可しているか確認してください。${detail}`);
+            setBadge('off', '位置取得失敗');
+            if (startBtn) startBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
+          },
+          GEO_OPTIONS
+        );
       };
 
       stopBtn.onclick = async () => {
@@ -734,6 +765,8 @@ function ensureLineMin2(pts) {
         const currentAccountId = accountId;
         recording = false;
         clearWatchIfAny();
+        if (stopBtn) stopBtn.disabled = true;
+        if (startBtn && currentAccountId) startBtn.disabled = false;
 
         const count = traced.length;
         const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);

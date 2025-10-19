@@ -2,6 +2,11 @@
 
 window.dbPut = async function(store, obj) {
   if (store !== 'logs') return;
+  if (!obj || !obj.accountId) {
+    const err = new Error('accountId required to save run log');
+    console.error('[dbPut runs] missing accountId', obj);
+    throw err;
+  }
 
   const row = {
     account_id: obj.accountId ?? null,

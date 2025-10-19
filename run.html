@@ -148,6 +148,8 @@
       const lnMyPage = document.getElementById('lnMyPage');
       if (lnHome) lnHome.href = `index.html?v=${V()}`;
       if (lnMyPage) lnMyPage.href = `mypage.html?v=${V()}`;
+      if (startBtn) startBtn.disabled = true;
+      if (stopBtn) stopBtn.disabled = true;
 
       let map;
       let routePts = [];
@@ -684,6 +686,10 @@ function ensureLineMin2(pts) {
           alert('ログイン後に記録できます。先にログインしてください。');
           return;
         }
+        if (!accountId) {
+          alert('アカウント情報の取得を待っています。マイページを開き直してから再度お試しください。');
+          return;
+        }
         if (!('geolocation' in navigator)) {
           alert('この端末では位置情報が使えません');
           return;
@@ -713,10 +719,19 @@ function ensureLineMin2(pts) {
           showToast('記録は開始されていません');
           return;
         }
+        if (!accountId && window.getMyAccountId) {
+          try {
+            const refreshed = await window.getMyAccountId();
+            if (refreshed) accountId = refreshed;
+          } catch (idErr) {
+            console.warn('final getMyAccountId failed', idErr);
+          }
+        }
         if (!accountId) {
           alert('アカウント情報を確認できないため、保存できません。ログイン状態を確認してください。');
           return;
         }
+        const currentAccountId = accountId;
         recording = false;
         clearWatchIfAny();
 
@@ -759,7 +774,7 @@ function ensureLineMin2(pts) {
         const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
 
         const record = {
-          accountId,
+          accountId: currentAccountId,
           name,
           startedAt: new Date(startTs).toISOString(),
           endedAt: new Date(endTs).toISOString(),

@@ -310,51 +310,50 @@
       async function renderLogs() {
         logsList.textContent = '読み込み中…';
         try {
-          const logs = await window.dbGetAll('logs');
-          if (!logs || logs.length === 0) {
+          if (!accountId) {
+            await renderAuthBar();
+            if (!accountId) {
+              logsList.innerHTML = '<div class="meta">未ログインです。保存したログを表示するにはログインしてください。</div>';
+              return;
+            }
+          }
+
+          const { data: runs, error } = await window.supabase
+            .from('runs')
+            .select('id, name, created_at, started_at, ended_at, distance_m, duration_s')
+            .eq('account_id', accountId)
+            .order('created_at', { ascending: false });
+
+          if (error) throw error;
+          if (!runs || runs.length === 0) {
             logsList.innerHTML = '<div class="meta">保存された実走ログはまだありません。記録開始ボタンから実走を記録してください。</div>';
             return;
           }
+
           logsList.innerHTML = '';
-          for (const log of logs) {
+          for (const r of runs) {
+            const when = r.ended_at
+              ? new Date(r.ended_at).toLocaleString()
+              : (r.started_at
+                ? new Date(r.started_at).toLocaleString()
+                : (r.created_at ? new Date(r.created_at).toLocaleString() : '-'));
+            const title = r.name || when;
+            const km = (r.distance_m != null) ? `${(Number(r.distance_m) / 1000).toFixed(2)} km` : '-';
+            const durMin = (r.duration_s != null) ? Math.round(Number(r.duration_s) / 60) + ' 分' : '-';
             const card = document.createElement('div');
             card.className = 'card';
-          if (lastSavedLogId && log.id === lastSavedLogId) {
-            card.classList.add('highlight');
-            setTimeout(() => {
-              card.classList.remove('highlight');
-              lastSavedLogId = null;
-            }, 2500);
-            }
             card.innerHTML = `
               <div style="flex:1 1 auto;">
-                <div style="font-weight:600;">${escapeHtml(log.name || '(無題ログ)')} <span class="meta">#${log.id}</span></div>
-                <div class="meta">${fmtDateTime(log.startedAt)} → ${fmtDateTime(log.endedAt)}</div>
-                <div class="meta">${fmtDistance(log.distanceMeters)} / ${fmtDuration(log.durationSec)}</div>
+                <div style="font-weight:600;">${escapeHtml(title)} <span class="meta">#${r.id}</span></div>
+                <div class="meta">${when}</div>
+                <div class="meta">${km} / ${durMin}</div>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <a class="btn ghost" href="detail.html?id=${encodeURIComponent(log.id)}&kind=run&v=${V()}">詳細</a>
-                <button class="btn danger" data-del="${log.id}" type="button">削除</button>
+                <a class="btn ghost" href="detail.html?id=${encodeURIComponent(r.id)}&kind=run&v=${V()}">詳細</a>
               </div>
             `;
             logsList.appendChild(card);
           }
-          logsList.querySelectorAll('button[data-del]').forEach((btn) => {
-            btn.onclick = async () => {
-              const id = Number(btn.getAttribute('data-del'));
-              if (!Number.isFinite(id)) return;
-              if (!confirm('この実走ログを削除しますか？')) return;
-              try {
-                await window.dbDelete('logs', id);
-                showToast('削除しました');
-              } catch (e) {
-                console.error('delete log error', e);
-                alert('削除に失敗しました');
-              } finally {
-                await renderLogs();
-              }
-            };
-          });
         } catch (e) {
           console.error('renderLogs error', e);
           logsList.textContent = 'ログの読み込みに失敗しました';
@@ -739,103 +738,83 @@ function ensureLineMin2(pts) {
       };
 
       stopBtn.onclick = async () => {
-        if (!recording) {
-          showToast('記録は開始されていません');
-          return;
-        }
+        if (!recording) { showToast('記録は開始されていません'); return; }
+
         if (!accountId && window.getMyAccountId) {
-          try {
-            const refreshed = await window.getMyAccountId();
-            if (refreshed) accountId = refreshed;
-          } catch (idErr) {
-            console.warn('final getMyAccountId failed', idErr);
-          }
+          try { const refreshed = await window.getMyAccountId(); if (refreshed) accountId = refreshed; } catch (_) {}
         }
-        if (!accountId) {
-          alert('アカウント情報を確認できないため、保存できません。ログイン状態を確認してください。');
-          return;
-        }
-        const currentAccountId = accountId;
+        if (!accountId) { alert('アカウント情報を確認できないため、保存できません。ログイン状態を確認してください。'); return; }
+
         recording = false;
         clearWatchIfAny();
         if (stopBtn) stopBtn.disabled = true;
-        if (startBtn && currentAccountId) startBtn.disabled = false;
+        if (startBtn && accountId) startBtn.disabled = false;
 
         const count = traced.length;
         const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
-        if (!ok) {
-          setBadge('', '記録停止');
-          showToast('保存せず終了');
-          window.__logStartedAt = null;
-          return;
-        }
+        if (!ok) { setBadge('', '記録停止'); showToast('保存せず終了'); window.__logStartedAt = null; return; }
 
         const raw = rawTrack.length
           ? rawTrack
           : traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }));
+
         const linePts = ensureLineMin2(raw);
-        if (linePts.length < 2) {
-          alert('位置が取得できませんでした。');
-          window.__logStartedAt = null;
-          return;
-        }
+        if (linePts.length < 2) { alert('位置が取得できませんでした。'); window.__logStartedAt = null; return; }
 
         let distance_m = 0;
         for (let i = 1; i < linePts.length; i++) {
-          const a = linePts[i - 1];
-          const b = linePts[i];
+          const a = linePts[i - 1], b = linePts[i];
           distance_m += (a.lat === b.lat && a.lng === b.lng) ? 0 : haversine(a, b);
         }
         distance_m = Math.round(distance_m);
-
         const startTs = linePts[0].ts || Date.now();
         const endTs = linePts[linePts.length - 1].ts || Date.now();
-        const durationSec = Math.max(1, ((endTs - startTs) / 1000) | 0);
+        const duration_s = Math.max(1, ((endTs - startTs) / 1000) | 0);
 
         const coords = linePts.map(p => [p.lng, p.lat]);
         const gj = { type: 'LineString', coordinates: coords };
+        const poly = encodePolyline(linePts.map(p => [p.lat, p.lng]));
 
-        const today = new Date();
+        const today = new Date(endTs);
         const nameDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')} 実走`;
         const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
 
-        const record = {
-          accountId: currentAccountId,
+        const payload = {
+          account_id: accountId,
           name,
-          startedAt: new Date(startTs).toISOString(),
-          endedAt: new Date(endTs).toISOString(),
-          polyline: encodePolyline(linePts.map(p => [p.lat, p.lng])),
+          started_at: new Date(startTs).toISOString(),
+          ended_at: new Date(endTs).toISOString(),
+          distance_m,
+          duration_s,
           geojson: gj,
-          pointCount: linePts.length,
-          distanceMeters: distance_m,
-          durationSec,
-          bbox: null,
-          routeId: planned && planned.length && initialRouteId ? initialRouteId : null
+          polyline: poly
         };
 
         let redirected = false;
         try {
-          console.log('実走ログを保存します', record);
-          const json = JSON.stringify(record);
-          const payload = JSON.parse(json);
-          const saved = await window.dbPut('logs', payload);
-          if (saved?.id) {
-            location.href = `detail.html?id=${encodeURIComponent(saved.id)}&kind=run&v=${V()}`;
-            redirected = true;
+          console.log('RUN INSERT payload', payload);
+          const { data: newRow, error, status } = await window.supabase
+            .from('runs')
+            .insert([payload])
+            .select('id')
+            .maybeSingle();
+
+          if (error || !newRow) {
+            console.error('RUN INSERT ERROR', { status, error, payload });
+            alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
             return;
           }
-          lastSavedLogId = saved?.id ?? null;
-          showToast('保存しました');
-        } catch (e) {
-          console.error('RUN SAVE ERROR', e, record);
-          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
+
+          location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=run&v=${V()}`;
+          redirected = true;
           return;
+        } catch (e) {
+          console.error('RUN SAVE EXCEPTION', e);
+          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
         } finally {
           window.__logStartedAt = null;
-          if (!redirected) {
-            await renderLogs();
-            setTab('logs');
-          }
+          try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) {}
+          if (!redirected) { await renderLogs(); setTab('logs'); }
         }
       };
 

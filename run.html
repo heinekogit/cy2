@@ -299,7 +299,7 @@
             `;
             const controlsDisabled = !accountId;
             startBtn.disabled = controlsDisabled;
-            stopBtn.disabled = controlsDisabled;
+            stopBtn.disabled = true;
           }
         } catch (e) {
           console.error('renderAuthBar error', e);
@@ -659,14 +659,7 @@ function appendLivePoint(lat, lng) {
 }
 
 function ensureLineMin2(pts) {
-  if (!Array.isArray(pts) || pts.length === 0) {
-    const alt =
-      (planned && planned.length ? { lat: planned[0].lat, lng: planned[0].lng } :
-        (map ? { lat: map.getCenter().lat, lng: map.getCenter().lng } : null));
-    if (!alt) return [];
-    const base = { lat: alt.lat, lng: alt.lng, ts: Date.now(), acc: 999 };
-    return [base, { lat: base.lat, lng: base.lng, ts: base.ts + 1, acc: base.acc }];
-  }
+  if (!Array.isArray(pts) || pts.length === 0) return [];
   if (pts.length >= 2) return pts;
   const p = pts[0];
   return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];

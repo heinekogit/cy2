@@ -465,6 +465,20 @@ document.addEventListener('DOMContentLoaded', ()=>{
     </div>
     <div style="margin:8px 0;">
       <button id="btnToRoute" class="btn" style="display:none;">このログをルート化する</button>
+      <a class="btn" id="btnRunThis" href="#" style="margin-left:6px;">このルートで実走する</a>
+      <script>
+        (function(){
+          const q = new URL(location.href).searchParams;
+          const kindParam = q.get('kind');
+          if (kindParam !== 'route') { document.getElementById('btnRunThis')?.remove(); return; }
+          const rid = q.get('id');
+          const a = document.getElementById('btnRunThis');
+          if (a && rid) {
+            a.href = `run.html?route=${encodeURIComponent(rid)}`;
+            a.rel = 'noopener';
+          }
+        })();
+      </script>
     </div>
     <div id="map"></div>
 
@@ -510,28 +524,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
 <script>
 // ==== 実走記録（Run 作成） ====
 // 依存: window.client（Supabase）, getMyAccountId(), __map（Leaflet）
-
-// ルート詳細時のみ実走への導線を追加
-document.addEventListener('DOMContentLoaded', () => {
-  if (kind !== 'route') return;
-  const host = document.querySelector('main .card') || document.querySelector('main');
-  if (!host) return;
-  const bar = document.createElement('div');
-  bar.style.margin = '8px 0';
-  bar.innerHTML = `<a id="btnRunThis" class="btn" href="#">このルートで実走する</a>`;
-  const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
-  (tgt?.parentElement || host).insertBefore(bar, tgt);
-
-  const rid = window.__currentRouteId || Number(new URL(location.href).searchParams.get('id'));
-  const a = document.getElementById('btnRunThis');
-  if (a && Number.isFinite(rid)) {
-    const v = encodeURIComponent(window.APP_VERSION || '');
-    a.href = `run.html?route=${encodeURIComponent(rid)}&v=${v}`;
-    a.rel = 'noopener';
-  } else if (a) {
-    a.remove();
-  }
-});
 
 // 状態
 let _watchId = null, _timerId = null;

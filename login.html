@@ -164,6 +164,12 @@
 
     async function init() {
       setupAuthForms();
+      try {
+        const topLink = document.getElementById('btnBackToTop');
+        if (topLink) topLink.href = `index.html?v=${V()}`;
+      } catch (e) {
+        console.warn('set top link failed', e);
+      }
       await refreshStatus();
       client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
     }
@@ -182,6 +188,9 @@
   <h1>Login</h1>
 
   <div id="authForms" class="card">
+    <div class="row" style="margin-bottom:8px;">
+      <a id="btnBackToTop" class="btn" href="index.html">トップへ戻る</a>
+    </div>
     <div class="tabs">
       <button type="button" id="tabLogin" class="tab active">ログイン</button>
       <button type="button" id="tabSignup" class="tab">新規登録</button>

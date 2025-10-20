@@ -505,26 +505,28 @@
       const m2deg = (m) => m / 111320;
       const encodePolyline = (latlngs) => {
         try {
+          const pts = latlngs.map((p) => Array.isArray(p) ? { lat: p[0], lng: p[1] } : p);
           let lastLat = 0;
           let lastLng = 0;
-          let res = '';
-          for (const [lat, lng] of latlngs) {
-            let iLat = Math.round(lat * 1e5);
-            let iLng = Math.round(lng * 1e5);
-            let dLat = iLat - lastLat;
-            let dLng = iLng - lastLng;
-            for (let v of [dLat, dLng]) {
-              v = v < 0 ? ~(v << 1) : v << 1;
-              while (v >= 0x20) {
-                res += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
-                v >>= 5;
-              }
-              res += String.fromCharCode(v + 63);
+          let enc = '';
+          const e5 = (n) => Math.round(n * 1e5);
+          const push = (v) => {
+            v = v < 0 ? ~(v << 1) : (v << 1);
+            while (v >= 0x20) {
+              enc += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+              v >>= 5;
             }
-            lastLat = iLat;
-            lastLng = iLng;
+            enc += String.fromCharCode(v + 63);
+          };
+          for (const p of pts) {
+            const la = e5(p.lat);
+            const ln = e5(p.lng);
+            push(la - lastLat);
+            push(ln - lastLng);
+            lastLat = la;
+            lastLng = ln;
           }
-          return res;
+          return enc;
         } catch (e) {
           console.error('encodePolyline error', e);
           return '';
@@ -658,7 +660,7 @@ function appendLivePoint(lat, lng) {
 }
 
 function ensureLineMin2(pts) {
-  if (!Array.isArray(pts) || pts.length === 0) return [];
+  if (!Array.isArray(pts) || !pts.length) return [];
   if (pts.length >= 2) return pts;
   const p = pts[0];
   return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];
@@ -754,30 +756,35 @@ function ensureLineMin2(pts) {
         const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
         if (!ok) { setBadge('', '記録停止'); showToast('保存せず終了'); window.__logStartedAt = null; return; }
 
-        const raw = rawTrack.length
+        const raw = (Array.isArray(rawTrack) && rawTrack.length)
           ? rawTrack
-          : traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }));
+          : (Array.isArray(traced)
+            ? traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }))
+            : []);
 
         const linePts = ensureLineMin2(raw);
-        if (linePts.length < 2) { alert('位置が取得できませんでした。'); window.__logStartedAt = null; return; }
+        if (linePts.length < 2) { alert('位置が取得できませんでした'); window.__logStartedAt = null; return; }
 
         let distance_m = 0;
         for (let i = 1; i < linePts.length; i++) {
           const a = linePts[i - 1], b = linePts[i];
-          distance_m += (a.lat === b.lat && a.lng === b.lng) ? 0 : haversine(a, b);
+          if (a.lat !== b.lat || a.lng !== b.lng) {
+            distance_m += (typeof haversine === 'function' ? haversine(a, b) : 0);
+          }
         }
         distance_m = Math.round(distance_m);
-        const startTs = linePts[0].ts || Date.now();
+
+        const startTs = linePts[0].ts || (window.__logStartedAt || Date.now());
         const endTs = linePts[linePts.length - 1].ts || Date.now();
         const duration_s = Math.max(1, ((endTs - startTs) / 1000) | 0);
 
-        const coords = linePts.map(p => [p.lng, p.lat]);
+        const coords = linePts.map((p) => [p.lng, p.lat]);
         const gj = { type: 'LineString', coordinates: coords };
-        const poly = encodePolyline(linePts.map(p => [p.lat, p.lng]));
+        const poly = encodePolyline(linePts.map((p) => [p.lat, p.lng]));
 
         const today = new Date(endTs);
         const nameDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')} 実走`;
-        const name = prompt('実走ログの名前を入力してください', nameDefault) || nameDefault;
+        const name = typeof prompt === 'function' ? (prompt('実走ログ名', nameDefault) || nameDefault) : nameDefault;
 
         const payload = {
           account_id: accountId,
@@ -890,10 +897,15 @@ function ensureLineMin2(pts) {
       window.addEventListener('pagehide', cleanupRun, { passive: true });
       window.addEventListener('beforeunload', cleanupRun);
 
-      const initialTab = initialRouteId ? 'run' : 'logs';
-      setTab(initialTab);
-      if (initialTab === 'run') {
-        resetRunLayers();
+      if (initialRouteId) {
+        try {
+          document.querySelector('#tabRun')?.click();
+          await loadPlannedRouteIfAny(true);
+        } catch (e) {
+          console.warn('initial route load failed', e);
+        }
+      } else {
+        setTab('logs');
       }
     });
   </script>

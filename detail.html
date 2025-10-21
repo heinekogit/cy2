@@ -10,8 +10,10 @@
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 920px; margin: 20px auto; padding: 0 12px; color:#111827; }
     .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
     .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; }
-    #map { height: 60vh; border:1px solid #e5e7eb; border-radius:10px; }
+    #map { height: 40vh; border:1px solid #e5e7eb; border-radius:10px; }
     .muted{ color:#6b7280; }
+    .elev-card { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
+    #elevChart { width:100%; height:140px; display:block; margin-top:8px; }
 
 /* --- 描画モード：地図を実質フルスクリーン化 --- */
 body.mode-draw #map { height: calc(var(--vh, 1vh) * 100); }
@@ -38,8 +40,8 @@ body.mode-draw #map { height: calc(var(--vh, 1vh) * 100); }
 }
 
 /* 既存：閲覧/記録モードの高さ基準（そのまま利用） */
-#map { height: 50vh; transition: height .2s ease; }
-@media (max-width: 600px) { #map{ height: 45vh; } }
+#map { height: 33vh; transition: height .2s ease; }
+@media (max-width: 600px) { #map{ height: 30vh; } }
 body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
 .rec-overlay {
@@ -68,7 +70,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 <script>
   const COLORS = {
     routePlanned: '#3b82f6', // 青
-    runRecorded:  '#ef4444', // 既存（履歴Runの表示に使用：赤）
+    runRecorded:  '#10b981', // 履歴Run表示（緑）
     liveOnRoute:  '#10b981', // 実走オンルート：緑
     liveOffRoute: '#ef4444'  // 実走逸脱：赤
   };
@@ -185,6 +187,169 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return best;
     }
 
+    const distanceOnEarth = (a, b) => {
+      const R = 6371000;
+      const toRad = (x) => x * Math.PI / 180;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const s = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+
+    const totalDistanceMeters = (points) => {
+      if (!Array.isArray(points) || points.length < 2) return 0;
+      let sum = 0;
+      for (let i = 1; i < points.length; i++) {
+        sum += distanceOnEarth(points[i - 1], points[i]);
+      }
+      return sum;
+    };
+
+    const cumDistances = (points) => {
+      const out = [0];
+      for (let i = 1; i < points.length; i++) {
+        out[i] = out[i - 1] + distanceOnEarth(points[i - 1], points[i]);
+      }
+      return out;
+    };
+
+    const samplePoints = (points, maxN = 200) => {
+      if (!Array.isArray(points) || points.length === 0) return [];
+      if (points.length <= maxN) return points.slice();
+      const step = Math.ceil(points.length / maxN);
+      const res = [];
+      for (let i = 0; i < points.length; i += step) {
+        res.push(points[i]);
+      }
+      if (res[res.length - 1] !== points[points.length - 1]) {
+        res.push(points[points.length - 1]);
+      }
+      return res;
+    };
+
+    async function fetchElevations(points) {
+      try {
+        const samples = samplePoints(points, 200);
+        if (!samples.length) return null;
+        const qs = samples.map((p) => `${p.lat},${p.lng}`).join('|');
+        const url = `https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(qs)}`;
+        const res = await fetch(url, { mode: 'cors' });
+        if (!res.ok) return null;
+        const json = await res.json();
+        const list = json?.results?.map((r) => r.elevation).filter((v) => Number.isFinite(v));
+        if (!list || list.length < 2) return null;
+        if (points.length <= list.length) return list.slice(0, points.length);
+        const expanded = new Array(points.length);
+        const step = (points.length - 1) / (list.length - 1);
+        for (let i = 0; i < points.length; i++) {
+          const pos = i / step;
+          const k = Math.floor(pos);
+          if (k >= list.length - 1) {
+            expanded[i] = list[list.length - 1];
+            continue;
+          }
+          const t = pos - k;
+          expanded[i] = list[k] * (1 - t) + list[k + 1] * t;
+        }
+        return expanded;
+      } catch (err) {
+        console.warn('fetchElevations failed', err);
+        return null;
+      }
+    }
+
+    const sumGainLoss = (elevs, threshold = 2) => {
+      let up = 0;
+      let down = 0;
+      for (let i = 1; i < elevs.length; i++) {
+        const diff = elevs[i] - elevs[i - 1];
+        if (diff > threshold) up += diff;
+        else if (diff < -threshold) down += -diff;
+      }
+      return { up: Math.round(up), down: Math.round(down) };
+    };
+
+    const drawElevationProfile = (svg, elevs, points) => {
+      if (!svg) return;
+      const ns = 'http://www.w3.org/2000/svg';
+      const width = svg.clientWidth || 600;
+      const height = svg.clientHeight || 140;
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      const dists = cumDistances(points);
+      const total = dists[dists.length - 1] || 1;
+      const minE = Math.min(...elevs);
+      const maxE = Math.max(...elevs);
+      const range = Math.max(1, maxE - minE);
+
+      const x = (i) => (width * (dists[i] / total));
+      const y = (e) => height - ((e - minE) / range) * height;
+
+      const pathArea = document.createElementNS(ns, 'path');
+      let d = `M 0 ${height}`;
+      for (let i = 0; i < elevs.length; i++) {
+        d += ` L ${x(i).toFixed(2)} ${y(elevs[i]).toFixed(2)}`;
+      }
+      d += ` L ${width} ${height} Z`;
+      pathArea.setAttribute('d', d);
+      pathArea.setAttribute('fill', '#d1e9ff');
+      pathArea.setAttribute('stroke', '#3b82f6');
+      pathArea.setAttribute('stroke-width', '1.5');
+      svg.appendChild(pathArea);
+
+      const ticks = 4;
+      for (let i = 0; i <= ticks; i++) {
+        const val = minE + (range * i) / ticks;
+        const yy = y(val);
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', 0);
+        line.setAttribute('x2', width);
+        line.setAttribute('y1', yy);
+        line.setAttribute('y2', yy);
+        line.setAttribute('stroke', '#f3f4f6');
+        svg.appendChild(line);
+
+        const label = document.createElementNS(ns, 'text');
+        label.setAttribute('x', 4);
+        label.setAttribute('y', Math.max(10, yy - 4));
+        label.setAttribute('fill', '#6b7280');
+        label.setAttribute('font-size', '10');
+        label.textContent = `${Math.round(val)} m`;
+        svg.appendChild(label);
+      }
+    };
+
+    async function renderElevationPanel(points){
+      const box = document.getElementById('elevBox');
+      const statsEl = document.getElementById('elevStats');
+      const chartEl = document.getElementById('elevChart');
+      if (!box || !statsEl || !chartEl) return;
+      if (!Array.isArray(points) || points.length < 2) {
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = 'block';
+      statsEl.textContent = '標高データ取得中…';
+      chartEl.innerHTML = '';
+
+      const elevs = await fetchElevations(points);
+      if (!elevs || elevs.length < 2) {
+        statsEl.textContent = '標高データを取得できませんでした。';
+        chartEl.innerHTML = '';
+        return;
+      }
+
+      const totalDist = totalDistanceMeters(points);
+      const { up, down } = sumGainLoss(elevs, 2);
+      const netGain = elevs[elevs.length - 1] - elevs[0];
+      const avgGrade = totalDist > 0 ? ((netGain / totalDist) * 100) : 0;
+      statsEl.textContent = `総上昇 ${up} m ／ 総下降 ${down} m ／ 平均勾配 ${avgGrade.toFixed(1)} %`;
+      drawElevationProfile(chartEl, elevs, points);
+    }
+
     async function renderAuthBar(){
       const bar = $('#authBar');
       try{
@@ -224,6 +389,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
+        await renderElevationPanel(extractLatLngsFromRoute(run));
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -292,6 +458,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
+        await renderElevationPanel(extractLatLngsFromRoute(route));
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
@@ -458,7 +625,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 <body>
   <header class="card" id="authBar"></header>
 
-  <main class="card">
+<main class="card">
     <div id="meta" style="margin-bottom:8px;">読み込み中…</div>
     <div id="toggleWrap" style="display:none; margin:8px 0;">
       <label><input type="checkbox" id="visToggle" /> 公開する</label>
@@ -481,6 +648,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
       </script>
     </div>
     <div id="map"></div>
+    <div id="elevBox" class="elev-card">
+      <div style="font-weight:600;">標高・斜度</div>
+      <div id="elevStats" class="muted" style="margin-top:4px;">標高データ取得中…</div>
+      <svg id="elevChart"></svg>
+    </div>
 
 <!-- 描画モード用 パレット（必要時だけ表示） -->
 <div id="drawUI" class="draw-toolbar" style="display:none;">

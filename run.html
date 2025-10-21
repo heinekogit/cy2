@@ -167,6 +167,7 @@
       let isLoggedIn = false;
       let accountId = null;
       let rawTrack = [];
+      let wakeLock = null;
 
       // 追従ルート＆ラインレイヤ
       let planned = [];        // 予定ルート（{lat,lng}[]）
@@ -495,6 +496,7 @@
       const cleanupRun = () => {
         try { clearWatchIfAny(); } catch (_) {}
         try { clearLiveLayers(); } catch (_) {}
+        try { releaseWakeLock(); } catch (_) {}
         recording = false;
         traced = [];
         lastAddTs = 0;
@@ -563,6 +565,32 @@
           pts.push([lat, lng]);
         }
         return pts.length ? pts : latlngs.slice();
+      };
+
+      const canUseWakeLock = () => {
+        return typeof navigator !== 'undefined' && !!navigator.wakeLock?.request;
+      };
+      const requestWakeLock = async () => {
+        if (!canUseWakeLock() || wakeLock) return;
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock?.addEventListener?.('release', () => {
+            wakeLock = null;
+          });
+        } catch (err) {
+          console.warn('wakeLock request failed', err);
+          wakeLock = null;
+        }
+      };
+      const releaseWakeLock = async () => {
+        if (!wakeLock) return;
+        try {
+          await wakeLock.release();
+        } catch (err) {
+          console.warn('wakeLock release failed', err);
+        } finally {
+          wakeLock = null;
+        }
       };
 
 const updateCourseStatus = (latlng) => {
@@ -675,6 +703,7 @@ function ensureLineMin2(pts) {
         setBadge('off', '位置情報エラー');
         if (stopBtn) stopBtn.disabled = true;
         if (startBtn && accountId) startBtn.disabled = false;
+        releaseWakeLock();
       };
 
       startBtn.onclick = () => {
@@ -724,6 +753,7 @@ function ensureLineMin2(pts) {
             showToast('記録を開始しました');
             if (startBtn) startBtn.disabled = false;
             if (stopBtn) stopBtn.disabled = false;
+            requestWakeLock();
           },
           (err) => {
             console.warn('geolocation first fix error', err);
@@ -749,6 +779,7 @@ function ensureLineMin2(pts) {
 
         recording = false;
         clearWatchIfAny();
+        releaseWakeLock();
         if (stopBtn) stopBtn.disabled = true;
         if (startBtn && accountId) startBtn.disabled = false;
 
@@ -896,6 +927,15 @@ function ensureLineMin2(pts) {
       });
       window.addEventListener('pagehide', cleanupRun, { passive: true });
       window.addEventListener('beforeunload', cleanupRun);
+      if (canUseWakeLock()) {
+        document.addEventListener('visibilitychange', async () => {
+          if (document.visibilityState === 'visible' && recording) {
+            await requestWakeLock();
+          } else {
+            await releaseWakeLock();
+          }
+        }, { passive: true });
+      }
 
       if (initialRouteId) {
         try {

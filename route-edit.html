@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Route Editor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f9fafb;
+      --fg: #111827;
+      --primary: #111827;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans JP",sans-serif;
+      overscroll-behavior: none;
+    }
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+    header {
+      position: fixed;
+      top: env(safe-area-inset-top, 8px);
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.9);
+      box-shadow: 0 4px 18px rgba(15,23,42,0.1);
+      z-index: 10;
+      backdrop-filter: blur(6px);
+    }
+    #toolbar {
+      position: fixed;
+      bottom: env(safe-area-inset-bottom, 12px);
+      left: 8px;
+      right: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.9);
+      box-shadow: 0 8px 24px rgba(15,23,42,0.12);
+      z-index: 10;
+      backdrop-filter: blur(6px);
+    }
+    .btn {
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      text-decoration: none;
+      min-width: 36px;
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn.danger {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: #fff;
+    }
+    .btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(59,130,246,0.12);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #statusToast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(env(safe-area-inset-bottom,12px) + 64px);
+      background: rgba(17,24,39,0.92);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: none;
+      z-index: 20;
+    }
+    #nameField {
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #routeName {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 14px;
+      background: #fff;
+      min-width: 160px;
+    }
+    #authNotice {
+      font-size: 13px;
+      color: #b91c1c;
+    }
+    @media (max-width: 600px) {
+      header { flex-direction: column; align-items: stretch; }
+      #nameField { width: 100%; }
+      #toolbar { justify-content: center; }
+    }
+  </style>
+
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0, 10) + '-dev';
+    }
+  </script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body>
+  <div id="map"></div>
+  <header>
+    <div id="nameField">
+      <input id="routeName" type="text" placeholder="ルート名称 (任意)" />
+      <div id="authNotice"></div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="btnBack" class="btn">戻る</button>
+      <button id="btnSave" class="btn primary">保存</button>
+    </div>
+  </header>
+
+  <div id="toolbar">
+    <button data-tool="add" class="btn active">追加</button>
+    <button data-tool="move" class="btn">移動</button>
+    <button data-tool="delete" class="btn">削除</button>
+    <button id="btnUndo" class="btn">Undo</button>
+    <button id="btnRedo" class="btn">Redo</button>
+    <button id="btnClear" class="btn danger">クリア</button>
+  </div>
+
+  <div id="statusToast"></div>
+
+  <script src="js/auth-common.js"></script>
+  <script>
+    (function(){
+      const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
+      });
+      window.supabaseClient = supabase;
+      window.supabase = supabase;
+
+      AuthCommon.init(supabase, { redirectUrl: 'index.html' });
+      window.getMyAccountId = () => AuthCommon.getMyAccountId(supabase);
+
+      const V = () => encodeURIComponent(window.APP_VERSION || '');
+      const q = new URL(location.href).searchParams;
+      const editingId = q.get('id') ? Number(q.get('id')) : null;
+
+      const map = L.map('map', {
+        zoomControl: true,
+        attributionControl: true
+      }).setView([35.681236, 139.767125], 13);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      const state = {
+        points: [],
+      history: [],
+      future: [],
+      tool: 'add',
+      dirty: false,
+      accountId: null,
+      loggedIn: false,
+      loading: false,
+      draftTimer: null
+    };
+      state.history = [JSON.stringify({ points: [] })];
+
+      const polyline = L.polyline([], { color: '#3b82f6', weight: 5 }).addTo(map);
+      let markers = [];
+      let mapClickHandler = null;
+
+      const btnSave = document.getElementById('btnSave');
+      const btnBack = document.getElementById('btnBack');
+      const toolbar = document.getElementById('toolbar');
+      const routeNameInput = document.getElementById('routeName');
+      const toast = document.getElementById('statusToast');
+      const authNotice = document.getElementById('authNotice');
+
+      const STORAGE_KEY = 'route-draft';
+
+      function showToast(msg, ms=2000){
+        toast.textContent = msg;
+        toast.style.display = 'block';
+        setTimeout(()=>{ toast.style.display = 'none'; }, ms);
+      }
+
+      function encodePolyline(latlngs){
+        try{
+          const pts = latlngs.map(p => Array.isArray(p) ? { lat:p[0], lng:p[1] } : p);
+          let lastLat = 0, lastLng = 0, enc = '';
+          const e5 = n => Math.round(n * 1e5);
+          const push = v => {
+            v = v < 0 ? ~(v << 1) : (v << 1);
+            while (v >= 0x20) { enc += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; }
+            enc += String.fromCharCode(v + 63);
+          };
+          for (const p of pts){
+            const la = e5(p.lat);
+            const ln = e5(p.lng);
+            push(la - lastLat);
+            push(ln - lastLng);
+            lastLat = la;
+            lastLng = ln;
+          }
+          return enc;
+        }catch(e){
+          console.warn('encodePolyline failed', e);
+          return '';
+        }
+      }
+
+      function decodePolyline(str){
+        try{
+          let idx=0, lat=0, lng=0, arr=[];
+          while(idx<str.length){
+            let b,shift=0,result=0;
+            do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+            let dlat=(result&1)?~(result>>1):(result>>1);
+            shift=0; result=0;
+            do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+            let dlng=(result&1)?~(result>>1):(result>>1);
+            lat += dlat; lng += dlng;
+            arr.push({lat:lat/1e5, lng:lng/1e5});
+          }
+          return arr;
+        }catch(e){
+          console.warn('decodePolyline failed', e);
+          return [];
+        }
+      }
+
+      function setDirty(flag=true){
+        state.dirty = flag;
+        if (!flag) {
+          state.history = state.history.slice(-50);
+          state.future = [];
+        }
+      }
+
+      function scheduleDraftSave(){
+        if (state.draftTimer) clearTimeout(state.draftTimer);
+        state.draftTimer = setTimeout(()=> {
+          try{
+            const payload = {
+              name: routeNameInput.value || '',
+              points: state.points,
+              updatedAt: Date.now(),
+              routeId: editingId || null
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+          }catch(e){
+            console.warn('draft save failed', e);
+          }
+        }, 5000);
+      }
+
+      function pushHistory(){
+        state.history.push(JSON.stringify({ points: state.points }));
+        state.history = state.history.slice(-100);
+        state.future = [];
+        setDirty(true);
+        scheduleDraftSave();
+      }
+
+      function applyPoints(points, options={}){
+        state.points = points.map(p => ({ lat: p.lat, lng: p.lng }));
+        polyline.setLatLngs(state.points.map(p => [p.lat, p.lng]));
+        markers.forEach(m => m.remove());
+        markers = state.points.map((p, idx) => {
+          const marker = L.marker([p.lat, p.lng], {
+            draggable: state.tool === 'move',
+            icon: L.divIcon({
+              className: 'point-marker',
+              html: `<div style="width:14px;height:14px;border-radius:50%;border:2px solid #fff;background:${state.tool==='delete'?'#ef4444':'#3b82f6'};box-shadow:0 1px 4px rgba(0,0,0,.25);"></div>`,
+              iconSize: [14,14],
+              iconAnchor: [7,7]
+            })
+          }).addTo(map);
+          marker.on('dragend', (ev)=>{
+            if (state.tool !== 'move') { marker.setLatLng([p.lat,p.lng]); return; }
+            const { lat, lng } = ev.target.getLatLng();
+            state.points[idx] = { lat, lng };
+            applyPoints(state.points, { skipHistory:true });
+            pushHistory();
+          });
+          marker.on('dragstart', ()=>{
+            if (state.tool !== 'move') marker.closePopup();
+          });
+          marker.on('click', ()=>{
+            if (state.tool === 'delete') {
+              state.points.splice(idx,1);
+              applyPoints(state.points, { skipHistory:true });
+              pushHistory();
+            }
+          });
+          return marker;
+        });
+        if (!options.skipFit && state.points.length >= 2) {
+          map.fitBounds(polyline.getBounds(), { padding:[40,40], maxZoom: 16 });
+        }
+        markers.forEach(m => {
+          if (state.tool === 'move') m.dragging.enable();
+          else m.dragging.disable();
+        });
+        if (!options.skipHistory) pushHistory();
+      }
+
+      function addPoint(latlng){
+        state.points.push({ lat: latlng.lat, lng: latlng.lng });
+        applyPoints(state.points, { skipHistory:true });
+        pushHistory();
+      }
+
+      function clearAll(){
+        if (!state.points.length) return;
+        if (!confirm('すべてのポイントを削除しますか？')) return;
+        state.points = [];
+        applyPoints(state.points, { skipHistory:true });
+        pushHistory();
+      }
+
+      function setTool(tool){
+        state.tool = tool;
+        toolbar.querySelectorAll('[data-tool]').forEach(btn=>{
+          btn.classList.toggle('active', btn.dataset.tool === tool);
+        });
+        markers.forEach(m=>{
+          if (tool === 'move') m.dragging.enable();
+          else m.dragging.disable();
+          const el = m.getElement();
+          if (el) el.querySelector('div').style.background = (tool === 'delete') ? '#ef4444' : '#3b82f6';
+        });
+      }
+
+      function undo(){
+        if (state.history.length <= 1) return;
+        const current = state.history.pop();
+        state.future.push(current);
+        const prev = JSON.parse(state.history[state.history.length - 1]);
+        applyPoints(prev.points, { skipHistory:true, skipFit:true });
+        setDirty(true);
+      }
+
+      function redo(){
+        if (!state.future.length) return;
+        const next = JSON.parse(state.future.pop());
+        applyPoints(next.points, { skipHistory:true, skipFit:true });
+        state.history.push(JSON.stringify({ points: state.points }));
+        setDirty(true);
+      }
+
+      function bindMapEvents(){
+        if (mapClickHandler) map.off('click', mapClickHandler);
+        mapClickHandler = (ev) => {
+          if (state.tool !== 'add') return;
+          addPoint(ev.latlng);
+        };
+        map.on('click', mapClickHandler);
+      }
+
+      async function refreshAuth(){
+        try{
+          const { data:{ session } } = await supabase.auth.getSession();
+          state.loggedIn = !!session?.user;
+          if (!state.loggedIn) {
+            authNotice.textContent = 'ログインして編集してください';
+            state.accountId = null;
+            btnSave.disabled = true;
+            toolbar.querySelectorAll('button').forEach(btn=>{
+              if (btn !== btnBack) btn.disabled = true;
+            });
+          } else {
+            authNotice.textContent = '';
+            btnSave.disabled = false;
+            toolbar.querySelectorAll('button').forEach(btn=> btn.disabled = false);
+            state.accountId = await getMyAccountId();
+            if (!state.accountId) {
+              authNotice.textContent = 'アカウント情報を取得できません（再ログインしてください）';
+              btnSave.disabled = true;
+            }
+          }
+        }catch(e){
+          console.warn('auth refresh failed', e);
+        }
+      }
+
+      async function loadRoute(routeId){
+        if (!routeId) return;
+        state.loading = true;
+        try{
+          const { data, error } = await supabase
+            .from('routes')
+            .select('*')
+            .eq('id', routeId)
+            .maybeSingle();
+          if (error || !data) {
+            showToast('ルートの読み込みに失敗しました');
+            return;
+          }
+          routeNameInput.value = data.name || '';
+          let pts = [];
+          if (data.geojson) {
+            try{
+              const g = typeof data.geojson === 'string' ? JSON.parse(data.geojson) : data.geojson;
+              const coords = g?.coordinates || [];
+              pts = coords.map(([lng, lat]) => ({ lat, lng }));
+            }catch(e){
+              console.warn('geojson parse failed', e);
+            }
+          }
+          if (!pts.length && data.polyline) {
+            pts = decodePolyline(data.polyline);
+          }
+          applyPoints(pts, { skipHistory:true });
+          state.history = [JSON.stringify({ points: pts })];
+          state.future = [];
+          setDirty(false);
+          if (pts.length >= 2) {
+            map.fitBounds(polyline.getBounds(), { padding:[40,40], maxZoom: 16 });
+          }
+        } catch (e) {
+          console.error(e);
+          showToast('ルートの読み込みに失敗しました');
+        } finally {
+          state.loading = false;
+        }
+      }
+
+      async function saveRoute(){
+        if (!state.loggedIn || !state.accountId) {
+          alert('保存にはログインが必要です');
+          return;
+        }
+        if (state.points.length < 2) {
+          alert('少なくとも2点以上のポイントが必要です');
+          return;
+        }
+        const name = routeNameInput.value.trim() || '新しいルート';
+        const geojson = {
+          type: 'LineString',
+          coordinates: state.points.map(p => [p.lng, p.lat])
+        };
+        const polylineStr = encodePolyline(state.points);
+        const payload = {
+          name,
+          geojson,
+          polyline: polylineStr,
+          account_id: state.accountId,
+          owner_account_id: state.accountId,
+          updated_at: new Date().toISOString()
+        };
+        if (!editingId) {
+          payload.created_at = new Date().toISOString();
+        }
+        btnSave.disabled = true;
+        showToast('保存中…', 1500);
+        try{
+          let result;
+          if (editingId) {
+            result = await supabase
+              .from('routes')
+              .update(payload)
+              .eq('id', editingId)
+              .select('id')
+              .maybeSingle();
+          } else {
+            payload.is_public = false;
+            result = await supabase
+              .from('routes')
+              .insert([payload])
+              .select('id')
+              .maybeSingle();
+          }
+          const { data, error, status } = result;
+          if (error || !data?.id) {
+            console.error('ROUTE SAVE ERROR', { status, error, payload });
+            alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
+            return;
+          }
+          setDirty(false);
+          localStorage.removeItem(STORAGE_KEY);
+          location.replace(`detail.html?id=${encodeURIComponent(data.id)}&kind=route&v=${V()}`);
+        } catch (e) {
+          console.error('ROUTE SAVE EXCEPTION', e);
+          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
+        } finally {
+          btnSave.disabled = false;
+        }
+      }
+
+      function restoreDraftIfNeeded(){
+        try{
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const draft = JSON.parse(raw);
+          if (!draft || !Array.isArray(draft.points) || !draft.points.length) return;
+          if (editingId && draft.routeId && Number(draft.routeId) !== editingId) return;
+          if (!confirm('以前保存されていたドラフトがあります。復元しますか？')) return;
+          routeNameInput.value = draft.name || '';
+          applyPoints(draft.points, { skipHistory:true, skipFit:true });
+          state.history = [JSON.stringify({ points: state.points })];
+          state.future = [];
+          setDirty(true);
+        }catch(e){
+          console.warn('restore draft failed', e);
+        }
+      }
+
+      toolbar.querySelectorAll('[data-tool]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          setTool(btn.dataset.tool);
+        });
+      });
+      document.getElementById('btnUndo').addEventListener('click', undo);
+      document.getElementById('btnRedo').addEventListener('click', redo);
+      document.getElementById('btnClear').addEventListener('click', clearAll);
+      btnSave.addEventListener('click', saveRoute);
+      btnBack.addEventListener('click', ()=>{
+        if (state.dirty && !confirm('変更が保存されていません。戻りますか？')) return;
+        history.back();
+      });
+      routeNameInput.addEventListener('input', ()=>{
+        setDirty(true);
+        scheduleDraftSave();
+      });
+
+      bindMapEvents();
+      refreshAuth();
+      supabase.auth.onAuthStateChange(async ()=>{ await refreshAuth(); });
+      window.addEventListener('beforeunload', (e)=>{
+        if (!state.dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
+      });
+
+      if (editingId) {
+        loadRoute(editingId);
+      } else {
+        restoreDraftIfNeeded();
+      }
+      map.whenReady(()=> map.invalidateSize());
+    })();
+  </script>
+</body>
+</html>

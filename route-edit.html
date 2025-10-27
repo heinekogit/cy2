@@ -10,7 +10,6 @@
       color-scheme: light;
       --bg: #f9fafb;
       --fg: #111827;
-      --primary: #111827;
       --accent: #3b82f6;
     }
     * { box-sizing: border-box; }
@@ -38,10 +37,11 @@
       gap: 8px;
       padding: 8px 12px;
       border-radius: 12px;
-      background: rgba(255,255,255,0.9);
+      background: rgba(255,255,255,0.92);
       box-shadow: 0 4px 18px rgba(15,23,42,0.1);
-      z-index: 10;
       backdrop-filter: blur(6px);
+      z-index: 10;
+      flex-wrap: wrap;
     }
     #toolbar {
       position: fixed;
@@ -53,10 +53,11 @@
       gap: 8px;
       padding: 8px;
       border-radius: 14px;
-      background: rgba(255,255,255,0.9);
+      background: rgba(255,255,255,0.92);
       box-shadow: 0 8px 24px rgba(15,23,42,0.12);
-      z-index: 10;
       backdrop-filter: blur(6px);
+      z-index: 10;
+      justify-content: center;
     }
     .btn {
       border: 1px solid #d1d5db;
@@ -70,13 +71,13 @@
       align-items: center;
       justify-content: center;
       gap: 4px;
-      text-decoration: none;
       min-width: 36px;
+      text-decoration: none;
     }
     .btn.primary {
       background: var(--accent);
-      color: #fff;
       border-color: var(--accent);
+      color: #fff;
     }
     .btn.danger {
       background: #ef4444;
@@ -91,6 +92,15 @@
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+    select.mode-select {
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #fff;
+      color: #111827;
+      font-size: 14px;
+      min-width: 140px;
     }
     #statusToast {
       position: fixed;
@@ -108,16 +118,17 @@
     #nameField {
       flex: 1 1 auto;
       display: flex;
-      align-items: center;
       gap: 8px;
+      align-items: center;
+      min-width: 0;
     }
     #routeName {
       flex: 1;
       padding: 6px 8px;
       border-radius: 8px;
       border: 1px solid #d1d5db;
-      font-size: 14px;
       background: #fff;
+      font-size: 14px;
       min-width: 160px;
     }
     #authNotice {
@@ -126,7 +137,6 @@
     }
     @media (max-width: 600px) {
       header { flex-direction: column; align-items: stretch; }
-      #nameField { width: 100%; }
       #toolbar { justify-content: center; }
     }
   </style>
@@ -154,6 +164,11 @@
   </header>
 
   <div id="toolbar">
+    <select id="modeSelect" class="mode-select">
+      <option value="cycling">自転車モード</option>
+      <option value="walking">徒歩モード</option>
+      <option value="driving">車モード</option>
+    </select>
     <button data-tool="add" class="btn active">追加</button>
     <button data-tool="move" class="btn">移動</button>
     <button data-tool="delete" class="btn">削除</button>
@@ -165,420 +180,573 @@
   <div id="statusToast"></div>
 
   <script src="js/auth-common.js"></script>
-  <script>
-    (function(){
-      const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
-      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
-      });
-      window.supabaseClient = supabase;
-      window.supabase = supabase;
+  <script src="js/config.js"></script>
+  <script type="module">
+    import { routing } from './js/routing.js';
 
-      AuthCommon.init(supabase, { redirectUrl: 'index.html' });
-      window.getMyAccountId = () => AuthCommon.getMyAccountId(supabase);
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
+    });
+    window.supabaseClient = supabase;
+    window.supabase = supabase;
 
-      const V = () => encodeURIComponent(window.APP_VERSION || '');
-      const q = new URL(location.href).searchParams;
-      const editingId = q.get('id') ? Number(q.get('id')) : null;
+    AuthCommon.init(supabase, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(supabase);
 
-      const map = L.map('map', {
-        zoomControl: true,
-        attributionControl: true
-      }).setView([35.681236, 139.767125], 13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
+    const V = () => encodeURIComponent(window.APP_VERSION || '');
+    const q = new URL(location.href).searchParams;
+    const editingId = q.get('id') ? Number(q.get('id')) : null;
 
-      const state = {
-        points: [],
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: true
+    }).setView([35.681236, 139.767125], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const polylineLayer = L.polyline([], { color: '#3b82f6', weight: 5 }).addTo(map);
+    let controlMarkers = [];
+
+    const routeNameInput = document.getElementById('routeName');
+    const authNotice = document.getElementById('authNotice');
+    const btnSave = document.getElementById('btnSave');
+    const btnBack = document.getElementById('btnBack');
+    const btnUndo = document.getElementById('btnUndo');
+    const btnRedo = document.getElementById('btnRedo');
+    const btnClear = document.getElementById('btnClear');
+    const toolbar = document.getElementById('toolbar');
+    const modeSelect = document.getElementById('modeSelect');
+    const toast = document.getElementById('statusToast');
+
+    const STORAGE_KEY = 'route-draft';
+
+    const state = {
+      controlPoints: [],
+      routeLine: [],
       history: [],
       future: [],
       tool: 'add',
       dirty: false,
       accountId: null,
       loggedIn: false,
-      loading: false,
+      mode: modeSelect.value || 'cycling',
+      currentRoute: null,
+      routeBuildQueue: Promise.resolve(),
       draftTimer: null
     };
-      state.history = [JSON.stringify({ points: [] })];
 
-      const polyline = L.polyline([], { color: '#3b82f6', weight: 5 }).addTo(map);
-      let markers = [];
-      let mapClickHandler = null;
+    const clonePoint = (p) => ({ lat: Number(p.lat), lng: Number(p.lng) });
 
-      const btnSave = document.getElementById('btnSave');
-      const btnBack = document.getElementById('btnBack');
-      const toolbar = document.getElementById('toolbar');
-      const routeNameInput = document.getElementById('routeName');
-      const toast = document.getElementById('statusToast');
-      const authNotice = document.getElementById('authNotice');
+    function showToast(msg, ms = 2000) {
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, ms);
+    }
 
-      const STORAGE_KEY = 'route-draft';
+    const setDirty = (flag) => { state.dirty = flag; };
 
-      function showToast(msg, ms=2000){
-        toast.textContent = msg;
-        toast.style.display = 'block';
-        setTimeout(()=>{ toast.style.display = 'none'; }, ms);
-      }
-
-      function encodePolyline(latlngs){
-        try{
-          const pts = latlngs.map(p => Array.isArray(p) ? { lat:p[0], lng:p[1] } : p);
-          let lastLat = 0, lastLng = 0, enc = '';
-          const e5 = n => Math.round(n * 1e5);
-          const push = v => {
-            v = v < 0 ? ~(v << 1) : (v << 1);
-            while (v >= 0x20) { enc += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; }
-            enc += String.fromCharCode(v + 63);
+    function scheduleDraftSave() {
+      if (state.draftTimer) clearTimeout(state.draftTimer);
+      state.draftTimer = setTimeout(() => {
+        try {
+          const payload = {
+            name: routeNameInput.value || '',
+            controlPoints: state.controlPoints,
+            routeLine: state.routeLine,
+            mode: state.mode,
+            routeId: editingId || null,
+            updatedAt: Date.now()
           };
-          for (const p of pts){
-            const la = e5(p.lat);
-            const ln = e5(p.lng);
-            push(la - lastLat);
-            push(ln - lastLng);
-            lastLat = la;
-            lastLng = ln;
-          }
-          return enc;
-        }catch(e){
-          console.warn('encodePolyline failed', e);
-          return '';
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        } catch (e) {
+          console.warn('draft save failed', e);
         }
-      }
+      }, 5000);
+    }
 
-      function decodePolyline(str){
-        try{
-          let idx=0, lat=0, lng=0, arr=[];
-          while(idx<str.length){
-            let b,shift=0,result=0;
-            do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
-            let dlat=(result&1)?~(result>>1):(result>>1);
-            shift=0; result=0;
-            do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
-            let dlng=(result&1)?~(result>>1):(result>>1);
-            lat += dlat; lng += dlng;
-            arr.push({lat:lat/1e5, lng:lng/1e5});
+    function encodePolyline(points) {
+      try {
+        let lastLat = 0;
+        let lastLng = 0;
+        let enc = '';
+        const e5 = (n) => Math.round(n * 1e5);
+        const push = (v) => {
+          v = v < 0 ? ~(v << 1) : (v << 1);
+          while (v >= 0x20) {
+            enc += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+            v >>= 5;
           }
-          return arr;
-        }catch(e){
-          console.warn('decodePolyline failed', e);
-          return [];
+          enc += String.fromCharCode(v + 63);
+        };
+        for (const p of points) {
+          const la = e5(p.lat);
+          const ln = e5(p.lng);
+          push(la - lastLat);
+          push(ln - lastLng);
+          lastLat = la;
+          lastLng = ln;
         }
+        return enc;
+      } catch (e) {
+        console.warn('encodePolyline failed', e);
+        return '';
       }
+    }
 
-      function setDirty(flag=true){
-        state.dirty = flag;
-        if (!flag) {
-          state.history = state.history.slice(-50);
-          state.future = [];
-        }
+    const currentSnapshot = () => JSON.stringify({
+      control: state.controlPoints,
+      route: state.routeLine,
+      mode: state.mode
+    });
+
+    function applySnapshot(json) {
+      const data = JSON.parse(json || '{}');
+      state.controlPoints = Array.isArray(data.control) ? data.control.map(clonePoint) : [];
+      state.routeLine = Array.isArray(data.route) && data.route.length
+        ? data.route.map(clonePoint)
+        : state.controlPoints.map(clonePoint);
+      if (data.mode) {
+        setMode(data.mode, { skipRebuild: true, skipHistory: true });
       }
+      updatePolyline({ fit: false });
+      updateMarkers();
+    }
 
-      function scheduleDraftSave(){
-        if (state.draftTimer) clearTimeout(state.draftTimer);
-        state.draftTimer = setTimeout(()=> {
-          try{
-            const payload = {
-              name: routeNameInput.value || '',
-              points: state.points,
-              updatedAt: Date.now(),
-              routeId: editingId || null
-            };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-          }catch(e){
-            console.warn('draft save failed', e);
+    function pushHistory() {
+      const snap = currentSnapshot();
+      const last = state.history[state.history.length - 1];
+      if (last === snap) return;
+      state.history.push(snap);
+      if (state.history.length > 100) state.history.shift();
+      state.future = [];
+    }
+
+    function updatePolyline({ fit = true } = {}) {
+      polylineLayer.setLatLngs(state.routeLine.map(p => [p.lat, p.lng]));
+      if (fit && state.routeLine.length >= 2) {
+        try {
+          map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30], maxZoom: 16 });
+        } catch (_) {}
+      }
+    }
+
+    function clearMarkers() {
+      controlMarkers.forEach(m => m.remove());
+      controlMarkers = [];
+    }
+
+    function updateMarkers() {
+      clearMarkers();
+      state.controlPoints.forEach((p, idx) => {
+        const marker = L.marker([p.lat, p.lng], {
+          draggable: state.tool === 'move',
+          icon: L.divIcon({
+            className: 'point-marker',
+            html: `<div style="width:14px;height:14px;border-radius:50%;border:2px solid #fff;background:${state.tool==='delete' ? '#ef4444' : '#3b82f6'};box-shadow:0 1px 4px rgba(0,0,0,.25);"></div>`,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          })
+        }).addTo(map);
+        marker.on('dragend', ev => {
+          if (state.tool !== 'move') {
+            marker.setLatLng([p.lat, p.lng]);
+            return;
           }
-        }, 5000);
-      }
+          const { lat, lng } = ev.target.getLatLng();
+          state.controlPoints[idx] = { lat, lng };
+          commitControlChange().catch(err => console.error(err));
+        });
+        marker.on('click', () => {
+          if (state.tool === 'delete') {
+            removeControlPoint(idx).catch(err => console.error(err));
+          }
+        });
+        controlMarkers.push(marker);
+      });
+      controlMarkers.forEach(marker => {
+        if (state.tool === 'move') marker.dragging.enable();
+        else marker.dragging.disable();
+      });
+    }
 
-      function pushHistory(){
-        state.history.push(JSON.stringify({ points: state.points }));
-        state.history = state.history.slice(-100);
+    function setTool(tool) {
+      state.tool = tool;
+      toolbar.querySelectorAll('[data-tool]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tool === tool);
+      });
+      updateMarkers();
+    }
+
+    const directSegment = (a, b) => [{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }];
+
+    function rebuildRouteLine() {
+      state.routeBuildQueue = state.routeBuildQueue.then(async () => {
+        const ctrl = state.controlPoints.map(clonePoint);
+        if (ctrl.length === 0) {
+          state.routeLine = [];
+          updatePolyline({ fit: false });
+          updateMarkers();
+          return;
+        }
+        if (ctrl.length === 1) {
+          state.routeLine = [ctrl[0]];
+          updatePolyline({ fit: false });
+          updateMarkers();
+          return;
+        }
+        showToast('ルート計算中…', 1200);
+        let assembled = [{ lat: ctrl[0].lat, lng: ctrl[0].lng }];
+        for (let i = 0; i < ctrl.length - 1; i++) {
+          const a = ctrl[i];
+          const b = ctrl[i + 1];
+          try {
+            const { geojson } = await routing.getRoute([a, b], state.mode);
+            let segment = geojson.coordinates.map(([lng, lat]) => ({ lat, lng }));
+            if (segment.length) {
+              if (assembled.length) segment.shift();
+              assembled = assembled.concat(segment);
+            }
+          } catch (err) {
+            console.warn('routing segment failed', err);
+            let fallback = directSegment(a, b);
+            if (assembled.length) fallback.shift();
+            assembled = assembled.concat(fallback);
+          }
+        }
+        state.routeLine = assembled;
+        updatePolyline({ fit: true });
+        updateMarkers();
+      }).catch(err => {
+        console.error('rebuildRouteLine failed', err);
+      });
+      return state.routeBuildQueue;
+    }
+
+    async function commitControlChange({ skipHistory = false } = {}) {
+      await rebuildRouteLine();
+      if (!skipHistory) {
+        pushHistory();
+        setDirty(true);
+      }
+      scheduleDraftSave();
+    }
+
+    async function addControlPoint(lat, lng) {
+      if (!state.loggedIn) {
+        showToast('ログインして編集してください');
+        return;
+      }
+      state.controlPoints.push({ lat, lng });
+      await commitControlChange();
+    }
+
+    async function removeControlPoint(idx) {
+      if (idx < 0 || idx >= state.controlPoints.length) return;
+      state.controlPoints.splice(idx, 1);
+      await commitControlChange();
+    }
+
+    async function clearAll() {
+      if (!state.controlPoints.length) return;
+      if (!confirm('すべてのポイントを削除しますか？')) return;
+      state.controlPoints = [];
+      state.routeLine = [];
+      updatePolyline({ fit: false });
+      updateMarkers();
+      pushHistory();
+      setDirty(true);
+      scheduleDraftSave();
+    }
+
+    function undo() {
+      if (state.history.length <= 1) return;
+      const current = state.history.pop();
+      state.future.push(current);
+      const prev = state.history[state.history.length - 1];
+      applySnapshot(prev);
+      setDirty(true);
+      scheduleDraftSave();
+    }
+
+    function redo() {
+      if (!state.future.length) return;
+      const snap = state.future.pop();
+      state.history.push(snap);
+      applySnapshot(snap);
+      setDirty(true);
+      scheduleDraftSave();
+    }
+
+    function deriveControlPointsFromRoute(routeLine) {
+      const pts = routeLine.map(clonePoint);
+      if (pts.length <= 2) return pts;
+      const maxPoints = 40;
+      const step = Math.max(1, Math.ceil(pts.length / maxPoints));
+      const res = [];
+      for (let i = 0; i < pts.length; i += step) {
+        res.push(pts[i]);
+      }
+      const last = pts[pts.length - 1];
+      const tail = res[res.length - 1];
+      if (!tail || tail.lat !== last.lat || tail.lng !== last.lng) {
+        res.push(last);
+      }
+      if (res.length === 1 && pts.length >= 2) {
+        res.push(last);
+      }
+      return res;
+    }
+
+    function routingPolylineToLatLng(str) {
+      try {
+        let index = 0;
+        let lat = 0;
+        let lng = 0;
+        const coords = [];
+        while (index < str.length) {
+          let b;
+          let shift = 0;
+          let result = 0;
+          do {
+            b = str.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lat += dlat;
+          shift = 0;
+          result = 0;
+          do {
+            b = str.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+          } while (b >= 0x20);
+          const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+          lng += dlng;
+          coords.push({ lat: lat * 1e-5, lng: lng * 1e-5 });
+        }
+        return coords;
+      } catch (e) {
+        console.warn('decode polyline failed', e);
+        return [];
+      }
+    }
+
+    async function loadRoute(routeId) {
+      try {
+        const { data, error } = await supabase
+          .from('routes')
+          .select('*')
+          .eq('id', routeId)
+          .maybeSingle();
+        if (error || !data) {
+          showToast('ルートの読み込みに失敗しました');
+          return;
+        }
+        state.currentRoute = data;
+        routeNameInput.value = data.name || '';
+        let routeLine = [];
+        if (data.geojson) {
+          try {
+            const g = typeof data.geojson === 'string' ? JSON.parse(data.geojson) : data.geojson;
+            routeLine = (g?.coordinates || []).map(([lng, lat]) => ({ lat, lng }));
+          } catch (e) {
+            console.warn('geojson parse failed', e);
+          }
+        }
+        if (!routeLine.length && data.polyline) {
+          routeLine = routingPolylineToLatLng(data.polyline);
+        }
+        state.routeLine = routeLine;
+        updatePolyline({ fit: true });
+        state.controlPoints = deriveControlPointsFromRoute(routeLine);
+        updateMarkers();
+        state.history = [currentSnapshot()];
+        state.future = [];
+        setDirty(false);
+      } catch (e) {
+        console.error(e);
+        showToast('ルートの読み込みに失敗しました');
+      }
+    }
+
+    async function restoreDraftIfNeeded() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const draft = JSON.parse(raw);
+        if (!draft || !Array.isArray(draft.controlPoints) || !draft.controlPoints.length) return;
+        if (editingId && draft.routeId && Number(draft.routeId) !== editingId) return;
+        if (!confirm('以前保存されたドラフトがあります。復元しますか？')) return;
+        routeNameInput.value = draft.name || '';
+        if (draft.mode) {
+          state.mode = draft.mode;
+          modeSelect.value = draft.mode;
+        }
+        state.controlPoints = draft.controlPoints.map(clonePoint);
+        state.routeLine = Array.isArray(draft.routeLine) && draft.routeLine.length
+          ? draft.routeLine.map(clonePoint)
+          : state.controlPoints.map(clonePoint);
+        updatePolyline({ fit: true });
+        updateMarkers();
+        state.history = [currentSnapshot()];
         state.future = [];
         setDirty(true);
-        scheduleDraftSave();
+      } catch (e) {
+        console.warn('restore draft failed', e);
       }
+    }
 
-      function applyPoints(points, options={}){
-        state.points = points.map(p => ({ lat: p.lat, lng: p.lng }));
-        polyline.setLatLngs(state.points.map(p => [p.lat, p.lng]));
-        markers.forEach(m => m.remove());
-        markers = state.points.map((p, idx) => {
-          const marker = L.marker([p.lat, p.lng], {
-            draggable: state.tool === 'move',
-            icon: L.divIcon({
-              className: 'point-marker',
-              html: `<div style="width:14px;height:14px;border-radius:50%;border:2px solid #fff;background:${state.tool==='delete'?'#ef4444':'#3b82f6'};box-shadow:0 1px 4px rgba(0,0,0,.25);"></div>`,
-              iconSize: [14,14],
-              iconAnchor: [7,7]
-            })
-          }).addTo(map);
-          marker.on('dragend', (ev)=>{
-            if (state.tool !== 'move') { marker.setLatLng([p.lat,p.lng]); return; }
-            const { lat, lng } = ev.target.getLatLng();
-            state.points[idx] = { lat, lng };
-            applyPoints(state.points, { skipHistory:true });
-            pushHistory();
+    async function refreshAuth() {
+      try {
+        const { data:{ session } } = await supabase.auth.getSession();
+        state.loggedIn = !!session?.user;
+        if (!state.loggedIn) {
+          authNotice.textContent = 'ログインして編集してください';
+          state.accountId = null;
+          btnSave.disabled = true;
+          modeSelect.disabled = true;
+          toolbar.querySelectorAll('button').forEach(btn => {
+            if (btn !== btnBack) btn.disabled = true;
           });
-          marker.on('dragstart', ()=>{
-            if (state.tool !== 'move') marker.closePopup();
-          });
-          marker.on('click', ()=>{
-            if (state.tool === 'delete') {
-              state.points.splice(idx,1);
-              applyPoints(state.points, { skipHistory:true });
-              pushHistory();
-            }
-          });
-          return marker;
-        });
-        if (!options.skipFit && state.points.length >= 2) {
-          map.fitBounds(polyline.getBounds(), { padding:[40,40], maxZoom: 16 });
-        }
-        markers.forEach(m => {
-          if (state.tool === 'move') m.dragging.enable();
-          else m.dragging.disable();
-        });
-        if (!options.skipHistory) pushHistory();
-      }
-
-      function addPoint(latlng){
-        state.points.push({ lat: latlng.lat, lng: latlng.lng });
-        applyPoints(state.points, { skipHistory:true });
-        pushHistory();
-      }
-
-      function clearAll(){
-        if (!state.points.length) return;
-        if (!confirm('すべてのポイントを削除しますか？')) return;
-        state.points = [];
-        applyPoints(state.points, { skipHistory:true });
-        pushHistory();
-      }
-
-      function setTool(tool){
-        state.tool = tool;
-        toolbar.querySelectorAll('[data-tool]').forEach(btn=>{
-          btn.classList.toggle('active', btn.dataset.tool === tool);
-        });
-        markers.forEach(m=>{
-          if (tool === 'move') m.dragging.enable();
-          else m.dragging.disable();
-          const el = m.getElement();
-          if (el) el.querySelector('div').style.background = (tool === 'delete') ? '#ef4444' : '#3b82f6';
-        });
-      }
-
-      function undo(){
-        if (state.history.length <= 1) return;
-        const current = state.history.pop();
-        state.future.push(current);
-        const prev = JSON.parse(state.history[state.history.length - 1]);
-        applyPoints(prev.points, { skipHistory:true, skipFit:true });
-        setDirty(true);
-      }
-
-      function redo(){
-        if (!state.future.length) return;
-        const next = JSON.parse(state.future.pop());
-        applyPoints(next.points, { skipHistory:true, skipFit:true });
-        state.history.push(JSON.stringify({ points: state.points }));
-        setDirty(true);
-      }
-
-      function bindMapEvents(){
-        if (mapClickHandler) map.off('click', mapClickHandler);
-        mapClickHandler = (ev) => {
-          if (state.tool !== 'add') return;
-          addPoint(ev.latlng);
-        };
-        map.on('click', mapClickHandler);
-      }
-
-      async function refreshAuth(){
-        try{
-          const { data:{ session } } = await supabase.auth.getSession();
-          state.loggedIn = !!session?.user;
-          if (!state.loggedIn) {
-            authNotice.textContent = 'ログインして編集してください';
-            state.accountId = null;
-            btnSave.disabled = true;
-            toolbar.querySelectorAll('button').forEach(btn=>{
-              if (btn !== btnBack) btn.disabled = true;
-            });
-          } else {
-            authNotice.textContent = '';
-            btnSave.disabled = false;
-            toolbar.querySelectorAll('button').forEach(btn=> btn.disabled = false);
-            state.accountId = await getMyAccountId();
-            if (!state.accountId) {
-              authNotice.textContent = 'アカウント情報を取得できません（再ログインしてください）';
-              btnSave.disabled = true;
-            }
-          }
-        }catch(e){
-          console.warn('auth refresh failed', e);
-        }
-      }
-
-      async function loadRoute(routeId){
-        if (!routeId) return;
-        state.loading = true;
-        try{
-          const { data, error } = await supabase
-            .from('routes')
-            .select('*')
-            .eq('id', routeId)
-            .maybeSingle();
-          if (error || !data) {
-            showToast('ルートの読み込みに失敗しました');
-            return;
-          }
-          routeNameInput.value = data.name || '';
-          let pts = [];
-          if (data.geojson) {
-            try{
-              const g = typeof data.geojson === 'string' ? JSON.parse(data.geojson) : data.geojson;
-              const coords = g?.coordinates || [];
-              pts = coords.map(([lng, lat]) => ({ lat, lng }));
-            }catch(e){
-              console.warn('geojson parse failed', e);
-            }
-          }
-          if (!pts.length && data.polyline) {
-            pts = decodePolyline(data.polyline);
-          }
-          applyPoints(pts, { skipHistory:true });
-          state.history = [JSON.stringify({ points: pts })];
-          state.future = [];
-          setDirty(false);
-          if (pts.length >= 2) {
-            map.fitBounds(polyline.getBounds(), { padding:[40,40], maxZoom: 16 });
-          }
-        } catch (e) {
-          console.error(e);
-          showToast('ルートの読み込みに失敗しました');
-        } finally {
-          state.loading = false;
-        }
-      }
-
-      async function saveRoute(){
-        if (!state.loggedIn || !state.accountId) {
-          alert('保存にはログインが必要です');
-          return;
-        }
-        if (state.points.length < 2) {
-          alert('少なくとも2点以上のポイントが必要です');
-          return;
-        }
-        const name = routeNameInput.value.trim() || '新しいルート';
-        const geojson = {
-          type: 'LineString',
-          coordinates: state.points.map(p => [p.lng, p.lat])
-        };
-        const polylineStr = encodePolyline(state.points);
-        const payload = {
-          name,
-          geojson,
-          polyline: polylineStr,
-          account_id: state.accountId,
-          owner_account_id: state.accountId,
-          updated_at: new Date().toISOString()
-        };
-        if (!editingId) {
-          payload.created_at = new Date().toISOString();
-        }
-        btnSave.disabled = true;
-        showToast('保存中…', 1500);
-        try{
-          let result;
-          if (editingId) {
-            result = await supabase
-              .from('routes')
-              .update(payload)
-              .eq('id', editingId)
-              .select('id')
-              .maybeSingle();
-          } else {
-            payload.is_public = false;
-            result = await supabase
-              .from('routes')
-              .insert([payload])
-              .select('id')
-              .maybeSingle();
-          }
-          const { data, error, status } = result;
-          if (error || !data?.id) {
-            console.error('ROUTE SAVE ERROR', { status, error, payload });
-            alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
-            return;
-          }
-          setDirty(false);
-          localStorage.removeItem(STORAGE_KEY);
-          location.replace(`detail.html?id=${encodeURIComponent(data.id)}&kind=route&v=${V()}`);
-        } catch (e) {
-          console.error('ROUTE SAVE EXCEPTION', e);
-          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
-        } finally {
+        } else {
+          authNotice.textContent = '';
           btnSave.disabled = false;
+          modeSelect.disabled = false;
+          toolbar.querySelectorAll('button').forEach(btn => btn.disabled = false);
+          state.accountId = await getMyAccountId();
+          if (!state.accountId) {
+            authNotice.textContent = 'アカウント情報を取得できません（再ログインしてください）';
+            btnSave.disabled = true;
+          }
         }
+      } catch (e) {
+        console.warn('auth refresh failed', e);
       }
+    }
 
-      function restoreDraftIfNeeded(){
-        try{
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return;
-          const draft = JSON.parse(raw);
-          if (!draft || !Array.isArray(draft.points) || !draft.points.length) return;
-          if (editingId && draft.routeId && Number(draft.routeId) !== editingId) return;
-          if (!confirm('以前保存されていたドラフトがあります。復元しますか？')) return;
-          routeNameInput.value = draft.name || '';
-          applyPoints(draft.points, { skipHistory:true, skipFit:true });
-          state.history = [JSON.stringify({ points: state.points })];
-          state.future = [];
-          setDirty(true);
-        }catch(e){
-          console.warn('restore draft failed', e);
+    async function setMode(mode, { skipRebuild = false, skipHistory = false } = {}) {
+      state.mode = mode;
+      if (modeSelect.value !== mode) modeSelect.value = mode;
+      if (skipRebuild) return;
+      if (state.controlPoints.length >= 2) {
+        await commitControlChange({ skipHistory });
+      }
+      scheduleDraftSave();
+    }
+
+    async function saveRoute() {
+      if (!state.loggedIn || !state.accountId) {
+        alert('保存にはログインが必要です');
+        return;
+      }
+      if (state.routeLine.length < 2) {
+        alert('少なくとも2点以上のポイントが必要です');
+        return;
+      }
+      const coordsLngLat = state.routeLine.map(p => [p.lng, p.lat]);
+      const geojson = { type: 'LineString', coordinates: coordsLngLat };
+      const polylineStr = encodePolyline(state.routeLine);
+      const name = routeNameInput.value.trim() || '新しいルート';
+      const now = new Date().toISOString();
+      const payload = {
+        name,
+        geojson,
+        polyline: polylineStr,
+        account_id: state.accountId,
+        owner_account_id: state.accountId,
+        updated_at: now
+      };
+      if (!editingId) {
+        payload.created_at = now;
+        payload.is_public = false;
+        payload.route_type = 'editor';
+      }
+      btnSave.disabled = true;
+      showToast('保存中…', 1200);
+      try {
+        let result;
+        if (editingId) {
+          result = await supabase
+            .from('routes')
+            .update(payload)
+            .eq('id', editingId)
+            .select('id')
+            .maybeSingle();
+        } else {
+          result = await supabase
+            .from('routes')
+            .insert([payload])
+            .select('id')
+            .maybeSingle();
         }
+        const { data, error, status } = result;
+        if (error || !data?.id) {
+          console.error('ROUTE SAVE ERROR', { status, error, payload });
+          alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
+          return;
+        }
+        setDirty(false);
+        localStorage.removeItem(STORAGE_KEY);
+        location.replace(`detail.html?id=${encodeURIComponent(data.id)}&kind=route&v=${V()}`);
+      } catch (e) {
+        console.error('ROUTE SAVE EXCEPTION', e);
+        alert('保存に失敗: ' + (e?.message || '不明なエラー'));
+      } finally {
+        btnSave.disabled = false;
       }
+    }
 
-      toolbar.querySelectorAll('[data-tool]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          setTool(btn.dataset.tool);
-        });
-      });
-      document.getElementById('btnUndo').addEventListener('click', undo);
-      document.getElementById('btnRedo').addEventListener('click', redo);
-      document.getElementById('btnClear').addEventListener('click', clearAll);
-      btnSave.addEventListener('click', saveRoute);
-      btnBack.addEventListener('click', ()=>{
-        if (state.dirty && !confirm('変更が保存されていません。戻りますか？')) return;
-        history.back();
-      });
-      routeNameInput.addEventListener('input', ()=>{
-        setDirty(true);
-        scheduleDraftSave();
-      });
+    toolbar.querySelectorAll('[data-tool]').forEach(btn => {
+      btn.addEventListener('click', () => setTool(btn.dataset.tool));
+    });
+    btnUndo.addEventListener('click', () => undo());
+    btnRedo.addEventListener('click', () => redo());
+    btnClear.addEventListener('click', () => { clearAll().catch(err => console.error(err)); });
+    btnSave.addEventListener('click', () => { saveRoute().catch(err => console.error(err)); });
+    btnBack.addEventListener('click', () => {
+      if (state.dirty && !confirm('変更が保存されていません。戻りますか？')) return;
+      history.back();
+    });
+    routeNameInput.addEventListener('input', () => {
+      setDirty(true);
+      scheduleDraftSave();
+    });
+    modeSelect.addEventListener('change', () => {
+      setMode(modeSelect.value).catch(err => console.error(err));
+    });
 
-      bindMapEvents();
-      refreshAuth();
-      supabase.auth.onAuthStateChange(async ()=>{ await refreshAuth(); });
-      window.addEventListener('beforeunload', (e)=>{
-        if (!state.dirty) return;
-        e.preventDefault();
-        e.returnValue = '';
-      });
+    map.on('click', ev => {
+      if (state.tool !== 'add') return;
+      addControlPoint(ev.latlng.lat, ev.latlng.lng).catch(err => console.error(err));
+    });
 
+    refreshAuth();
+    supabase.auth.onAuthStateChange(async () => { await refreshAuth(); });
+    window.addEventListener('beforeunload', (e) => {
+      if (!state.dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    async function init() {
       if (editingId) {
-        loadRoute(editingId);
+        await loadRoute(editingId);
       } else {
-        restoreDraftIfNeeded();
+        await restoreDraftIfNeeded();
       }
-      map.whenReady(()=> map.invalidateSize());
-    })();
+      if (!state.history.length) {
+        state.history = [currentSnapshot()];
+      }
+      updateMarkers();
+      map.whenReady(() => map.invalidateSize());
+    }
+
+    init().catch(err => console.error(err));
   </script>
 </body>
 </html>

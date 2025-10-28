@@ -26,6 +26,9 @@
       inset: 0;
       z-index: 0;
     }
+    #map.tool-add.leaflet-container { cursor: crosshair !important; }
+    #map.tool-move.leaflet-container { cursor: grab !important; }
+    #map.tool-delete.leaflet-container { cursor: not-allowed !important; }
     header {
       position: fixed;
       top: env(safe-area-inset-top, 8px);
@@ -189,6 +192,9 @@
 
   <script src="js/auth-common.js"></script>
   <script src="js/config.js"></script>
+  <script>
+    window.ROUTING_LOADED = true;
+  </script>
   <script type="module">
     import { routing } from './js/routing.js';
 
@@ -218,6 +224,7 @@
 
     const polylineLayer = L.polyline([], { color: '#3b82f6', weight: 5 }).addTo(map);
     let controlMarkers = [];
+    const mapContainer = map.getContainer();
 
     const routeNameInput = document.getElementById('routeName');
     const authNotice = document.getElementById('authNotice');
@@ -231,6 +238,11 @@
     const toast = document.getElementById('statusToast');
 
     const STORAGE_KEY = 'route-draft';
+    const TOOL_LABELS = {
+      add: 'ポイント追加',
+      move: 'ポイント移動',
+      delete: 'ポイント削除'
+    };
 
     const state = {
       controlPoints: [],
@@ -250,6 +262,7 @@
     if (modeStatus) {
       modeStatus.textContent = `モード: ${TOOL_LABELS[state.tool]}`;
     }
+    updateCursor();
 
     const clonePoint = (p) => ({ lat: Number(p.lat), lng: Number(p.lng) });
 
@@ -260,6 +273,11 @@
     }
 
     const setDirty = (flag) => { state.dirty = flag; };
+
+    function updateCursor() {
+      mapContainer.classList.remove('tool-add', 'tool-move', 'tool-delete');
+      mapContainer.classList.add(`tool-${state.tool}`);
+    }
 
     function scheduleDraftSave() {
       if (state.draftTimer) clearTimeout(state.draftTimer);
@@ -395,6 +413,7 @@
         modeStatus.textContent = `モード: ${TOOL_LABELS[tool] || tool}`;
       }
       showToast(`${TOOL_LABELS[tool] || tool}モードです`, 1500);
+      updateCursor();
     }
 
     const directSegment = (a, b) => [{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }];
@@ -760,6 +779,9 @@
     });
 
     async function init() {
+      if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN') {
+        showToast('Mapboxトークンが設定されていません（js/config.js を確認）', 3000);
+      }
       if (editingId) {
         await loadRoute(editingId);
       } else {

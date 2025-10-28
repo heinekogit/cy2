@@ -472,8 +472,11 @@
 
     async function addControlPoint(lat, lng) {
       if (!state.loggedIn) {
-        showToast('ログインして編集してください');
-        return;
+        await refreshAuth();
+        if (!state.loggedIn) {
+          showToast('ログインして編集してください');
+          return;
+        }
       }
       state.controlPoints.push({ lat, lng });
       await commitControlChange();
@@ -765,12 +768,15 @@
       setMode(modeSelect.value).catch(err => console.error(err));
     });
 
-    map.on('click', ev => {
+    map.on('click', async ev => {
       if (state.tool !== 'add') return;
-      addControlPoint(ev.latlng.lat, ev.latlng.lng).catch(err => console.error(err));
+      try {
+        await addControlPoint(ev.latlng.lat, ev.latlng.lng);
+      } catch (err) {
+        console.error(err);
+      }
     });
 
-    refreshAuth();
     supabase.auth.onAuthStateChange(async () => { await refreshAuth(); });
     window.addEventListener('beforeunload', (e) => {
       if (!state.dirty) return;
@@ -782,6 +788,7 @@
       if (!window.MAPBOX_TOKEN || window.MAPBOX_TOKEN === 'YOUR_MAPBOX_ACCESS_TOKEN') {
         showToast('Mapboxトークンが設定されていません（js/config.js を確認）', 3000);
       }
+      await refreshAuth();
       if (editingId) {
         await loadRoute(editingId);
       } else {

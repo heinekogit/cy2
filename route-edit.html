@@ -102,6 +102,10 @@
       font-size: 14px;
       min-width: 140px;
     }
+    .muted {
+      color: #6b7280;
+      font-size: 13px;
+    }
     #statusToast {
       position: fixed;
       left: 50%;
@@ -139,6 +143,9 @@
       header { flex-direction: column; align-items: stretch; }
       #toolbar { justify-content: center; }
     }
+    body .leaflet-top.leaflet-left {
+      top: calc(env(safe-area-inset-top, 8px) + 72px);
+    }
   </style>
 
   <script src="js/version.js"></script>
@@ -169,9 +176,10 @@
       <option value="walking">徒歩モード</option>
       <option value="driving">車モード</option>
     </select>
-    <button data-tool="add" class="btn active">追加</button>
-    <button data-tool="move" class="btn">移動</button>
-    <button data-tool="delete" class="btn">削除</button>
+    <span id="modeStatus" class="muted">モード: ポイント追加</span>
+    <button data-tool="add" class="btn active">ポイント追加</button>
+    <button data-tool="move" class="btn">ポイント移動</button>
+    <button data-tool="delete" class="btn">ポイント削除</button>
     <button id="btnUndo" class="btn">Undo</button>
     <button id="btnRedo" class="btn">Redo</button>
     <button id="btnClear" class="btn danger">クリア</button>
@@ -238,6 +246,10 @@
       routeBuildQueue: Promise.resolve(),
       draftTimer: null
     };
+
+    if (modeStatus) {
+      modeStatus.textContent = `モード: ${TOOL_LABELS[state.tool]}`;
+    }
 
     const clonePoint = (p) => ({ lat: Number(p.lat), lng: Number(p.lng) });
 
@@ -379,6 +391,10 @@
         btn.classList.toggle('active', btn.dataset.tool === tool);
       });
       updateMarkers();
+      if (modeStatus) {
+        modeStatus.textContent = `モード: ${TOOL_LABELS[tool] || tool}`;
+      }
+      showToast(`${TOOL_LABELS[tool] || tool}モードです`, 1500);
     }
 
     const directSegment = (a, b) => [{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }];
@@ -620,8 +636,9 @@
           toolbar.querySelectorAll('button').forEach(btn => btn.disabled = false);
           state.accountId = await getMyAccountId();
           if (!state.accountId) {
-            authNotice.textContent = 'アカウント情報を取得できません（再ログインしてください）';
-            btnSave.disabled = true;
+            authNotice.textContent = 'アカウント情報を取得できません（マイページを開いて再認証してください）';
+          } else {
+            authNotice.textContent = '';
           }
         }
       } catch (e) {
@@ -635,14 +652,23 @@
       if (skipRebuild) return;
       if (state.controlPoints.length >= 2) {
         await commitControlChange({ skipHistory });
+      } else {
+        scheduleDraftSave();
       }
-      scheduleDraftSave();
+      showToast(`ルート補完モード: ${modeSelect.options[modeSelect.selectedIndex]?.textContent || mode}`, 1600);
     }
 
     async function saveRoute() {
-      if (!state.loggedIn || !state.accountId) {
+      if (!state.loggedIn) {
         alert('保存にはログインが必要です');
         return;
+      }
+      if (!state.accountId) {
+        state.accountId = await getMyAccountId();
+        if (!state.accountId) {
+          alert('アカウント情報を取得できませんでした。マイページで再ログインしてください。');
+          return;
+        }
       }
       if (state.routeLine.length < 2) {
         alert('少なくとも2点以上のポイントが必要です');
@@ -744,6 +770,7 @@
       }
       updateMarkers();
       map.whenReady(() => map.invalidateSize());
+      showToast('マップをタップしてポイントを追加できます', 2200);
     }
 
     init().catch(err => console.error(err));

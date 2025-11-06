@@ -257,7 +257,8 @@
       mode: modeSelect.value || 'cycling',
       currentRoute: null,
       routeBuildQueue: Promise.resolve(),
-      draftTimer: null
+      draftTimer: null,
+      guestHintShown: false
     };
 
     if (modeStatus) {
@@ -472,12 +473,9 @@
     }
 
     async function addControlPoint(lat, lng) {
-      if (!state.loggedIn) {
-        await refreshAuth();
-        if (!state.loggedIn) {
-          showToast('ログインして編集してください');
-          return;
-        }
+      if (!state.loggedIn && !state.guestHintShown) {
+        showToast('ログインすると保存できます');
+        state.guestHintShown = true;
       }
       state.controlPoints.push({ lat, lng });
       await commitControlChange();
@@ -640,23 +638,27 @@
       }
     }
 
+    const setEditingControlsEnabled = (enabled) => {
+      toolbar.querySelectorAll('[data-tool]').forEach(btn => { btn.disabled = !enabled; });
+      btnUndo.disabled = !enabled;
+      btnRedo.disabled = !enabled;
+      btnClear.disabled = !enabled;
+      modeSelect.disabled = !enabled;
+    };
+
     async function refreshAuth() {
       try {
         const { data:{ session } } = await supabase.auth.getSession();
         state.loggedIn = !!session?.user;
         if (!state.loggedIn) {
-          authNotice.textContent = 'ログインして編集してください';
+          authNotice.textContent = 'ログインすると保存できます';
           state.accountId = null;
           btnSave.disabled = true;
-          modeSelect.disabled = true;
-          toolbar.querySelectorAll('button').forEach(btn => {
-            if (btn !== btnBack) btn.disabled = true;
-          });
+          setEditingControlsEnabled(true);
         } else {
           authNotice.textContent = '';
           btnSave.disabled = false;
-          modeSelect.disabled = false;
-          toolbar.querySelectorAll('button').forEach(btn => btn.disabled = false);
+          setEditingControlsEnabled(true);
           state.accountId = await getMyAccountId();
           if (!state.accountId) {
             authNotice.textContent = 'アカウント情報を取得できません（マイページを開いて再認証してください）';

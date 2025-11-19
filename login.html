@@ -118,9 +118,7 @@
         }
         if (error) { alert('登録エラー: ' + error.message); return; }
         console.info('signUp succeeded', data?.user?.id || '(no user id)');
-        const msg = redirectFallback
-          ? '登録しました。確認メールを送信しました（※リダイレクトURLの設定が未許可のため、SupabaseのSite URLに遷移します）。'
-          : '登録しました。確認メールを送信しました。メール内のリンクを開いてください。';
+        const msg = '登録が完了しました。\n登録したメールアドレスとパスワードでログインできます。';
         alert(msg);
         setActiveAuthTab('login');
         const loginEmail = document.querySelector('#loginForm [name=email]');
@@ -227,7 +225,7 @@
       <div class="actions">
         <button class="btn" type="submit" id="btnSignUp">新規登録</button>
       </div>
-      <p class="muted" style="font-size:12px;margin:0;">登録すると確認メールが送信されます。</p>
+      <p class="muted" style="font-size:12px;margin:0;">登録直後からメールとパスワードでログインできます。</p>
     </form>
   </div>
 

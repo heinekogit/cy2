@@ -723,7 +723,7 @@
       if (!state.loggedIn) {
         authNotice.textContent = 'ログインすると保存できます';
         state.accountId = null;
-        btnSave.disabled = true;
+        btnSave.disabled = false;
         setEditingControlsEnabled(true);
         return;
       }

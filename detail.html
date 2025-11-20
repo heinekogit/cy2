@@ -271,6 +271,26 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return { up: Math.round(up), down: Math.round(down) };
     };
 
+    const smoothElevations = (values, windowSize = 5) => {
+      if (!Array.isArray(values) || values.length < 2) return values || [];
+      const size = Math.max(1, Math.floor(windowSize));
+      if (size <= 1) return values.slice();
+      const half = Math.floor(size / 2);
+      const smoothed = new Array(values.length);
+      for (let i = 0; i < values.length; i++) {
+        const start = Math.max(0, i - half);
+        const end = Math.min(values.length - 1, i + half);
+        let sum = 0;
+        let count = 0;
+        for (let j = start; j <= end; j++) {
+          sum += values[j];
+          count++;
+        }
+        smoothed[i] = count ? sum / count : values[i];
+      }
+      return smoothed;
+    };
+
     const drawElevationProfile = (svg, elevs, points) => {
       if (!svg) return;
       const ns = 'http://www.w3.org/2000/svg';
@@ -335,12 +355,13 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       statsEl.textContent = '標高データ取得中…';
       chartEl.innerHTML = '';
 
-      const elevs = await fetchElevations(points);
-      if (!elevs || elevs.length < 2) {
+      const rawElevs = await fetchElevations(points);
+      if (!rawElevs || rawElevs.length < 2) {
         statsEl.textContent = '標高データを取得できませんでした。';
         chartEl.innerHTML = '';
         return;
       }
+      const elevs = smoothElevations(rawElevs, rawElevs.length < 7 ? 3 : 5); // 軽い移動平均でギザギザを抑える
 
       const totalDist = totalDistanceMeters(points);
       const { up, down } = sumGainLoss(elevs, 2);

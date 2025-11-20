@@ -91,6 +91,7 @@
           const badge = r.is_public ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
           const from = r.route_type ? `<span class="muted" style="font-size:12px;">${r.route_type}${r.source_run_id?(' #'+r.source_run_id):''}</span>` : '';
           const title = r.name || '(無題ルート)';
+          // 編集ボタンは当面用途がないため display:none で残す
           return `
             <div class="card" data-id="${r.id}" style="width:100%;gap:12px;align-items:flex-start;">
               <div style="flex:1 1 auto;cursor:pointer;" data-detail>
@@ -100,7 +101,7 @@
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
                 ${badge}
-                <a class="btn" href="route-edit.html?id=${encodeURIComponent(r.id)}">編集</a>
+                <a class="btn" href="route-edit.html?id=${encodeURIComponent(r.id)}" style="display:none;" aria-hidden="true">編集</a>
               </div>
             </div>`;
         }).join('');

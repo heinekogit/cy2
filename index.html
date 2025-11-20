@@ -41,6 +41,8 @@
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (sel) => document.querySelector(sel);
 
+    const ROUTE_DRAW_PAGE = 'route-edit.html';
+
     async function getSession() {
       // まずローカルのセッションを取得
       try{
@@ -150,9 +152,24 @@ async function getMyAccountId() {
       // ヘッダのリンクに現在のバージョンを付与
       try{
         const v = (window.APP_VERSION||'');
+        const btnDraw = document.getElementById('btnDrawRoute');
         const lnLogin = document.getElementById('lnLogin');
         const lnMy = document.getElementById('lnMyPage');
         const lnRun = document.getElementById('lnRun');
+        if (btnDraw) {
+          btnDraw.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            const session = await getSession();
+            if (session?.user) {
+              location.href = `${ROUTE_DRAW_PAGE}?v=${V()}`;
+              return;
+            }
+            const loginUrl = new URL('login.html', window.location.href);
+            loginUrl.searchParams.set('returnTo', ROUTE_DRAW_PAGE);
+            loginUrl.searchParams.set('v', window.APP_VERSION || '');
+            location.href = loginUrl.toString();
+          });
+        }
         if (lnLogin) lnLogin.href = 'login.html?v=' + encodeURIComponent(v);
         if (lnMy) lnMy.href = 'mypage.html?v=' + encodeURIComponent(v);
         if (lnRun) lnRun.href = 'run.html?v=' + encodeURIComponent(v);
@@ -200,6 +217,7 @@ async function getMyAccountId() {
   <header>
     <div style="font-weight:700;">Route MVP</div>
     <div>
+      <button id="btnDrawRoute" class="btn">ルートを描く</button>
       <a id="lnRun" class="btn" href="run.html">実走する</a>
       <a id="lnLogin" class="btn" href="login.html">ログイン</a>
       <a id="lnMyPage" class="btn" href="mypage.html">マイページ</a>

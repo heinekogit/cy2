@@ -42,6 +42,14 @@
     const V = () => encodeURIComponent(window.APP_VERSION || "");
     const $ = (s)=>document.querySelector(s);
 
+    const RETURN_TO = (() => {
+      try {
+        return new URL(window.location.href).searchParams.get('returnTo') || '';
+      } catch (_) {
+        return '';
+      }
+    })();
+
     const SIGNUP_REDIRECT = (() => {
       try {
         const url = new URL('login.html', window.location.href);
@@ -60,6 +68,25 @@
       if (signupForm) signupForm.style.display = isLogin ? 'none' : '';
       tabLogin?.classList.toggle('active', isLogin);
       tabSignup?.classList.toggle('active', !isLogin);
+    }
+
+    const buildReturnDestination = () => {
+      const fallback = `mypage.html?v=${V()}`;
+      if (!RETURN_TO) return fallback;
+      try {
+        const url = new URL(RETURN_TO, window.location.href);
+        if (url.origin !== window.location.origin) return fallback;
+        url.searchParams.set('v', window.APP_VERSION || '');
+        return url.toString();
+      } catch (e) {
+        console.warn('returnTo invalid', e);
+        return fallback;
+      }
+    };
+
+    function redirectAfterAuth() {
+      const dest = buildReturnDestination();
+      window.location.href = dest;
     }
 
     function resetAuthForms() {
@@ -92,7 +119,7 @@
         if (error) { alert("Sign in error: " + error.message); return; }
         console.info('signIn succeeded', data?.user?.id || '(no user id)');
         await refreshStatus();
-        window.location.href = "mypage.html?v=" + V();
+        redirectAfterAuth();
       } catch (err) {
         console.error('signIn unexpected error', err);
         alert('Sign in error: ' + (err?.message || err));
@@ -125,6 +152,7 @@
         if (loginEmail) loginEmail.value = email;
         document.querySelector('#loginForm [name=password]')?.focus();
         document.getElementById('signupForm')?.reset();
+        redirectAfterAuth();
       } catch (err) {
         console.error('signUp unexpected error', err);
         alert('登録エラー: ' + (err?.message || err));

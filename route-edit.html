@@ -168,8 +168,8 @@
       <div id="authNotice"></div>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <button id="btnBack" class="btn">戻る</button>
-      <button id="btnSave" class="btn primary">保存</button>
+      <button id="btnBack" class="btn" type="button">戻る</button>
+      <button id="btnSave" class="btn primary" type="button">保存</button>
     </div>
   </header>
 
@@ -822,7 +822,10 @@
     btnUndo.addEventListener('click', () => undo());
     btnRedo.addEventListener('click', () => redo());
     btnClear.addEventListener('click', () => { clearAll().catch(err => console.error(err)); });
-    btnSave.addEventListener('click', () => { saveRoute().catch(err => console.error(err)); });
+    btnSave.addEventListener('click', () => {
+      console.info('[route-edit] save button clicked');
+      saveRoute().catch(err => console.error(err));
+    });
     btnBack.addEventListener('click', () => {
       if (state.dirty && !confirm('変更が保存されていません。戻りますか？')) return;
       history.back();

@@ -573,6 +573,37 @@
       }
     }
 
+    function geojsonToLatLngs(input) {
+      try {
+        const geom = typeof input === 'string' ? JSON.parse(input) : input;
+        if (!geom) return [];
+        const points = [];
+        const pushLine = (coords = []) => {
+          coords.forEach((pair) => {
+            if (!Array.isArray(pair) || pair.length < 2) return;
+            const [lng, lat] = pair;
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+              points.push({ lat, lng });
+            }
+          });
+        };
+        const walk = (g) => {
+          if (!g) return;
+          const type = g.type;
+          if (type === 'LineString') pushLine(g.coordinates);
+          else if (type === 'MultiLineString') (g.coordinates || []).forEach(pushLine);
+          else if (type === 'Feature') walk(g.geometry);
+          else if (type === 'FeatureCollection') (g.features || []).forEach((f) => walk(f.geometry));
+          else if (type === 'GeometryCollection') (g.geometries || []).forEach(walk);
+        };
+        walk(geom);
+        return points;
+      } catch (e) {
+        console.warn('geojsonToLatLngs failed', e);
+        return [];
+      }
+    }
+
     async function loadRoute(routeId) {
       try {
         const { data, error } = await supabase
@@ -588,12 +619,7 @@
         routeNameInput.value = data.name || '';
         let routeLine = [];
         if (data.geojson) {
-          try {
-            const g = typeof data.geojson === 'string' ? JSON.parse(data.geojson) : data.geojson;
-            routeLine = (g?.coordinates || []).map(([lng, lat]) => ({ lat, lng }));
-          } catch (e) {
-            console.warn('geojson parse failed', e);
-          }
+          routeLine = geojsonToLatLngs(data.geojson);
         }
         if (!routeLine.length && data.polyline) {
           routeLine = routingPolylineToLatLng(data.polyline);

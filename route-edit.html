@@ -298,6 +298,7 @@
     const ensureLoggedIn = async () => {
       const { user } = await fetchActiveSession();
       state.loggedIn = !!user;
+      console.info('[route-edit] ensureLoggedIn', { loggedIn: state.loggedIn, userId: user?.id });
       if (!state.loggedIn) {
         alert('保存にはログインが必要です');
         redirectToLogin();
@@ -751,6 +752,7 @@
     }
 
     async function saveRoute() {
+      console.info('[route-edit] saveRoute invoked', { controlPoints: state.controlPoints.length, routeLine: state.routeLine.length, dirty: state.dirty });
       if (!(await ensureLoggedIn())) return;
       if (!state.accountId) {
         state.accountId = await getMyAccountId();

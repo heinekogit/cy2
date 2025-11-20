@@ -264,6 +264,24 @@
       redirectingToLogin: false
     };
 
+    const fetchActiveSession = async () => {
+      try {
+        const { data:{ session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (session?.user) return { session, user: session.user };
+      } catch (e) {
+        console.warn('getSession failed', e);
+      }
+      try {
+        const { data:{ user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (user) return { session: null, user };
+      } catch (e) {
+        console.warn('getUser failed', e);
+      }
+      return { session: null, user: null };
+    };
+
     const buildLoginRedirectUrl = () => {
       const url = new URL('login.html', window.location.href);
       url.searchParams.set('returnTo', ROUTE_DRAW_PATH);
@@ -278,13 +296,8 @@
     };
 
     const ensureLoggedIn = async () => {
-      try {
-        const { data:{ session } } = await supabase.auth.getSession();
-        state.loggedIn = !!session?.user;
-      } catch (e) {
-        console.warn('ensureLoggedIn failed', e);
-        state.loggedIn = false;
-      }
+      const { user } = await fetchActiveSession();
+      state.loggedIn = !!user;
       if (!state.loggedIn) {
         alert('保存にはログインが必要です');
         redirectToLogin();
@@ -705,28 +718,23 @@
     };
 
     async function refreshAuth() {
-      try {
-        const { data:{ session } } = await supabase.auth.getSession();
-        state.loggedIn = !!session?.user;
-        if (!state.loggedIn) {
-          authNotice.textContent = 'ログインすると保存できます';
-          state.accountId = null;
-          btnSave.disabled = true;
-          setEditingControlsEnabled(true);
-          redirectToLogin();
-        } else {
-          authNotice.textContent = '';
-          btnSave.disabled = false;
-          setEditingControlsEnabled(true);
-          state.accountId = await getMyAccountId();
-          if (!state.accountId) {
-            authNotice.textContent = 'アカウント情報を取得できません（マイページを開いて再認証してください）';
-          } else {
-            authNotice.textContent = '';
-          }
-        }
-      } catch (e) {
-        console.warn('auth refresh failed', e);
+      const { user } = await fetchActiveSession();
+      state.loggedIn = !!user;
+      if (!state.loggedIn) {
+        authNotice.textContent = 'ログインすると保存できます';
+        state.accountId = null;
+        btnSave.disabled = true;
+        setEditingControlsEnabled(true);
+        return;
+      }
+      authNotice.textContent = '';
+      btnSave.disabled = false;
+      setEditingControlsEnabled(true);
+      state.accountId = await getMyAccountId();
+      if (!state.accountId) {
+        authNotice.textContent = 'アカウント情報を取得できません（マイページを開いて再認証してください）';
+      } else {
+        authNotice.textContent = '';
       }
     }
 

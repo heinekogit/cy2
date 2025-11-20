@@ -200,6 +200,8 @@
 
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const ROUTE_DRAW_PATH = 'route-edit.html';
+
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
     });
@@ -258,7 +260,37 @@
       currentRoute: null,
       routeBuildQueue: Promise.resolve(),
       draftTimer: null,
-      guestHintShown: false
+      guestHintShown: false,
+      redirectingToLogin: false
+    };
+
+    const buildLoginRedirectUrl = () => {
+      const url = new URL('login.html', window.location.href);
+      url.searchParams.set('returnTo', ROUTE_DRAW_PATH);
+      url.searchParams.set('v', window.APP_VERSION || '');
+      return url.toString();
+    };
+
+    const redirectToLogin = () => {
+      if (state.redirectingToLogin) return;
+      state.redirectingToLogin = true;
+      setTimeout(() => location.replace(buildLoginRedirectUrl()), 200);
+    };
+
+    const ensureLoggedIn = async () => {
+      try {
+        const { data:{ session } } = await supabase.auth.getSession();
+        state.loggedIn = !!session?.user;
+      } catch (e) {
+        console.warn('ensureLoggedIn failed', e);
+        state.loggedIn = false;
+      }
+      if (!state.loggedIn) {
+        alert('保存にはログインが必要です');
+        redirectToLogin();
+        return false;
+      }
+      return true;
     };
 
     if (modeStatus) {
@@ -681,6 +713,7 @@
           state.accountId = null;
           btnSave.disabled = true;
           setEditingControlsEnabled(true);
+          redirectToLogin();
         } else {
           authNotice.textContent = '';
           btnSave.disabled = false;
@@ -710,10 +743,7 @@
     }
 
     async function saveRoute() {
-      if (!state.loggedIn) {
-        alert('保存にはログインが必要です');
-        return;
-      }
+      if (!(await ensureLoggedIn())) return;
       if (!state.accountId) {
         state.accountId = await getMyAccountId();
         if (!state.accountId) {

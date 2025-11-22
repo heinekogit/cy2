@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -12,23 +13,39 @@
       --fg: #111827;
       --accent: #3b82f6;
     }
-    * { box-sizing: border-box; }
-    html, body {
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
       margin: 0;
       height: 100%;
       background: var(--bg);
       color: var(--fg);
-      font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans JP",sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans JP", sans-serif;
       overscroll-behavior: none;
     }
+
     #map {
       position: fixed;
       inset: 0;
       z-index: 0;
     }
-    #map.tool-add.leaflet-container { cursor: crosshair !important; }
-    #map.tool-move.leaflet-container { cursor: grab !important; }
-    #map.tool-delete.leaflet-container { cursor: not-allowed !important; }
+
+    #map.tool-add.leaflet-container {
+      cursor: crosshair !important;
+    }
+
+    #map.tool-move.leaflet-container {
+      cursor: grab !important;
+    }
+
+    #map.tool-delete.leaflet-container {
+      cursor: not-allowed !important;
+    }
+
     header {
       position: fixed;
       top: env(safe-area-inset-top, 8px);
@@ -40,12 +57,13 @@
       gap: 8px;
       padding: 8px 12px;
       border-radius: 12px;
-      background: rgba(255,255,255,0.92);
-      box-shadow: 0 4px 18px rgba(15,23,42,0.1);
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.1);
       backdrop-filter: blur(6px);
       z-index: 10;
       flex-wrap: wrap;
     }
+
     #toolbar {
       position: fixed;
       bottom: env(safe-area-inset-bottom, 12px);
@@ -56,12 +74,13 @@
       gap: 8px;
       padding: 8px;
       border-radius: 14px;
-      background: rgba(255,255,255,0.92);
-      box-shadow: 0 8px 24px rgba(15,23,42,0.12);
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
       backdrop-filter: blur(6px);
       z-index: 10;
       justify-content: center;
     }
+
     .btn {
       border: 1px solid #d1d5db;
       border-radius: 10px;
@@ -77,25 +96,30 @@
       min-width: 36px;
       text-decoration: none;
     }
+
     .btn.primary {
       background: var(--accent);
       border-color: var(--accent);
       color: #fff;
     }
+
     .btn.danger {
       background: #ef4444;
       border-color: #ef4444;
       color: #fff;
     }
+
     .btn.active {
       border-color: var(--accent);
       color: var(--accent);
-      background: rgba(59,130,246,0.12);
+      background: rgba(59, 130, 246, 0.12);
     }
+
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
+
     select.mode-select {
       padding: 8px 10px;
       border: 1px solid #d1d5db;
@@ -105,16 +129,18 @@
       font-size: 14px;
       min-width: 140px;
     }
+
     .muted {
       color: #6b7280;
       font-size: 13px;
     }
+
     #statusToast {
       position: fixed;
       left: 50%;
       transform: translateX(-50%);
-      bottom: calc(env(safe-area-inset-bottom,12px) + 64px);
-      background: rgba(17,24,39,0.92);
+      bottom: calc(env(safe-area-inset-bottom, 12px) + 64px);
+      background: rgba(17, 24, 39, 0.92);
       color: #fff;
       padding: 8px 12px;
       border-radius: 10px;
@@ -122,6 +148,7 @@
       display: none;
       z-index: 20;
     }
+
     #nameField {
       flex: 1 1 auto;
       display: flex;
@@ -129,6 +156,7 @@
       align-items: center;
       min-width: 0;
     }
+
     #routeName {
       flex: 1;
       padding: 6px 8px;
@@ -138,14 +166,23 @@
       font-size: 14px;
       min-width: 160px;
     }
+
     #authNotice {
       font-size: 13px;
       color: #b91c1c;
     }
+
     @media (max-width: 600px) {
-      header { flex-direction: column; align-items: stretch; }
-      #toolbar { justify-content: center; }
+      header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      #toolbar {
+        justify-content: center;
+      }
     }
+
     body .leaflet-top.leaflet-left {
       top: calc(env(safe-area-inset-top, 8px) + 72px);
     }
@@ -160,6 +197,7 @@
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
+
 <body>
   <div id="map"></div>
   <header>
@@ -203,7 +241,7 @@
     const ROUTE_DRAW_PATH = 'route-edit.html';
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false }
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
     window.supabaseClient = supabase;
     window.supabase = supabase;
@@ -266,14 +304,14 @@
 
     const fetchActiveSession = async () => {
       try {
-        const { data:{ session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (session?.user) return { session, user: session.user };
       } catch (e) {
         console.warn('getSession failed', e);
       }
       try {
-        const { data:{ user }, error } = await supabase.auth.getUser();
+        const { data: { user }, error } = await supabase.auth.getUser();
         if (error) throw error;
         if (user) return { session: null, user };
       } catch (e) {
@@ -408,7 +446,7 @@
       if (fit && state.routeLine.length >= 2) {
         try {
           map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30], maxZoom: 16 });
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
@@ -424,7 +462,7 @@
           draggable: state.tool === 'move',
           icon: L.divIcon({
             className: 'point-marker',
-            html: `<div style="width:14px;height:14px;border-radius:50%;border:2px solid #fff;background:${state.tool==='delete' ? '#ef4444' : '#3b82f6'};box-shadow:0 1px 4px rgba(0,0,0,.25);"></div>`,
+            html: `<div style="width:14px;height:14px;border-radius:50%;border:2px solid #fff;background:${state.tool === 'delete' ? '#ef4444' : '#3b82f6'};box-shadow:0 1px 4px rgba(0,0,0,.25);"></div>`,
             iconSize: [14, 14],
             iconAnchor: [7, 7]
           })
@@ -753,6 +791,7 @@
 
     async function saveRoute() {
       console.info('[route-edit] saveRoute invoked', { controlPoints: state.controlPoints.length, routeLine: state.routeLine.length, dirty: state.dirty });
+      console.info('[route-edit] saveRoute invoked2', { controlPoints: state.controlPoints.length, routeLine: state.routeLine.length, dirty: state.dirty });
       const loggedIn = await ensureLoggedIn();
       if (!loggedIn) {
         console.info('[route-edit] ensureLoggedIn returned false, abort saving');
@@ -884,8 +923,11 @@
     init().catch(err => console.error(err));
   </script>
 
-  <footer class="muted" style="position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,0.9);padding:4px 8px;border-radius:8px;border:1px solid #e5e7eb;z-index:1000;font-size:12px;">
-    v: <script>document.write(window.APP_VERSION || '')</script>
+  <footer class="muted"
+    style="position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,0.9);padding:4px 8px;border-radius:8px;border:1px solid #e5e7eb;z-index:1000;font-size:12px;">
+    v:
+    <script>document.write(window.APP_VERSION || '')</script>
   </footer>
 </body>
+
 </html>

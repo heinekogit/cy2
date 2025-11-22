@@ -291,7 +291,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return smoothed;
     };
 
-    const drawElevationProfile = (svg, elevs, points) => {
+    const drawElevationProfile = (svg, elevs, points, opts = {}) => {
       if (!svg) return;
       const ns = 'http://www.w3.org/2000/svg';
       const width = svg.clientWidth || 600;
@@ -301,9 +301,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
       const dists = cumDistances(points);
       const total = dists[dists.length - 1] || 1;
-      const minE = Math.min(...elevs);
-      const maxE = Math.max(...elevs);
-      const range = Math.max(1, maxE - minE);
+      const minE = 0;
+      const maxE = Math.max(...elevs, 0);
+      const range = Math.max(1, maxE * (opts.marginRatio || 1.1));
 
       const x = (i) => (width * (dists[i] / total));
       const y = (e) => height - ((e - minE) / range) * height;
@@ -362,13 +362,15 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         return;
       }
       const elevs = smoothElevations(rawElevs, rawElevs.length < 7 ? 3 : 5); // 軽い移動平均でギザギザを抑える
+      const minElev = Math.min(...elevs);
+      const relElevs = elevs.map((e) => e - minElev);
 
       const totalDist = totalDistanceMeters(points);
       const { up, down } = sumGainLoss(elevs, 2);
       const netGain = elevs[elevs.length - 1] - elevs[0];
       const avgGrade = totalDist > 0 ? ((netGain / totalDist) * 100) : 0;
       statsEl.textContent = `総上昇 ${up} m ／ 総下降 ${down} m ／ 平均勾配 ${avgGrade.toFixed(1)} %`;
-      drawElevationProfile(chartEl, elevs, points);
+      drawElevationProfile(chartEl, relElevs, points, { marginRatio: 1.1 });
     }
 
     async function renderAuthBar(){

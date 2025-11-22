@@ -303,26 +303,35 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const total = dists[dists.length - 1] || 1;
       const minE = 0;
       const maxE = Math.max(...elevs, 0);
-      const range = Math.max(1, maxE * (opts.marginRatio || 1.1));
+      const range = Math.max(1, maxE);
+      const marginRatio = opts.marginRatio ?? 0.15;
+      const topPad = opts.topPad ?? 6;
+      const bottomPad = opts.bottomPad ?? 8;
+      const plotHeight = Math.max(1, height - topPad - bottomPad);
+      const yBase = topPad + plotHeight;
+      const rangeWithMargin = range * (1 + marginRatio);
 
       const x = (i) => (width * (dists[i] / total));
-      const y = (e) => height - ((e - minE) / range) * height;
+      const y = (e) => {
+        const clamped = Math.max(0, Math.min(rangeWithMargin, e));
+        return yBase - (clamped / rangeWithMargin) * plotHeight;
+      };
 
       const pathArea = document.createElementNS(ns, 'path');
-      let d = `M 0 ${height}`;
+      let d = `M 0 ${yBase}`;
       for (let i = 0; i < elevs.length; i++) {
         d += ` L ${x(i).toFixed(2)} ${y(elevs[i]).toFixed(2)}`;
       }
-      d += ` L ${width} ${height} Z`;
+      d += ` L ${width} ${yBase} Z`;
       pathArea.setAttribute('d', d);
-      pathArea.setAttribute('fill', '#d1e9ff');
-      pathArea.setAttribute('stroke', '#3b82f6');
+      pathArea.setAttribute('fill', '#86efac');
+      pathArea.setAttribute('stroke', '#15803d');
       pathArea.setAttribute('stroke-width', '1.5');
       svg.appendChild(pathArea);
 
       const ticks = 4;
       for (let i = 0; i <= ticks; i++) {
-        const val = minE + (range * i) / ticks;
+        const val = (rangeWithMargin * i) / ticks;
         const yy = y(val);
         const line = document.createElementNS(ns, 'line');
         line.setAttribute('x1', 0);

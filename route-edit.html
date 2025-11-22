@@ -753,7 +753,12 @@
 
     async function saveRoute() {
       console.info('[route-edit] saveRoute invoked', { controlPoints: state.controlPoints.length, routeLine: state.routeLine.length, dirty: state.dirty });
-      if (!(await ensureLoggedIn())) return;
+      const loggedIn = await ensureLoggedIn();
+      if (!loggedIn) {
+        console.info('[route-edit] ensureLoggedIn returned false, abort saving');
+        return;
+      }
+      console.info('[route-edit] ensureLoggedIn ok');
       if (!state.accountId) {
         state.accountId = await getMyAccountId();
         if (!state.accountId) {
@@ -783,6 +788,7 @@
         payload.is_public = false;
         payload.route_type = 'editor';
       }
+      console.info('[route-edit] saving payload', payload);
       btnSave.disabled = true;
       showToast('保存中…', 1200);
       try {
@@ -802,6 +808,7 @@
             .maybeSingle();
         }
         const { data, error, status } = result;
+        console.info('[route-edit] save response', { status, data, error });
         if (error || !data?.id) {
           console.error('ROUTE SAVE ERROR', { status, error, payload });
           alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);

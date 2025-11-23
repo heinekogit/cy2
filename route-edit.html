@@ -250,8 +250,7 @@
     window.getMyAccountId = () => AuthCommon.getMyAccountId(supabase);
 
     const V = () => encodeURIComponent(window.APP_VERSION || '');
-    const q = new URL(location.href).searchParams;
-    const editingId = q.get('id') ? Number(q.get('id')) : null;
+    const editingId = null; // 既存ルートの編集はサポートしない
 
     const map = L.map('map', {
       zoomControl: true,
@@ -823,7 +822,6 @@
       const geojson = { type: 'LineString', coordinates: coordsLngLat };
       const polylineStr = encodePolyline(state.routeLine);
       const name = routeNameInput.value.trim() || '新しいルート';
-      const now = new Date().toISOString();
 
       const payload = {
         name,
@@ -832,6 +830,23 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
+      let routeTypeValue = state.currentRoute?.route_type || null;
+      if (!routeTypeValue) {
+        try {
+          const { data, error } = await supabase.from('routes').select('route_type').eq('is_public', true).limit(1);
+          if (!error && Array.isArray(data) && data.length && data[0]?.route_type) {
+            routeTypeValue = data[0].route_type;
+          }
+        } catch (e) {
+          console.warn('get default route_type failed', e);
+        }
+      }
+      if (!routeTypeValue) {
+        alert('ルート種別を判定できず保存できませんでした。既存ルートを一度確認してから再試行してください。');
+        btnSave.disabled = false;
+        return;
+      }
+      payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();
       if (!originValue) {
@@ -840,32 +855,16 @@
         return;
       }
       payload.origin = originValue;
-      if (!editingId) {
-        payload.created_at = now;
-        payload.is_public = false;
-        payload.route_type = 'draw';
-      }
-
       console.info('[route-edit] saving payload', payload);
       btnSave.disabled = true;
       showToast('保存中…', 1200);
 
       try {
-        let result;
-        if (editingId) {
-          result = await supabase
-            .from('routes')
-            .update(payload)
-            .eq('id', editingId)
-            .select('id')
-            .maybeSingle();
-        } else {
-          result = await supabase
-            .from('routes')
-            .insert([payload])
-            .select('id')
-            .maybeSingle();
-        }
+        const result = await supabase
+          .from('routes')
+          .insert([payload])
+          .select('id')
+          .maybeSingle();
 
         const { data, error, status } = result;
         console.info('[route-edit] save response', { status, data, error });

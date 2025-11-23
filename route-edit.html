@@ -285,6 +285,8 @@
       delete: 'ポイント削除'
     };
 
+    let defaultRouteOrigin = null;
+
     const state = {
       controlPoints: [],
       routeLine: [],
@@ -329,6 +331,24 @@
       modeStatus.textContent = `モード: ${TOOL_LABELS[state.tool]}`;
     }
     updateCursor();
+
+    async function getDefaultRouteOrigin() {
+      if (defaultRouteOrigin) return defaultRouteOrigin;
+      try {
+        const { data, error } = await supabase
+          .from('routes')
+          .select('origin')
+          .eq('is_public', true)
+          .limit(1);
+        if (!error && Array.isArray(data) && data.length && data[0]?.origin) {
+          defaultRouteOrigin = data[0].origin;
+          return defaultRouteOrigin;
+        }
+      } catch (e) {
+        console.warn('getDefaultRouteOrigin failed', e);
+      }
+      return null;
+    }
 
     const clonePoint = (p) => ({ lat: Number(p.lat), lng: Number(p.lng) });
 
@@ -812,11 +832,18 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
+      let originValue = state.currentRoute?.origin || null;
+      if (!originValue) originValue = await getDefaultRouteOrigin();
+      if (!originValue) {
+        alert('ルートの由来を判定できず保存できませんでした。既存ルートがある場合は一度表示してから再試行してください。');
+        btnSave.disabled = false;
+        return;
+      }
+      payload.origin = originValue;
       if (!editingId) {
         payload.created_at = now;
         payload.is_public = false;
         payload.route_type = 'draw';
-        payload.origin = 'from_run'; // DB の enum が制限されているため暫定的に既存値を使用
       }
 
       console.info('[route-edit] saving payload', payload);

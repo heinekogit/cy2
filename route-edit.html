@@ -841,19 +841,11 @@
           console.warn('get default route_type failed', e);
         }
       }
-      if (!routeTypeValue) {
-        alert('ルート種別を判定できず保存できませんでした。既存ルートを一度確認してから再試行してください。');
-        btnSave.disabled = false;
-        return;
-      }
+      if (!routeTypeValue) routeTypeValue = 'from_run';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();
-      if (!originValue) {
-        alert('ルートの由来を判定できず保存できませんでした。既存ルートがある場合は一度表示してから再試行してください。');
-        btnSave.disabled = false;
-        return;
-      }
+      if (!originValue) originValue = 'manual';
       payload.origin = originValue;
       console.info('[route-edit] saving payload', payload);
       btnSave.disabled = true;

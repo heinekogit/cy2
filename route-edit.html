@@ -299,37 +299,11 @@
       routeBuildQueue: Promise.resolve(),
       draftTimer: null,
       guestHintShown: false,
-      redirectingToLogin: false,
-      cachedUser: null
+      redirectingToLogin: false
     };
 
     const fetchActiveSession = async () => {
-      console.info('[route-edit] fetchActiveSession invoked');
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error('[route-edit] getSession error', error);
-        } else if (session?.user) {
-          console.info('[route-edit] getSession OK', { userId: session.user.id });
-          return { session, user: session.user };
-        }
-      } catch (e) {
-        console.error('[route-edit] getSession exception', e);
-      }
-
-      try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error) {
-          console.error('[route-edit] getUser error', error);
-        } else if (user) {
-          console.info('[route-edit] getUser OK (no session)', { userId: user.id });
-          return { session: null, user };
-        }
-      } catch (e) {
-        console.error('[route-edit] getUser exception', e);
-      }
-
-      console.warn('[route-edit] fetchActiveSession: no active user');
+      console.info('[route-edit] fetchActiveSession invoked (no-op)');
       return { session: null, user: null };
     };
 
@@ -347,16 +321,7 @@
     };
 
     const ensureLoggedIn = async () => {
-      console.info('[route-edit] ensureLoggedIn invoked');
-      const { user } = await fetchActiveSession();
-      const loggedIn = !!user;
-      console.info('[route-edit] ensureLoggedIn result', { loggedIn, userId: user?.id });
-
-      if (!loggedIn) {
-        alert('保存にはログインが必要です');
-        redirectToLogin();
-        return false;
-      }
+      console.info('[route-edit] ensureLoggedIn invoked (no-op)');
       return true;
     };
 
@@ -773,7 +738,6 @@
 
     async function refreshAuth() {
       const { user } = await fetchActiveSession();
-      state.cachedUser = user || null;
       state.loggedIn = !!user;
       if (!state.loggedIn) {
         authNotice.textContent = 'ログインすると保存できます';
@@ -808,84 +772,96 @@
     async function saveRoute() {
       console.info('[route-edit] saveRoute invoked', {
         controlPoints: state.controlPoints.length,
-        routeLine: state.routeLine ? state.routeLine.length : 'null',
+        routeLine: state.routeLine.length,
         dirty: state.dirty
       });
 
-      try {
-        const loggedIn = await ensureLoggedIn();
-        console.info('[route-edit] after ensureLoggedIn', { loggedIn });
-        if (!loggedIn) return;
+      const loggedInOk = await ensureLoggedIn();
+      if (!loggedInOk) {
+        console.info('[route-edit] ensureLoggedIn returned false, abort saving');
+        return;
+      }
 
-        if (!state.accountId) {
-          console.info('[route-edit] resolving accountId…');
+      if (!state.accountId) {
+        try {
           state.accountId = await getMyAccountId();
+          console.info('[route-edit] getMyAccountId result', state.accountId);
+        } catch (e) {
+          console.error('[route-edit] getMyAccountId error', e);
         }
-        console.info('[route-edit] accountId =', state.accountId);
-        if (!state.accountId) {
-          alert('アカウント情報を取得できません。');
-          console.error('[route-edit] abort: accountId missing');
-          return;
-        }
+      }
 
-        if (!Array.isArray(state.routeLine)) {
-          console.error('[route-edit] routeLine is not an array', state.routeLine);
-          alert('ルートデータが不正です。');
-          return;
-        }
-        if (state.routeLine.length < 2) {
-          console.warn('[route-edit] routeLine < 2, abort');
-          alert('ポイントが不足しています');
-          return;
-        }
-        console.info('[route-edit] routeLine OK', state.routeLine.length);
+      if (!state.accountId) {
+        console.warn('[route-edit] accountId is missing, will rely on RLS error');
+      }
 
-        const coordsLngLat = state.routeLine.map(p => [p.lng, p.lat]);
-        const geojson = { type: 'LineString', coordinates: coordsLngLat };
-        const polylineStr = encodePolyline(state.routeLine);
-        console.info('[route-edit] geojson/polyline built');
+      if (state.routeLine.length < 2) {
+        alert('少なくとも2点以上のポイントが必要です');
+        return;
+      }
 
-        const name = routeNameInput.value.trim() || '新しいルート';
-        const now = new Date().toISOString();
-        const payload = {
-          name,
-          geojson,
-          polyline: polylineStr,
-          account_id: state.accountId,
-          owner_account_id: state.accountId,
-          updated_at: now
-        };
-        if (!editingId) {
-          payload.created_at = now;
-          payload.is_public = false;
-          payload.route_type = 'editor';
-        }
-        console.info('[route-edit] payload ready', payload);
+      const coordsLngLat = state.routeLine.map(p => [p.lng, p.lat]);
+      const geojson = { type: 'LineString', coordinates: coordsLngLat };
+      const polylineStr = encodePolyline(state.routeLine);
+      const name = routeNameInput.value.trim() || '新しいルート';
+      const now = new Date().toISOString();
 
+      const payload = {
+        name,
+        geojson,
+        polyline: polylineStr,
+        account_id: state.accountId || null,
+        owner_account_id: state.accountId || null,
+        updated_at: now
+      };
+      if (!editingId) {
+        payload.created_at = now;
+        payload.is_public = false;
+        payload.route_type = 'editor';
+      }
+
+      console.info('[route-edit] saving payload', payload);
+      btnSave.disabled = true;
+      showToast('保存中…', 1200);
+
+      try {
         let result;
         if (editingId) {
-          console.info('[route-edit] supabase.update(routes)', editingId);
-          result = await supabase.from('routes').update(payload).eq('id', editingId).select('id').maybeSingle();
+          result = await supabase
+            .from('routes')
+            .update(payload)
+            .eq('id', editingId)
+            .select('id')
+            .maybeSingle();
         } else {
-          console.info('[route-edit] supabase.insert(routes)');
-          result = await supabase.from('routes').insert([payload]).select('id').maybeSingle();
+          result = await supabase
+            .from('routes')
+            .insert([payload])
+            .select('id')
+            .maybeSingle();
         }
 
-        const { data, error, status } = result || {};
+        const { data, error, status } = result;
         console.info('[route-edit] save response', { status, data, error });
-        if (error || !data?.id) {
-          console.error('ROUTE SAVE ERROR', { status, error });
-          alert(`保存に失敗: ${error?.message}`);
+
+        if (status === 401 || status === 403) {
+          alert('ログインが必要です。ログイン画面に移動します。');
+          location.href = buildLoginRedirectUrl();
           return;
         }
 
-        console.info('[route-edit] saveRoute success → redirect', { id: data.id });
+        if (error || !data?.id) {
+          console.error('ROUTE SAVE ERROR', { status, error, payload });
+          alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
+          return;
+        }
+
         setDirty(false);
         localStorage.removeItem(STORAGE_KEY);
         location.replace(`detail.html?id=${encodeURIComponent(data.id)}&kind=route&v=${V()}`);
       } catch (e) {
-        console.error('[route-edit] saveRoute exception', e);
-        alert('保存に失敗: ' + (e?.message || 'unknown'));
+        console.error('ROUTE SAVE EXCEPTION', e);
+        alert('保存に失敗: ' + (e?.message || '不明なエラー'));
       } finally {
         btnSave.disabled = false;
       }

@@ -737,24 +737,23 @@
     };
 
     async function refreshAuth() {
-      const { user } = await fetchActiveSession();
-      state.loggedIn = !!user;
+      try {
+        const acc = await getMyAccountId();
+        state.accountId = acc || null;
+        state.loggedIn = !!acc;
+      } catch (e) {
+        console.warn('refreshAuth getMyAccountId failed', e);
+        state.accountId = null;
+        state.loggedIn = false;
+      }
+
       if (!state.loggedIn) {
         authNotice.textContent = 'ログインすると保存できます';
-        state.accountId = null;
-        btnSave.disabled = false;
-        setEditingControlsEnabled(true);
-        return;
-      }
-      authNotice.textContent = '';
-      btnSave.disabled = false;
-      setEditingControlsEnabled(true);
-      state.accountId = await getMyAccountId();
-      if (!state.accountId) {
-        authNotice.textContent = 'アカウント情報を取得できません（マイページを開いて再認証してください）';
       } else {
         authNotice.textContent = '';
       }
+      btnSave.disabled = false;
+      setEditingControlsEnabled(true);
     }
 
     async function setMode(mode, { skipRebuild = false, skipHistory = false } = {}) {

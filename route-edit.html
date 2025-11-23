@@ -816,7 +816,7 @@
         payload.created_at = now;
         payload.is_public = false;
         payload.route_type = 'draw';
-        payload.origin = 'draw';
+        payload.origin = 'from_run'; // DB の enum が制限されているため暫定的に既存値を使用
       }
 
       console.info('[route-edit] saving payload', payload);

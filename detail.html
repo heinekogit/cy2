@@ -521,7 +521,11 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
     async function init(){
       await renderAuthBar();
-      if(!id){ alert('id が不正です'); return; }
+      if(!id){
+        alert('id が不正です');
+        location.replace(`index.html?v=${V()}`);
+        return;
+      }
       if(kind==='run') { await loadRun(); }
       else { await loadRoute(); }
       client.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); if(kind==='run') await loadRun(); else await loadRoute(); });

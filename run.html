@@ -138,6 +138,46 @@
       window.supabase = client;
     })();
   </script>
+  <script type="module">
+    const fileInput = document.getElementById('route-photo-input');
+    const statusEl = document.getElementById('route-photo-upload-status');
+
+    if (fileInput && statusEl) {
+      fileInput.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        statusEl.textContent = 'アップロード中…';
+
+        const timestamp = Date.now();
+        const ext = file.name.split('.').pop() || 'jpg';
+        const filePath = `${timestamp}.${ext}`;
+
+        try {
+          const { data, error } = await window.supabaseClient.storage
+            .from('route-photos')
+            .upload(filePath, file, { upsert: false });
+
+          if (error) {
+            console.error('photo upload error', error);
+            statusEl.textContent = 'アップロード失敗';
+            return;
+          }
+
+          const {
+            data: { publicUrl },
+          } = window.supabaseClient.storage.from('route-photos').getPublicUrl(data.path);
+          console.log('アップロード成功 URL:', publicUrl);
+          statusEl.textContent = 'アップロード成功！';
+        } catch (err) {
+          console.error('photo upload exception', err);
+          statusEl.textContent = 'アップロード失敗';
+        } finally {
+          fileInput.value = '';
+        }
+      });
+    }
+  </script>
 
   <!-- ✅ ここから共通化パート -->
   <script src="js/auth-common.js"></script>

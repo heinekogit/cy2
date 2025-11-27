@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -12,70 +13,296 @@
     }
   </script>
   <style>
-    :root { --bg:#fff; --fg:#111827; --muted:#6b7280; --accent:#111827; --ok:#065f46; --okbg:#d1fae5; --warn:#92400e; --warnbg:#fef3c7; --off:#991b1b; --offbg:#fee2e2; }
-    html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP"; }
-    #app { height:100%; display:flex; flex-direction:column; }
-    header { padding:10px 12px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    header .tabs { display:flex; gap:8px; flex-wrap:wrap; }
-    .tab { padding:8px 12px; border-radius:999px; border:1px solid #e5e7eb; cursor:pointer; background:#fff; }
-    .tab.active { background:#111827; color:#fff; border-color:#111827; }
-    .btn { border:none; border-radius:10px; padding:8px 10px; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; text-decoration:none; }
-    .btn.ghost { background:#fff; color:#111827; border:1px solid #e5e7eb; }
-    .btn.primary { background:#111827; color:#fff; }
-    .btn.danger { background:#ef4444; color:#fff; }
-    .btn.big { padding:12px 14px; font-weight:700; }
-    main { flex:1; display:flex; }
-    .panel { flex:1; display:none; }
-    .panel.active { display:flex; }
-    #logsSection { flex-direction:column; }
-    .list { padding:12px; display:flex; flex-direction:column; gap:10px; overflow:auto; }
-    .card { border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; background:#fff; }
-    .card.highlight { outline:3px solid #93c5fd; }
-    .meta { font-size:12px; color:var(--muted); }
-    #runSection { position:relative; display:none; }
-    #runSection.active { display:block; }
-    #map { position:absolute; inset:0; }
-    .badgewrap { position:fixed; left:8px; right:8px; top:env(safe-area-inset-top,8px); display:flex; gap:8px; z-index:1000; }
-    .badge { padding:6px 10px; border-radius:999px; font-weight:600; background:#e2e8f0; }
-    .badge.ok { background:var(--okbg); color:var(--ok); }
-    .badge.warn { background:var(--warnbg); color:var(--warn); }
-    .badge.off { background:var(--offbg); color:var(--off); }
-    .dock { position:fixed; right:8px; bottom:8px; display:flex; flex-direction:column; gap:8px; z-index:1000; }
-    .toolbar { position:fixed; left:8px; bottom:8px; z-index:1000; display:flex; gap:8px; }
+    :root {
+      --bg: #fff;
+      --fg: #111827;
+      --muted: #6b7280;
+      --accent: #111827;
+      --ok: #065f46;
+      --okbg: #d1fae5;
+      --warn: #92400e;
+      --warnbg: #fef3c7;
+      --off: #991b1b;
+      --offbg: #fee2e2;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP";
+    }
+
+    #app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    header .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #e5e7eb;
+      cursor: pointer;
+      background: #fff;
+    }
+
+    .tab.active {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      text-decoration: none;
+    }
+
+    .btn.ghost {
+      background: #fff;
+      color: #111827;
+      border: 1px solid #e5e7eb;
+    }
+
+    .btn.primary {
+      background: #111827;
+      color: #fff;
+    }
+
+    .btn.danger {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .btn.big {
+      padding: 12px 14px;
+      font-weight: 700;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+    }
+
+    .panel {
+      flex: 1;
+      display: none;
+    }
+
+    .panel.active {
+      display: flex;
+    }
+
+    #logsSection {
+      flex-direction: column;
+    }
+
+    .list {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: auto;
+    }
+
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      background: #fff;
+    }
+
+    .card.highlight {
+      outline: 3px solid #93c5fd;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    #runSection {
+      position: relative;
+      display: none;
+    }
+
+    #runSection.active {
+      display: block;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+    }
+
+    .badgewrap {
+      position: fixed;
+      left: 8px;
+      right: 8px;
+      top: env(safe-area-inset-top, 8px);
+      display: flex;
+      gap: 8px;
+      z-index: 1000;
+    }
+
+    .badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+      background: #e2e8f0;
+    }
+
+    .badge.ok {
+      background: var(--okbg);
+      color: var(--ok);
+    }
+
+    .badge.warn {
+      background: var(--warnbg);
+      color: var(--warn);
+    }
+
+    .badge.off {
+      background: var(--offbg);
+      color: var(--off);
+    }
+
+    .dock {
+      position: fixed;
+      right: 8px;
+      bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+
+    .toolbar {
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      z-index: 1000;
+      display: flex;
+      gap: 8px;
+    }
+
     .route-photo-upload {
-      position:fixed;
-      left:8px;
-      bottom:110px;
-      background:rgba(255,255,255,0.92);
-      border:1px solid #e5e7eb;
-      border-radius:999px;
-      padding:6px 12px;
-      font-size:14px;
-      display:flex;
-      flex-direction:column;
-      gap:4px;
-      z-index:1000;
-      box-shadow:0 4px 12px rgba(0,0,0,0.08);
+      position: fixed;
+      left: 8px;
+      bottom: 110px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
+
     .route-photo-upload label {
-      cursor:pointer;
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      font-weight:600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
     }
-    #route-photo-upload-status { font-size:12px; color:#6b7280; }
-    .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; z-index:1100; display:none; }
-    .hint { position:fixed; left:8px; bottom:60px; background:#ffffffd8; padding:6px 10px; border-radius:10px; font-size:12px; z-index:999; }
-    .auth-card { margin:10px 12px 0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; }
-    footer { padding:6px 10px; font-size:12px; color:var(--muted); border-top:1px solid #e5e7eb; }
+
+    #route-photo-upload-status {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 20px;
+      background: #111827;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      z-index: 1100;
+      display: none;
+    }
+
+    .hint {
+      position: fixed;
+      left: 8px;
+      bottom: 60px;
+      background: #ffffffd8;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      z-index: 999;
+    }
+
+    .auth-card {
+      margin: 10px 12px 0;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    footer {
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid #e5e7eb;
+    }
+
     @media (max-width:600px) {
-      header { flex-direction:column; align-items:flex-start; }
-      .dock { flex-direction:column; right:4px; bottom:4px; }
-      .toolbar { left:4px; bottom:4px; }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .dock {
+        flex-direction: column;
+        right: 4px;
+        bottom: 4px;
+      }
+
+      .toolbar {
+        left: 4px;
+        bottom: 4px;
+      }
     }
   </style>
 </head>
+
 <body>
   <div id="app">
     <header>
@@ -98,7 +325,9 @@
       </section>
       <section id="runSection" class="panel" aria-label="run">
         <div id="map"></div>
-        <div class="badgewrap"><div id="courseBadge" class="badge">準備中…</div></div>
+        <div class="badgewrap">
+          <div id="courseBadge" class="badge">準備中…</div>
+        </div>
         <div class="dock">
           <button id="startBtn" class="btn primary big" type="button">▶ 記録開始</button>
           <button id="stopBtn" class="btn danger big" type="button">■ 停止</button>
@@ -127,7 +356,7 @@
   </script>
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
-    (function(){
+    (function () {
       const supabaseLib = window.supabase;
       const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
       const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
@@ -139,6 +368,9 @@
     })();
   </script>
   <script type="module">
+    // TODO: 実際の実走ルートIDを注入する。暫定テスト値。
+    const CURRENT_ROUTE_ID = 1;
+    const supabase = window.supabaseClient;
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
 
@@ -154,7 +386,8 @@
         const filePath = `${timestamp}.${ext}`;
 
         try {
-          const { data, error } = await window.supabaseClient.storage
+          // ① Storage へアップロード
+          const { data, error } = await supabase.storage
             .from('route-photos')
             .upload(filePath, file, { upsert: false });
 
@@ -164,11 +397,40 @@
             return;
           }
 
+          // ② 公開URL取得
           const {
             data: { publicUrl },
-          } = window.supabaseClient.storage.from('route-photos').getPublicUrl(data.path);
+          } = supabase.storage.from('route-photos').getPublicUrl(data.path);
           console.log('アップロード成功 URL:', publicUrl);
-          statusEl.textContent = 'アップロード成功！';
+
+          // ③ ログイン中ユーザー取得
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+
+          if (userError || !user) {
+            console.error('user取得エラー:', userError);
+            statusEl.textContent = 'アップロード成功（DB登録は失敗：ユーザー不明）';
+            return;
+          }
+
+          // ④ route_spot_photos に1行INSERT
+          const { error: insertError } = await supabase
+            .from('route_spot_photos')
+            .insert({
+              route_id: CURRENT_ROUTE_ID,
+              user_id: user.id,
+              image_url: publicUrl,
+            });
+
+          if (insertError) {
+            console.error('route_spot_photos へのINSERTエラー:', insertError);
+            statusEl.textContent = 'アップロード成功（DB登録は失敗）';
+            return;
+          }
+
+          statusEl.textContent = 'アップロード & DB登録 完了！';
         } catch (err) {
           console.error('photo upload exception', err);
           statusEl.textContent = 'アップロード失敗';
@@ -187,7 +449,7 @@
   </script>
 
   <script>
-    (function() {
+    (function () {
       const version = encodeURIComponent(window.APP_VERSION || '');
       document.write(`<script src="js/storage.js?v=${version}"><\/script>`);
     })();
@@ -564,9 +826,9 @@
       }
 
       const cleanupRun = () => {
-        try { clearWatchIfAny(); } catch (_) {}
-        try { clearLiveLayers(); } catch (_) {}
-        try { releaseWakeLock(); } catch (_) {}
+        try { clearWatchIfAny(); } catch (_) { }
+        try { clearLiveLayers(); } catch (_) { }
+        try { releaseWakeLock(); } catch (_) { }
         recording = false;
         traced = [];
         lastAddTs = 0;
@@ -663,24 +925,24 @@
         }
       };
 
-const updateCourseStatus = (latlng) => {
-  const ref = currentFollowLineLatLngs();
-  if (!ref.length) {
-    setBadge('', 'ルート未設定');
-    return;
-  }
-  try {
-    const point = turf.point([latlng.lng, latlng.lat]);
-    const line = turf.lineString(ref.map(([la, ln]) => [ln, la]));
-    const d = turf.pointToLineDistance(point, line, { units: 'meters' });
-    if (d <= OFF_THRESHOLD_M) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
-    else if (d <= OFF_THRESHOLD_M * 2) setBadge('warn', `注意：${Math.round(d)}m外`);
-    else setBadge('off', `ルート外：${Math.round(d)}m`);
-  } catch (e) {
-    console.error('updateCourseStatus error', e);
-    setBadge('', 'ルート判定エラー');
-  }
-};
+      const updateCourseStatus = (latlng) => {
+        const ref = currentFollowLineLatLngs();
+        if (!ref.length) {
+          setBadge('', 'ルート未設定');
+          return;
+        }
+        try {
+          const point = turf.point([latlng.lng, latlng.lat]);
+          const line = turf.lineString(ref.map(([la, ln]) => [ln, la]));
+          const d = turf.pointToLineDistance(point, line, { units: 'meters' });
+          if (d <= OFF_THRESHOLD_M) setBadge('ok', `ON COURSE（~${Math.round(d)}m）`);
+          else if (d <= OFF_THRESHOLD_M * 2) setBadge('warn', `注意：${Math.round(d)}m外`);
+          else setBadge('off', `ルート外：${Math.round(d)}m`);
+        } catch (e) {
+          console.error('updateCourseStatus error', e);
+          setBadge('', 'ルート判定エラー');
+        }
+      };
 
       const resetRunLayers = () => {
         if (!map) return;
@@ -737,11 +999,11 @@ const updateCourseStatus = (latlng) => {
         updateCourseStatus(latlng);
       };
 
-function appendLivePoint(lat, lng) {
-  ensureLiveLayers();
-  let isOn = true;
-  const ref = currentFollowLineLatLngs();
-  if (ref.length >= 2) {
+      function appendLivePoint(lat, lng) {
+        ensureLiveLayers();
+        let isOn = true;
+        const ref = currentFollowLineLatLngs();
+        if (ref.length >= 2) {
           try {
             const point = turf.point([lng, lat]);
             const line = turf.lineString(ref.map(([la, ln]) => [ln, la]));
@@ -754,15 +1016,15 @@ function appendLivePoint(lat, lng) {
         if (isOn) layerOn.addLatLng([lat, lng]);
         else layerOff.addLatLng([lat, lng]);
         layerOn.bringToFront();
-  layerOff.bringToFront();
-}
+        layerOff.bringToFront();
+      }
 
-function ensureLineMin2(pts) {
-  if (!Array.isArray(pts) || !pts.length) return [];
-  if (pts.length >= 2) return pts;
-  const p = pts[0];
-  return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];
-}
+      function ensureLineMin2(pts) {
+        if (!Array.isArray(pts) || !pts.length) return [];
+        if (pts.length >= 2) return pts;
+        const p = pts[0];
+        return [p, { lat: p.lat, lng: p.lng, ts: (p.ts || Date.now()) + 1, acc: p.acc || 0 }];
+      }
 
       const onErr = (err) => {
         console.warn('geolocation error', err);
@@ -843,7 +1105,7 @@ function ensureLineMin2(pts) {
         if (!recording) { showToast('記録は開始されていません'); return; }
 
         if (!accountId && window.getMyAccountId) {
-          try { const refreshed = await window.getMyAccountId(); if (refreshed) accountId = refreshed; } catch (_) {}
+          try { const refreshed = await window.getMyAccountId(); if (refreshed) accountId = refreshed; } catch (_) { }
         }
         if (!accountId) { alert('アカウント情報を確認できないため、保存できません。ログイン状態を確認してください。'); return; }
 
@@ -921,7 +1183,7 @@ function ensureLineMin2(pts) {
           alert('保存に失敗: ' + (e?.message || '不明なエラー'));
         } finally {
           window.__logStartedAt = null;
-          try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) {}
+          try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) { }
           if (!redirected) { await renderLogs(); setTab('logs'); }
         }
       };
@@ -1026,4 +1288,5 @@ function ensureLineMin2(pts) {
     }
   </script>
 </body>
+
 </html>

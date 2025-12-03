@@ -369,22 +369,61 @@
     })();
   </script>
   <script type="module">
-    // TODO: 実際の実走ルートIDを注入する。暫定テスト値。
-    const CURRENT_ROUTE_ID = 1;
+    // 走行中のルートIDを保持する（開始時に routes を作成してセット）
+    let currentRouteId = null;
     const supabase = window.supabaseClient;
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
+
+    async function startNewRoute() {
+      if (currentRouteId !== null) return;
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        console.error('user取得エラー:', userError);
+        alert('ログインしてから走行を開始してください。');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('routes')
+        .insert({
+          user_id: user.id,
+          is_public: false
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('routes insert error:', error);
+        alert('ルートの開始に失敗しました。');
+        return;
+      }
+
+      currentRouteId = data.id;
+      console.log('新しい route_id:', currentRouteId);
+      loadRoutePhotos();
+    }
 
     // route_spot_photos を読んでサムネイル表示
     async function loadRoutePhotos() {
       if (!listEl) return;
       listEl.textContent = '読み込み中…';
 
+      if (!currentRouteId) {
+        listEl.textContent = 'まだ写真はありません。まず▶で走行を開始してください。';
+        return;
+      }
+
       const { data, error } = await supabase
         .from('route_spot_photos')
         .select('id, image_url, taken_at')
-        .eq('route_id', CURRENT_ROUTE_ID)
+        .eq('route_id', currentRouteId)
         .order('taken_at', { ascending: true });
 
       if (error) {
@@ -412,6 +451,12 @@
       fileInput.addEventListener('change', async (event) => {
         const file = event.target.files?.[0];
         if (!file) return;
+
+        if (!currentRouteId) {
+          statusEl.textContent = 'まず▶で走行を開始してください。';
+          fileInput.value = '';
+          return;
+        }
 
         statusEl.textContent = 'アップロード中…';
 
@@ -453,7 +498,7 @@
           const { error: insertError } = await supabase
             .from('route_spot_photos')
             .insert({
-              route_id: CURRENT_ROUTE_ID,
+              route_id: currentRouteId,
               user_id: user.id,
               image_url: publicUrl,
             });
@@ -1074,7 +1119,9 @@
         releaseWakeLock();
       };
 
-      startBtn.onclick = () => {
+      startBtn.onclick = async () => {
+        await startNewRoute();
+        if (currentRouteId === null) return;
         if (recording) {
           showToast('すでに記録中です');
           return;

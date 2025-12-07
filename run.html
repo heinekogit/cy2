@@ -377,7 +377,7 @@
     const listEl = document.getElementById('route-photo-list');
 
     async function startNewRoute() {
-      if (currentRouteId !== null) return;
+      if (currentRouteId !== null) return true;
 
       const {
         data: { user },
@@ -387,27 +387,49 @@
       if (userError || !user) {
         console.error('user取得エラー:', userError);
         alert('ログインしてから走行を開始してください。');
-        return;
+        return false;
       }
+
+      // account_id / owner_account_id を可能なら付与
+      let ensuredAccountId = accountId;
+      if (!ensuredAccountId && window.getMyAccountId) {
+        try {
+          ensuredAccountId = await window.getMyAccountId();
+          accountId = ensuredAccountId || accountId;
+        } catch (e) {
+          console.warn('getMyAccountId retry failed', e);
+        }
+      }
+
+      const payload = {
+        user_id: user.id,
+        is_public: false,
+        name: '実走開始',
+      };
+      if (ensuredAccountId) {
+        payload.account_id = ensuredAccountId;
+        payload.owner_account_id = ensuredAccountId;
+      }
+      // route_type / origin が存在する場合のデフォルト
+      payload.route_type = 'from_run';
+      payload.origin = 'run';
 
       const { data, error } = await supabase
         .from('routes')
-        .insert({
-          user_id: user.id,
-          is_public: false
-        })
+        .insert(payload)
         .select('id')
         .single();
 
       if (error) {
         console.error('routes insert error:', error);
         alert('ルートの開始に失敗しました。');
-        return;
+        return false;
       }
 
       currentRouteId = data.id;
       console.log('新しい route_id:', currentRouteId);
       loadRoutePhotos();
+      return true;
     }
 
     // route_spot_photos を読んでサムネイル表示
@@ -1120,8 +1142,8 @@
       };
 
       startBtn.onclick = async () => {
-        await startNewRoute();
-        if (currentRouteId === null) return;
+        const ok = await startNewRoute();
+        if (!ok || currentRouteId === null) return;
         if (recording) {
           showToast('すでに記録中です');
           return;

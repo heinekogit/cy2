@@ -392,39 +392,44 @@
         return false;
       }
 
+      const ensureAccount = async () => {
+        if (accountId) return accountId;
+        if (window.getMyAccountId) {
+          try {
+            const ensured = await window.getMyAccountId();
+            if (ensured) accountId = ensured;
+          } catch (e) {
+            console.warn('getMyAccountId retry failed', e);
+          }
+        }
+        return accountId;
+      };
+
+      const ensuredAccountId = await ensureAccount();
+      if (!ensuredAccountId) {
+        alert('アカウント情報を取得できませんでした。マイページを開き直して再ログインしてください。');
+        return false;
+      }
+
       const payload = {
         user_id: user.id,
         is_public: false,
         name: '実走開始',
+        account_id: ensuredAccountId,
+        owner_account_id: ensuredAccountId,
+        route_type: 'from_run',
+        origin: 'run'
       };
-      if (accountId) {
-        payload.account_id = accountId;
-        payload.owner_account_id = accountId;
-      } else if (window.getMyAccountId) {
-        try {
-          const ensured = await window.getMyAccountId();
-          if (ensured) {
-            accountId = ensured;
-            payload.account_id = ensured;
-            payload.owner_account_id = ensured;
-          }
-        } catch (e) {
-          console.warn('getMyAccountId retry failed', e);
-        }
-      }
-      // route_type / origin が存在する場合のデフォルト
-      payload.route_type = 'from_run';
-      payload.origin = 'run';
 
-      const { data, error } = await supabase
+      const { data, error, status } = await supabase
         .from('routes')
         .insert(payload)
         .select('id')
         .single();
 
       if (error) {
-        console.error('routes insert error:', error);
-        alert('ルートの開始に失敗しました。');
+        console.error('routes insert error:', { status, error, payload });
+        alert('ルートの開始に失敗しました。\nログインし直してからお試しください。');
         return false;
       }
 

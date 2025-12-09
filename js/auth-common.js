@@ -43,15 +43,29 @@
     window.__auth_init = true;
 
     const target = opts.redirectUrl || 'index.html';
+    let lastSignoutTouchAt = 0;
 
-    document.addEventListener('click', async (ev) => {
+    const handleSignout = async (ev) => {
       const el = ev.target.closest('[data-signout]');
       if (!el) return;
+      if (ev.type === 'touchend') {
+        lastSignoutTouchAt = Date.now();
+      } else if (ev.type === 'click' && lastSignoutTouchAt && (Date.now() - lastSignoutTouchAt < 500)) {
+        return; // 直前のタッチで処理済み
+      }
       ev.preventDefault();
-      try { await client.auth.signOut(); } catch (e) { console.warn(e); }
+      try { await client?.auth?.signOut(); } catch (e) { console.warn(e); }
       clearAccountCache();
       location.replace(withV(target));
-    }, { capture: true });
+    };
+
+    document.addEventListener('click', handleSignout, { capture: true });
+    document.addEventListener('touchend', handleSignout, { capture: true });
+
+    if (!client?.auth) {
+      console.warn('AuthCommon.init: auth client is missing');
+      return;
+    }
 
     client.auth.onAuthStateChange((event, session) => {
       if (session?.user?.id) {

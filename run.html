@@ -368,9 +368,11 @@
       window.supabase = client;
     })();
   </script>
-  <script type="module">
-    // 走行中のルートIDを保持する（開始時に routes を作成してセット）
+  <script>
+    // 走行中のルートIDとアカウントIDはページ内の他スクリプトからも参照するのでグローバルに持つ
     let currentRouteId = null;
+    let accountId = null;
+
     const supabase = window.supabaseClient;
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
@@ -600,7 +602,7 @@
       let lastAddTs = 0;
       let lastSavedLogId = null;
       let isLoggedIn = false;
-      let accountId = null;
+      accountId = null;
       let rawTrack = [];
       let wakeLock = null;
 

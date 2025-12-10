@@ -394,12 +394,26 @@
 
       const ensureAccount = async () => {
         if (accountId) return accountId;
+        // 1st: 共通キャッシュ経由
         if (window.getMyAccountId) {
           try {
             const ensured = await window.getMyAccountId();
             if (ensured) accountId = ensured;
           } catch (e) {
             console.warn('getMyAccountId retry failed', e);
+          }
+        }
+        // 2nd: 直接 users テーブルを参照
+        if (!accountId) {
+          try {
+            const { data, error } = await supabase
+              .from('users')
+              .select('account_id')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (!error && data?.account_id) accountId = data.account_id;
+          } catch (e) {
+            console.warn('direct account_id fetch failed', e);
           }
         }
         return accountId;
@@ -429,7 +443,8 @@
 
       if (error) {
         console.error('routes insert error:', { status, error, payload });
-        alert('ルートの開始に失敗しました。\nログインし直してからお試しください。');
+        const msg = error?.message || '不明なエラー';
+        alert(`ルートの開始に失敗しました。\n(${msg})\nログインし直してからお試しください。`);
         return false;
       }
 

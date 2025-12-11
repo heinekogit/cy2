@@ -432,9 +432,9 @@
         name: '実走開始',
         account_id: ensuredAccountId,
         owner_account_id: ensuredAccountId,
-        route_type: 'from_run'
-        origin: 'from_log',     // ★ これを必ず入れる
-
+        route_type: 'from_run',
+        // route_origin は enum に合わせて supabase 側で許容される値を送る
+        origin: 'from_log'
       };
       // 念のため user_id は送らない（存在しないカラム）
       if ('user_id' in payload) delete payload.user_id;
@@ -454,6 +454,7 @@
       }
 
       currentRouteId = data.id;
+      showToast(`記録開始 #${currentRouteId}`);
       console.log('新しい route_id:', currentRouteId);
       loadRoutePhotos();
       return true;

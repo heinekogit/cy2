@@ -431,7 +431,8 @@
         account_id: ensuredAccountId,
         owner_account_id: ensuredAccountId,
         route_type: 'from_run',
-        origin: 'run'
+        // route_origin enum に合わせて 'manual' に固定（'run' は存在しないためエラーになっていた）
+        origin: 'manual'
       };
       // 念のため user_id は送らない（存在しないカラム）
       if ('user_id' in payload) delete payload.user_id;

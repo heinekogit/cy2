@@ -203,7 +203,8 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      z-index: 1100; /* ボタンを最前面に */
+      z-index: 1100;
+      /* ボタンを最前面に */
     }
 
     .toolbar {
@@ -227,7 +228,8 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      z-index: 900; /* ボタンより背面へ */
+      z-index: 900;
+      /* ボタンより背面へ */
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
@@ -431,7 +433,8 @@
         account_id: ensuredAccountId,
         owner_account_id: ensuredAccountId,
         route_type: 'from_run'
-        // origin は routes の enum に合わせて省略（デフォルト値に任せる）
+        origin: 'from_log',     // ★ これを必ず入れる
+
       };
       // 念のため user_id は送らない（存在しないカラム）
       if ('user_id' in payload) delete payload.user_id;
@@ -730,16 +733,16 @@
           if (!session?.user) {
             isLoggedIn = false;
             accountId = null;
-      authBar.innerHTML = `
+            authBar.innerHTML = `
         未ログインです。ログを保存するには <a class="btn ghost" href="${loginUrl}">ログイン</a> してください。
       `;
-      startBtn.disabled = true;
-      stopBtn.disabled = true;
-    } else {
-      isLoggedIn = true;
-      accountId = null;
-      try {
-        if (window.getMyAccountId) {
+            startBtn.disabled = true;
+            stopBtn.disabled = true;
+          } else {
+            isLoggedIn = true;
+            accountId = null;
+            try {
+              if (window.getMyAccountId) {
                 const fetched = await window.getMyAccountId();
                 if (fetched) accountId = fetched;
               }
@@ -749,7 +752,7 @@
             }
             const email = session.user.email || '';
             const accountNotice = accountId ? '' : '<div class="meta" style="margin-top:6px; color:#b91c1c;">アカウント情報の取得に失敗しました。マイページを開き直してから再度お試しください。</div>';
-      authBar.innerHTML = `
+            authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
         <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
           <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
@@ -757,9 +760,9 @@
         </div>
         ${accountNotice}
       `;
-      startBtn.disabled = false; // accountId が取れなくても開始は許可し、stop時に再確認する
-      stopBtn.disabled = true;
-    }
+            startBtn.disabled = false; // accountId が取れなくても開始は許可し、stop時に再確認する
+            stopBtn.disabled = true;
+          }
         } catch (e) {
           console.error('renderAuthBar error', e);
           authBar.textContent = '認証状態の取得に失敗しました';

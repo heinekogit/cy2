@@ -358,6 +358,7 @@
     document.getElementById('ver').textContent = window.APP_VERSION;
   </script>
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/app-common.js"></script>
   <script>
     (function () {
       const supabaseLib = window.supabase;
@@ -371,7 +372,7 @@
     })();
   </script>
   <script>
-    // 走行中のルートIDとアカウントIDはページ内の他スクリプトからも参照するのでグローバルに持つ
+    // 走行中に紐づく routes.id（run ログと紐づけるためのID）
     let currentRouteId = null;
     let accountId = null;
 
@@ -379,66 +380,38 @@
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
+    const ensureAuth = AppCommon.createEnsureAuth({
+      supabase,
+      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+    });
 
     async function startNewRoute() {
       if (currentRouteId !== null) return true;
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        console.error('user取得エラー:', userError);
-        alert('ログインしてから走行を開始してください。');
+      try {
+        const ensured = await ensureAuth();
+        accountId = ensured.accountId;
+      } catch (authErr) {
+        console.error('ensureAuth failed', authErr);
+        alert('ログインが必要です。');
         return false;
       }
 
-      const ensureAccount = async () => {
-        if (accountId) return accountId;
-        // 1st: 共通キャッシュ経由
-        if (window.getMyAccountId) {
-          try {
-            const ensured = await window.getMyAccountId();
-            if (ensured) accountId = ensured;
-          } catch (e) {
-            console.warn('getMyAccountId retry failed', e);
-          }
-        }
-        // 2nd: 直接 users テーブルを参照
-        if (!accountId) {
-          try {
-            const { data, error } = await supabase
-              .from('users')
-              .select('account_id')
-              .eq('id', user.id)
-              .maybeSingle();
-            if (!error && data?.account_id) accountId = data.account_id;
-          } catch (e) {
-            console.warn('direct account_id fetch failed', e);
-          }
-        }
-        return accountId;
-      };
-
-      const ensuredAccountId = await ensureAccount();
-      if (!ensuredAccountId) {
-        alert('アカウント情報を取得できませんでした。マイページを開き直して再ログインしてください。');
+      let payload;
+      try {
+        payload = AppCommon.buildRoutePayload({
+          name: '実走開始',
+          isPublic: false,
+          accountId,
+          ownerAccountId: accountId,
+          origin: 'from_log',
+          routeType: 'from_run'
+        });
+      } catch (buildErr) {
+        console.error('buildRoutePayload error', buildErr);
+        alert('ルート開始の準備に失敗しました: ' + (buildErr?.message || buildErr));
         return false;
       }
-
-      const payload = {
-        is_public: false,
-        name: '実走開始',
-        account_id: ensuredAccountId,
-        owner_account_id: ensuredAccountId,
-        route_type: 'from_run',
-        // route_origin は enum に合わせて supabase 側で許容される値を送る
-        origin: 'from_log'
-      };
-      // 念のため user_id は送らない（存在しないカラム）
-      if ('user_id' in payload) delete payload.user_id;
-      const payloadKeys = Object.keys(payload);
 
       const { data, error, status } = await supabase
         .from('routes')
@@ -449,7 +422,7 @@
       if (error) {
         console.error('routes insert error:', { status, error, payload });
         const msg = error?.message || '不明なエラー';
-        alert(`ルートの開始に失敗しました。\n(${msg})\n送信キー:${payloadKeys.join(',')}\nv:${window.APP_VERSION}`);
+        alert(`ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`);
         return false;
       }
 
@@ -1168,7 +1141,7 @@
         releaseWakeLock();
       };
 
-      startBtn.onclick = async () => {
+      startBtn.addEventListener('click', async () => {
         const ok = await startNewRoute();
         if (!ok || currentRouteId === null) return;
         if (recording) {
@@ -1227,9 +1200,9 @@
           },
           GEO_OPTIONS
         );
-      };
+      });
 
-      stopBtn.onclick = async () => {
+      stopBtn.addEventListener('click', async () => {
         if (!recording) { showToast('記録は開始されていません'); return; }
 
         if (!accountId && window.getMyAccountId) {
@@ -1314,14 +1287,14 @@
           try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) { }
           if (!redirected) { await renderLogs(); setTab('logs'); }
         }
-      };
+      });
 
-      followBtn.onclick = () => {
+      followBtn.addEventListener('click', () => {
         follow = !follow;
         followBtn.textContent = follow ? '🔁 追従 ON' : '🔁 追従 OFF';
-      };
+      });
 
-      locateBtn.onclick = () => {
+      locateBtn.addEventListener('click', () => {
         if (!('geolocation' in navigator)) {
           alert('この端末では位置情報が使えません');
           return;
@@ -1330,25 +1303,25 @@
         follow = true;
         followBtn.textContent = '🔁 追従 ON';
         _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
-      };
+      });
 
-      editToggleBtn.onclick = () => {
+      editToggleBtn.addEventListener('click', () => {
         if (recording) {
           alert('記録中は編集できません');
           return;
         }
         setEditMode(!editMode);
-      };
+      });
 
-      backLogsBtn.onclick = () => {
+      backLogsBtn.addEventListener('click', () => {
         setTab('logs');
-      };
+      });
 
-      tabLogs.onclick = () => setTab('logs');
-      tabRun.onclick = () => {
+      tabLogs.addEventListener('click', () => setTab('logs'));
+      tabRun.addEventListener('click', () => {
         setTab('run');
         resetRunLayers();
-      };
+      });
 
       const safeRender = async () => {
         try {

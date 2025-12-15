@@ -35,6 +35,24 @@
     };
   }
 
+  function formatErrorMessage(prefix, err) {
+    const msg = err && err.message ? err.message : (err || '不明なエラー');
+    return prefix ? `${prefix}: ${msg}` : String(msg);
+  }
+
+  function alertError(prefix, err) {
+    alert(formatErrorMessage(prefix, err));
+  }
+
+  function toastError(toastFn, prefix, err) {
+    const msg = formatErrorMessage(prefix, err);
+    if (typeof toastFn === 'function') {
+      toastFn(msg);
+    } else {
+      alert(msg);
+    }
+  }
+
   function createEnsureAuth({ supabase, getAccountId }) {
     let cachedUser = null;
     let cachedAccountId = null;
@@ -91,6 +109,9 @@
     buildRoutePayload,
     createEnsureAuth,
     logSupabaseError,
+    formatErrorMessage,
+    alertError,
+    toastError,
     RouteOrigins,
     RouteTypes
   };

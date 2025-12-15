@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Route Photos</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
+    header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; text-decoration:none; color:#111827; }
+    .btn:visited { color:#111827; }
+    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; }
+    .photos { display:flex; flex-direction:column; gap:10px; }
+    .photo { border:1px solid #e5e7eb; border-radius:8px; padding:8px; background:#fff; }
+    .photo img { max-width:100%; height:auto; border-radius:6px; display:block; }
+    .muted { color:#6b7280; font-size:13px; }
+  </style>
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/app-common.js"></script>
+  <script src="js/auth-common.js"></script>
+</head>
+<body>
+  <header>
+    <button id="btnBack" class="btn" type="button">← 戻る</button>
+    <div style="font-weight:700;">Route Photos</div>
+  </header>
+
+  <div id="status" class="muted">読み込み中…</div>
+  <div id="photoList" class="photos"></div>
+
+  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+
+  <script>
+    document.getElementById('ver').textContent = window.APP_VERSION;
+    const params = new URLSearchParams(location.search);
+    const routeId = params.get('route_id');
+
+    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+    AuthCommon.init(supabase, { redirectUrl: 'login.html' });
+    const ensureAuth = AppCommon.createEnsureAuth({
+      supabase,
+      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+    });
+
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('photoList');
+    const backBtn = document.getElementById('btnBack');
+
+    function renderPhotos(rows) {
+      if (!rows || !rows.length) {
+        statusEl.textContent = '写真がありません。';
+        listEl.innerHTML = '';
+        return;
+      }
+      statusEl.textContent = '';
+      listEl.innerHTML = rows.map((row) => {
+        const when = row.taken_at ? new Date(row.taken_at).toLocaleString() : '';
+        return `
+          <div class="photo">
+            <img src="${row.image_url}" alt="route photo" />
+            <div class="muted">${when}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function loadPhotos() {
+      if (!routeId) {
+        statusEl.textContent = 'route_id が指定されていません。';
+        return;
+      }
+      statusEl.textContent = '読み込み中…';
+
+      try {
+        await ensureAuth();
+      } catch (authErr) {
+        statusEl.textContent = AppCommon.formatErrorMessage('ログインが必要です', authErr);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('route_spot_photos')
+          .select('id, image_url, taken_at')
+          .eq('route_id', routeId)
+          .order('taken_at', { ascending: false });
+        if (error) {
+          AppCommon.logSupabaseError('route_spot_photos list', error);
+          statusEl.textContent = AppCommon.formatErrorMessage('写真取得に失敗しました', error);
+          return;
+        }
+        renderPhotos(data || []);
+      } catch (e) {
+        AppCommon.logSupabaseError('route_spot_photos list exception', e);
+        statusEl.textContent = AppCommon.formatErrorMessage('写真取得に失敗しました', e);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (backBtn) backBtn.addEventListener('click', () => history.back());
+      loadPhotos();
+    }, { once:true });
+  </script>
+</body>
+</html>

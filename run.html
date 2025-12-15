@@ -345,6 +345,10 @@
           <div id="route-photo-upload-status"></div>
           <div id="route-photo-list"></div>
         </div>
+        <div id="photoSummary" class="card" style="position:fixed; left:8px; bottom:160px; background:#ffffffef; padding:8px 12px; border-radius:12px; border:1px solid #e5e7eb; display:flex; align-items:center; gap:10px;" hidden>
+          <div>📷 撮った写真: <strong data-photo-count>0</strong>枚</div>
+          <button id="lnPhotoList" class="btn ghost" type="button">写真一覧を見る</button>
+        </div>
         <div class="toolbar"><button id="editToggleBtn" class="btn ghost" type="button">✏️ 編集モード</button></div>
         <div id="hint" class="hint">▶でGPS+記録+追従ON。■停止で保存確認→保存後はログ一覧へ。</div>
         <div id="toast" class="toast"></div>
@@ -380,10 +384,30 @@
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
+    const photoSummary = document.getElementById('photoSummary');
+    const photoCountEl = photoSummary?.querySelector('[data-photo-count]');
+    const photoListBtn = document.getElementById('lnPhotoList');
     const ensureAuth = AppCommon.createEnsureAuth({
       supabase,
       getAccountId: () => AuthCommon.getMyAccountId(supabase)
     });
+
+    function updatePhotoSummaryLink() {
+      if (!photoSummary) return;
+      if (!currentRouteId) {
+        photoSummary.hidden = true;
+        return;
+      }
+      photoSummary.hidden = false;
+      if (photoCountEl && !photoCountEl.textContent) photoCountEl.textContent = '0';
+      if (photoListBtn) {
+        photoListBtn.disabled = false;
+        const url = new URL('route-photos.html', window.location.href);
+        url.searchParams.set('route_id', currentRouteId);
+        url.searchParams.set('v', window.APP_VERSION || '');
+        photoListBtn.dataset.href = url.toString();
+      }
+    }
 
     async function startNewRoute() {
       if (currentRouteId !== null) return true;
@@ -430,6 +454,7 @@
       showToast(`記録開始 #${currentRouteId}`);
       console.log('新しい route_id:', currentRouteId);
       loadRoutePhotos();
+      updatePhotoSummaryLink();
       return true;
     }
 
@@ -440,23 +465,28 @@
 
       if (!currentRouteId) {
         listEl.textContent = 'まだ写真はありません。まず▶で走行を開始してください。';
+        if (photoSummary) photoSummary.hidden = true;
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from('route_spot_photos')
-        .select('id, image_url, taken_at')
+        .select('id, image_url, taken_at', { count: 'exact' })
         .eq('route_id', currentRouteId)
         .order('taken_at', { ascending: true });
 
       if (error) {
         console.error('写真一覧取得エラー:', error);
         listEl.textContent = '写真を読み込めませんでした。';
+        if (photoSummary) photoSummary.hidden = true;
         return;
       }
 
       if (!data || data.length === 0) {
         listEl.textContent = 'まだ写真はありません。';
+        if (photoSummary) photoSummary.hidden = false;
+        if (photoCountEl) photoCountEl.textContent = '0';
+        updatePhotoSummaryLink();
         return;
       }
 
@@ -465,10 +495,24 @@
           <img src="${photo.image_url}" style="width:80px; height:80px; object-fit:cover; border-radius:4px;" />
         </div>
       `).join('');
+      if (photoSummary) photoSummary.hidden = false;
+      if (photoCountEl) photoCountEl.textContent = String(typeof count === 'number' ? count : data.length);
+      updatePhotoSummaryLink();
     }
 
     // 初期表示時に読み込む
     loadRoutePhotos();
+    updatePhotoSummaryLink();
+
+    if (photoListBtn) {
+      photoListBtn.addEventListener('click', () => {
+        if (!currentRouteId) return;
+        const href = photoListBtn.dataset.href;
+        if (href) {
+          location.href = href;
+        }
+      });
+    }
 
     if (fileInput && statusEl) {
       fileInput.addEventListener('change', async (event) => {
@@ -489,9 +533,9 @@
 
         try {
           // ① Storage へアップロード
-          const { data, error } = await supabase.storage
-            .from('route-photos')
-            .upload(filePath, file, { upsert: false });
+        const { data, error } = await supabase.storage
+          .from('route-photos')
+          .upload(filePath, file, { upsert: false });
 
           if (error) {
             console.error('photo upload error', error);
@@ -535,6 +579,7 @@
           statusEl.textContent = 'アップロード & DB登録 完了！';
           // 追加：最新一覧を再読み込み
           loadRoutePhotos();
+          updatePhotoSummaryLink();
         } catch (err) {
           console.error('photo upload exception', err);
           statusEl.textContent = 'アップロード失敗';

@@ -393,7 +393,7 @@
         accountId = ensured.accountId;
       } catch (authErr) {
         console.error('ensureAuth failed', authErr);
-        alert('ログインが必要です。');
+        alert(AppCommon.formatErrorMessage('ログインが必要です', authErr));
         return false;
       }
 

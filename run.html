@@ -263,11 +263,15 @@
       position: fixed;
       left: 8px;
       bottom: 60px;
-      background: #ffffffd8;
-      padding: 6px 10px;
+      background: #ffffffec;
+      padding: 8px 10px;
       border-radius: 10px;
       font-size: 12px;
-      z-index: 999;
+      z-index: 1050;
+      line-height: 1.4;
+      max-width: 260px;
+      white-space: normal;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     }
 
     .auth-card {
@@ -345,12 +349,12 @@
           <div id="route-photo-upload-status"></div>
           <div id="route-photo-list"></div>
         </div>
-        <div id="photoSummary" class="card" style="position:fixed; left:8px; bottom:160px; background:#ffffffef; padding:8px 12px; border-radius:12px; border:1px solid #e5e7eb; display:flex; align-items:center; gap:10px;" hidden>
+        <div id="photoSummary" class="card" style="position:fixed; left:8px; bottom:170px; background:#ffffffef; padding:10px 12px; border-radius:12px; border:1px solid #e5e7eb; display:flex; align-items:center; gap:10px; box-shadow:0 6px 20px rgba(0,0,0,0.12); z-index:1200; flex-wrap:wrap;" hidden>
           <div>📷 撮った写真: <strong data-photo-count>0</strong>枚</div>
-          <button id="lnPhotoList" class="btn ghost" type="button">写真一覧を見る</button>
+          <a id="lnPhotoList" class="btn ghost" role="button" style="text-decoration:none;">写真一覧を見る</a>
         </div>
         <div class="toolbar"><button id="editToggleBtn" class="btn ghost" type="button">✏️ 編集モード</button></div>
-        <div id="hint" class="hint">▶でGPS+記録+追従ON。■停止で保存確認→保存後はログ一覧へ。</div>
+        <div id="hint" class="hint">▶でGPS+記録+追従ON。<br>■停止で保存確認→保存後はログ一覧へ。</div>
         <div id="toast" class="toast"></div>
       </section>
     </main>
@@ -363,6 +367,7 @@
   </script>
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/app-common.js"></script>
+  <script src="js/run-photo-summary.js"></script>
   <script>
     (function () {
       const supabaseLib = window.supabase;

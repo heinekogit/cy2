@@ -272,6 +272,7 @@
       max-width: 260px;
       white-space: normal;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+      display: none;
     }
 
     .auth-card {
@@ -467,10 +468,10 @@
     // route_spot_photos を読んでサムネイル表示
     async function loadRoutePhotos() {
       if (!listEl) return;
-      listEl.textContent = '読み込み中…';
+      listEl.textContent = '';
 
       if (!currentRouteId) {
-        listEl.textContent = 'まだ写真はありません。まず▶で走行を開始してください。';
+        listEl.textContent = '';
         if (photoSummary) photoSummary.hidden = true;
         return;
       }
@@ -483,13 +484,13 @@
 
       if (error) {
         console.error('写真一覧取得エラー:', error);
-        listEl.textContent = '写真を読み込めませんでした。';
+        listEl.textContent = '';
         if (photoSummary) photoSummary.hidden = true;
         return;
       }
 
       if (!data || data.length === 0) {
-        listEl.textContent = 'まだ写真はありません。';
+        listEl.textContent = '';
         if (photoSummary) photoSummary.hidden = false;
         if (photoCountEl) photoCountEl.textContent = '0';
         updatePhotoSummaryLink();

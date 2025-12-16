@@ -233,9 +233,9 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
-    .route-photo-upload label {
+.route-photo-upload label {
       cursor: pointer;
-      display: inline-flex;
+      display: block;
       align-items: center;
       gap: 6px;
       font-weight: 600;
@@ -339,27 +339,28 @@
           <button id="stopBtn" class="btn danger big" type="button">■ 停止</button>
           <button id="followBtn" class="btn ghost" type="button">🔁 追従 OFF</button>
           <button id="locateBtn" class="btn ghost" type="button">📍 現在地だけ</button>
-          <button id="backLogsBtn" class="btn ghost" type="button">📄 ログ一覧へ</button>
+          <button id="backLogsBtn" class="btn ghost" type="button" style="display:none;">📄 ログ一覧へ</button>
         </div>
         <div class="route-photo-upload">
-          <label>
-            📷 写真を追加
+          <label style="display:block; line-height:1.4;">
+            📷 写真を追加<br><span class="muted">▶で走行開始後に使用可能</span>
             <input id="route-photo-input" type="file" accept="image/*" capture="environment" style="display:none;">
           </label>
-          <div id="route-photo-upload-status"></div>
+          <div id="route-photo-upload-status" style="margin-top:4px;"></div>
           <div id="route-photo-list"></div>
         </div>
-        <div id="photoSummary" class="card" style="position:fixed; left:8px; bottom:170px; background:#ffffffef; padding:10px 12px; border-radius:12px; border:1px solid #e5e7eb; display:flex; align-items:center; gap:10px; box-shadow:0 6px 20px rgba(0,0,0,0.12); z-index:1200; flex-wrap:wrap;" hidden>
-          <div>📷 撮った写真: <strong data-photo-count>0</strong>枚</div>
-          <a id="lnPhotoList" class="btn ghost" role="button" style="text-decoration:none;">写真一覧を見る</a>
-        </div>
-        <div class="toolbar"><button id="editToggleBtn" class="btn ghost" type="button">✏️ 編集モード</button></div>
-        <div id="hint" class="hint">▶でGPS+記録+追従ON。<br>■停止で保存確認→保存後はログ一覧へ。</div>
+        <div class="toolbar" style="display:none;"><button id="editToggleBtn" class="btn ghost" type="button">✏️ 編集モード</button></div>
+        <div id="hint" class="hint">▶でGPS+記録+追従ON</div>
         <div id="toast" class="toast"></div>
       </section>
     </main>
 
-    <footer class="muted">v: <code id="ver"></code></footer>
+    <div id="photoSummary" class="card" style="margin:12px 12px 0; display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.08);" hidden>
+      <div>📷 撮った写真: <strong data-photo-count>0</strong>枚</div>
+      <a id="lnPhotoList" class="btn ghost" role="button" style="text-decoration:none;">写真一覧を見る</a>
+    </div>
+
+    <footer class="muted" style="margin-top:10px;">v: <code id="ver"></code></footer>
   </div>
 
   <script>

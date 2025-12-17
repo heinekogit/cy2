@@ -1218,10 +1218,12 @@
           return;
         }
         setBadge('', '現在地を取得中…');
-        showToast('現在地を取得しています…');
+        showToast('ルート作成OK (#' + currentRouteId + ') / 位置取得を開始します');
+        let started = false;
         if (startBtn) startBtn.disabled = true;
         navigator.geolocation.getCurrentPosition(
           (pos) => {
+            started = true;
             try {
               onPos(pos);
             } catch (e) {
@@ -1261,6 +1263,11 @@
           },
           GEO_OPTIONS
         );
+        setTimeout(() => {
+          if (recording || started) return;
+          if (startBtn) startBtn.disabled = false;
+          showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
+        }, 8000);
       });
 
       stopBtn.addEventListener('click', async () => {

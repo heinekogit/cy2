@@ -416,6 +416,17 @@
       }
     }
 
+    // toast utility (page-wide)
+    function showToast(msg) {
+      const toastEl = document.getElementById('toast');
+      if (!toastEl) return;
+      toastEl.textContent = msg;
+      toastEl.style.display = 'block';
+      setTimeout(() => { toastEl.style.display = 'none'; }, 2000);
+    }
+
+    window.showToast = showToast;
+
     async function startNewRoute() {
       if (currentRouteId !== null) return { ok: true, routeId: currentRouteId };
 
@@ -445,27 +456,34 @@
         return { ok: false, error: buildErr };
       }
 
-      const { data, error, status } = await supabase
-        .from('routes')
-        .insert(payload)
-        .select('id')
-        .single();
+      try {
+        const { data, error, status } = await supabase
+          .from('routes')
+          .insert(payload)
+          .select('id')
+          .single();
 
-      if (error) {
-        console.error('routes insert error:', { status, error, payload });
-        const msg = error?.message || '不明なエラー';
-        const alertMsg = `ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`;
-        showToast(msg);
-        alert(alertMsg);
-        return { ok: false, error };
+        if (error) {
+          console.error('routes insert error:', { status, error, payload });
+          const msg = error?.message || '不明なエラー';
+          const alertMsg = `ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`;
+          showToast(msg);
+          alert(alertMsg);
+          return { ok: false, error };
+        }
+
+        currentRouteId = data.id;
+        showToast(`記録開始 #${currentRouteId}`);
+        console.log('新しい route_id:', currentRouteId);
+        loadRoutePhotos();
+        updatePhotoSummaryLink();
+        return { ok: true, routeId: currentRouteId };
+      } catch (e) {
+        console.error('routes insert exception', e);
+        showToast('ルート開始で例外が発生しました');
+        alert('ルート開始で例外が発生しました: ' + (e?.message || e));
+        return { ok: false, error: e };
       }
-
-      currentRouteId = data.id;
-      showToast(`記録開始 #${currentRouteId}`);
-      console.log('新しい route_id:', currentRouteId);
-      loadRoutePhotos();
-      updatePhotoSummaryLink();
-      return { ok: true, routeId: currentRouteId };
     }
 
     // route_spot_photos を読んでサムネイル表示
@@ -1211,16 +1229,18 @@
           return;
         }
         showToast('開始ボタンを受け付けました');
-        if (startBtn) startBtn.disabled = true;
 
-        let routeResult;
+        let routeResult = { ok: false };
         try {
+          if (startBtn) startBtn.disabled = true;
           routeResult = await startNewRoute();
         } catch (e) {
           console.error('startNewRoute exception', e);
           showToast('ルート開始に失敗しました');
           if (startBtn && !recording) startBtn.disabled = false;
           return;
+        } finally {
+          // 成功時は後続で disable 状態を設定するのでここでは触らない
         }
 
         if (!routeResult?.ok || !routeResult.routeId) {

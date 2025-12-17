@@ -440,6 +440,7 @@
         });
       } catch (buildErr) {
         console.error('buildRoutePayload error', buildErr);
+        showToast(AppCommon.formatErrorMessage('ルート開始の準備に失敗', buildErr));
         alert('ルート開始の準備に失敗しました: ' + (buildErr?.message || buildErr));
         return false;
       }
@@ -453,7 +454,9 @@
       if (error) {
         console.error('routes insert error:', { status, error, payload });
         const msg = error?.message || '不明なエラー';
-        alert(`ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`);
+        const alertMsg = `ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`;
+        showToast(msg);
+        alert(alertMsg);
         return false;
       }
 
@@ -727,8 +730,11 @@
         setTimeout(() => { toastEl.style.display = 'none'; }, 2000);
       };
       const setBadge = (state, text) => {
-        badgeEl.className = `badge ${state || ''}`.trim();
-        badgeEl.textContent = text;
+        const el = badgeEl;
+        if (!el) return;
+        el.className = `badge ${state || ''}`.trim();
+        el.textContent = text || '';
+        el.style.display = text ? 'inline-flex' : 'none';
       };
 
       function setTab(tab) {
@@ -866,7 +872,7 @@
         }).addTo(map);
         routeLine = L.polyline(routePts, { color: '#2563eb', weight: 4 }).addTo(map);
         ensureLiveLayers();
-        setBadge('', '✏️でルート編集、▶で記録開始');
+        setBadge('', '');
         map.on('click', (e) => {
           if (!editMode || recording) return;
           routePts.push([e.latlng.lat, e.latlng.lng]);
@@ -898,6 +904,7 @@
               plannedLayer = null;
             }
             plannedRouteLoaded = false;
+            setBadge('', '');
             return;
           }
           if (plannedRouteLoaded && !force) return;
@@ -923,7 +930,7 @@
           layerOn.bringToFront();
           layerOff.bringToFront();
           map.fitBounds(plannedLayer.getBounds(), { padding: [24, 24], maxZoom: 16 });
-          setBadge('', '予定ルート読込済み（青）／▶で記録開始');
+          setBadge('', '');
         } catch (e) {
           console.warn('loadPlannedRouteIfAny', e);
         }
@@ -1194,6 +1201,8 @@
       };
 
       startBtn.addEventListener('click', async () => {
+        showToast('開始ボタンを受け付けました');
+        if (startBtn) startBtn.disabled = true;
         const ok = await startNewRoute();
         if (!ok || currentRouteId === null) return;
         if (recording) {

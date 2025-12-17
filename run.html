@@ -480,8 +480,9 @@
         return { ok: true, routeId: currentRouteId };
       } catch (e) {
         console.error('routes insert exception', e);
-        showToast('ルート開始で例外が発生しました');
-        alert('ルート開始で例外が発生しました: ' + (e?.message || e));
+        const msg = e?.message || e;
+        showToast('ルート開始で例外: ' + msg);
+        alert('ルート開始で例外が発生しました: ' + msg);
         return { ok: false, error: e };
       }
     }
@@ -1230,20 +1231,19 @@
         }
         showToast('開始ボタンを受け付けました');
 
-        let routeResult = { ok: false };
+        let routeResult = { ok: false, error: null };
         try {
           if (startBtn) startBtn.disabled = true;
           routeResult = await startNewRoute();
         } catch (e) {
           console.error('startNewRoute exception', e);
           showToast('ルート開始に失敗しました');
-          if (startBtn && !recording) startBtn.disabled = false;
-          return;
-        } finally {
-          // 成功時は後続で disable 状態を設定するのでここでは触らない
+          routeResult = { ok: false, error: e };
         }
 
         if (!routeResult?.ok || !routeResult.routeId) {
+          const msg = routeResult?.error?.message || routeResult?.error || 'ルート開始に失敗しました';
+          showToast(String(msg));
           if (startBtn && !recording) startBtn.disabled = false;
           return;
         }
@@ -1300,6 +1300,7 @@
           if (startBtn) startBtn.disabled = false;
           showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
         }, 8000);
+      });
       });
 
       stopBtn.addEventListener('click', async () => {

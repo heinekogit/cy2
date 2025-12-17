@@ -779,7 +779,12 @@
 
       async function renderAuthBar() {
         try {
-          const { data: { session } } = await supabase.auth.getSession();
+          const getSessionWithTimeout = () => Promise.race([
+            supabase.auth.getSession(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 3000))
+          ]);
+
+          const { data: { session } } = await getSessionWithTimeout();
           const loginUrl = `login.html?v=${V()}`;
           const myPageUrl = `mypage.html?v=${V()}`;
           if (!session?.user) {
@@ -818,6 +823,10 @@
         } catch (e) {
           console.error('renderAuthBar error', e);
           authBar.textContent = '認証状態の取得に失敗しました';
+          isLoggedIn = false;
+          accountId = null;
+          if (startBtn) startBtn.disabled = false; // 最低限押せるようにする
+          if (stopBtn) stopBtn.disabled = true;
         }
       }
 

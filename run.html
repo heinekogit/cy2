@@ -685,11 +685,14 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
   <script>
-    document.addEventListener('DOMContentLoaded', async () => {
+    let __runBooted = false;
+    async function startApp(trigger = 'dcl') {
+      if (__runBooted) return;
+      __runBooted = true;
       // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
       const authBar = document.getElementById('authBar');
       if (authBar) authBar.textContent = 'JS起動…（DOMContentLoaded到達）';
-      console.log('[run] DOMContentLoaded reached', new Date().toISOString());
+      console.log('[run] startApp', trigger, new Date().toISOString());
       // ★ウォッチドッグ：何が起きても3.5秒後に「確認中」から変える
       setTimeout(() => {
         const el = document.getElementById('authBar');
@@ -700,13 +703,18 @@
       }, 3500);
 
       const supabase = window.supabase;
+      if (!supabase) {
+        if (authBar) authBar.textContent = 'ERROR: supabase が未ロードです（再試行します）';
+        __runBooted = false;
+        setTimeout(() => startApp('retry_supabase'), 1000);
+        return;
+      }
 
       const tabLogs = document.getElementById('tabLogs');
       const tabRun = document.getElementById('tabRun');
       const logsSection = document.getElementById('logsSection');
       const runSection = document.getElementById('runSection');
       const logsList = document.getElementById('logsList');
-      const authBar = document.getElementById('authBar');
       const startBtn = document.getElementById('startBtn');
       const stopBtn = document.getElementById('stopBtn');
       const followBtn = document.getElementById('followBtn');
@@ -1565,7 +1573,9 @@
       } else {
         setTab('logs');
       }
-    });
+    }
+    document.addEventListener('DOMContentLoaded', () => startApp('dcl'));
+    setTimeout(() => startApp('fallback'), 4000);
   </script>
   <script>
     if ('serviceWorker' in navigator) {

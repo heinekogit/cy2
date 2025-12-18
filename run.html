@@ -308,6 +308,12 @@
         bottom: 4px;
       }
     }
+
+    a.is-disabled {
+      opacity: 0.45;
+      pointer-events: none;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 
@@ -417,12 +423,57 @@
       }
       photoSummary.hidden = false;
       if (photoCountEl && !photoCountEl.textContent) photoCountEl.textContent = '0';
-      if (photoListBtn) {
-        photoListBtn.disabled = false;
-        const url = new URL('route-photos.html', window.location.href);
-        url.searchParams.set('route_id', currentRouteId);
-        url.searchParams.set('v', window.APP_VERSION || '');
-        photoListBtn.dataset.href = url.toString();
+      function setLinkEnabled(a, enabled) {
+        if (!a) return;
+
+        a.classList.toggle('is-disabled', !enabled);
+        a.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        a.tabIndex = enabled ? 0 : -1;
+
+        // href は enabled のときだけ設定（無効時はクリックで遷移させない）
+        if (!enabled) {
+          a.dataset.href = a.getAttribute('href') || '';
+          a.setAttribute('href', '#');
+        } else {
+          const prev = a.dataset.href;
+          if (prev) a.setAttribute('href', prev);
+        }
+      }
+
+      // 1回だけガードを仕込む
+      if (photoListBtn && !photoListBtn.dataset.guardInstalled) {
+        photoListBtn.dataset.guardInstalled = '1';
+        photoListBtn.addEventListener('click', (e) => {
+          if (photoListBtn.getAttribute('aria-disabled') === 'true') {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        });
+      }
+
+      function updatePhotoSummaryLink() {
+        if (!photoSummary) return;
+
+        const enabled = !!currentRouteId;
+
+        if (!enabled) {
+          photoSummary.hidden = true;
+          setLinkEnabled(photoListBtn, false);
+          return;
+        }
+
+        photoSummary.hidden = false;
+        if (photoCountEl && !photoCountEl.textContent) photoCountEl.textContent = '0';
+
+        if (photoListBtn) {
+          // route_id をリンクへセット
+          const url = new URL('route-photos.html', window.location.origin);
+          url.searchParams.set('route_id', String(currentRouteId));
+          url.searchParams.set('v', V());
+          photoListBtn.href = url.toString();
+
+          setLinkEnabled(photoListBtn, true);
+        }
       }
     }
 
@@ -1292,198 +1343,199 @@
           if (startBtn) startBtn.disabled = false;
           showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
         }, 8000);
+      });
 
 
-        stopBtn.addEventListener('click', async () => {
-          if (!recording) { showToast('記録は開始されていません'); return; }
+      stopBtn.addEventListener('click', async () => {
+        if (!recording) { showToast('記録は開始されていません'); return; }
 
-          if (!accountId) {
-            try {
-              const ensured = await ensureAuth();
-              accountId = ensured.accountId;
-            } catch (e) {
-              alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
-              return;
-            }
-          }
-
-          recording = false;
-          clearWatchIfAny();
-          releaseWakeLock();
-          if (stopBtn) stopBtn.disabled = true;
-          if (startBtn) startBtn.disabled = false;
-
-          const count = traced.length;
-          const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
-          if (!ok) { setBadge('', '記録停止'); showToast('保存せず終了'); window.__logStartedAt = null; return; }
-
-          const raw = (Array.isArray(rawTrack) && rawTrack.length)
-            ? rawTrack
-            : (Array.isArray(traced)
-              ? traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }))
-              : []);
-
-          const linePts = ensureLineMin2(raw);
-          if (linePts.length < 2) { alert('位置が取得できませんでした'); window.__logStartedAt = null; return; }
-
-          let distance_m = 0;
-          for (let i = 1; i < linePts.length; i++) {
-            const a = linePts[i - 1], b = linePts[i];
-            if (a.lat !== b.lat || a.lng !== b.lng) {
-              distance_m += (typeof haversine === 'function' ? haversine(a, b) : 0);
-            }
-          }
-          distance_m = Math.round(distance_m);
-
-          const startTs = linePts[0].ts || (window.__logStartedAt || Date.now());
-          const endTs = linePts[linePts.length - 1].ts || Date.now();
-          const duration_s = Math.max(1, ((endTs - startTs) / 1000) | 0);
-
-          const coords = linePts.map((p) => [p.lng, p.lat]);
-          const gj = { type: 'LineString', coordinates: coords };
-          const poly = encodePolyline(linePts.map((p) => [p.lat, p.lng]));
-
-          const today = new Date(endTs);
-          const nameDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')} 実走`;
-          const name = typeof prompt === 'function' ? (prompt('実走ログ名', nameDefault) || nameDefault) : nameDefault;
-
-          const payload = {
-            account_id: accountId,
-            name,
-            started_at: new Date(startTs).toISOString(),
-            ended_at: new Date(endTs).toISOString(),
-            distance_m,
-            duration_s,
-            geojson: gj,
-            polyline: poly
-          };
-
-          let redirected = false;
+        if (!accountId) {
           try {
-            console.log('RUN INSERT payload', payload);
-            const { data: newRow, error, status } = await window.supabase
-              .from('runs')
-              .insert([payload])
-              .select('id')
-              .maybeSingle();
-
-            if (error || !newRow) {
-              console.error('RUN INSERT ERROR', { status, error, payload });
-              alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
-              return;
-            }
-
-            location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=run&v=${V()}`;
-            redirected = true;
-            return;
+            const ensured = await ensureAuth();
+            accountId = ensured.accountId;
           } catch (e) {
-            console.error('RUN SAVE EXCEPTION', e);
-            alert('保存に失敗: ' + (e?.message || '不明なエラー'));
-          } finally {
-            window.__logStartedAt = null;
-            try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) { }
-            if (!redirected) { await renderLogs(); setTab('logs'); }
-          }
-        });
-
-        followBtn.addEventListener('click', () => {
-          follow = !follow;
-          followBtn.textContent = follow ? '🔁 追従 ON' : '🔁 追従 OFF';
-        });
-
-        locateBtn.addEventListener('click', () => {
-          if (!('geolocation' in navigator)) {
-            alert('この端末では位置情報が使えません');
+            alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
             return;
           }
-          clearWatchIfAny();
-          follow = true;
-          followBtn.textContent = '🔁 追従 ON';
-          _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
-        });
+        }
 
-        editToggleBtn.addEventListener('click', () => {
-          if (recording) {
-            alert('記録中は編集できません');
-            return;
+        recording = false;
+        clearWatchIfAny();
+        releaseWakeLock();
+        if (stopBtn) stopBtn.disabled = true;
+        if (startBtn) startBtn.disabled = false;
+
+        const count = traced.length;
+        const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);
+        if (!ok) { setBadge('', '記録停止'); showToast('保存せず終了'); window.__logStartedAt = null; return; }
+
+        const raw = (Array.isArray(rawTrack) && rawTrack.length)
+          ? rawTrack
+          : (Array.isArray(traced)
+            ? traced.map(([la, ln]) => ({ lat: la, lng: ln, ts: Date.now(), acc: 0 }))
+            : []);
+
+        const linePts = ensureLineMin2(raw);
+        if (linePts.length < 2) { alert('位置が取得できませんでした'); window.__logStartedAt = null; return; }
+
+        let distance_m = 0;
+        for (let i = 1; i < linePts.length; i++) {
+          const a = linePts[i - 1], b = linePts[i];
+          if (a.lat !== b.lat || a.lng !== b.lng) {
+            distance_m += (typeof haversine === 'function' ? haversine(a, b) : 0);
           }
-          setEditMode(!editMode);
-        });
+        }
+        distance_m = Math.round(distance_m);
 
-        backLogsBtn.addEventListener('click', () => {
-          setTab('logs');
-        });
+        const startTs = linePts[0].ts || (window.__logStartedAt || Date.now());
+        const endTs = linePts[linePts.length - 1].ts || Date.now();
+        const duration_s = Math.max(1, ((endTs - startTs) / 1000) | 0);
 
-        tabLogs.addEventListener('click', () => setTab('logs'));
-        tabRun.addEventListener('click', () => {
-          setTab('run');
-          resetRunLayers();
-        });
+        const coords = linePts.map((p) => [p.lng, p.lat]);
+        const gj = { type: 'LineString', coordinates: coords };
+        const poly = encodePolyline(linePts.map((p) => [p.lat, p.lng]));
 
-        const safeRender = async () => {
-          try {
-            await renderAuthBar();
-          } catch (e) {
-            console.error('renderAuthBar failure', e);
-            if (authBar) authBar.textContent = '認証状態の取得に失敗しました';
-          }
-          try {
-            await renderLogs();
-          } catch (e) {
-            console.error('renderLogs failure', e);
-            if (logsList) logsList.textContent = 'ログの読み込みに失敗しました';
-          }
+        const today = new Date(endTs);
+        const nameDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')} 実走`;
+        const name = typeof prompt === 'function' ? (prompt('実走ログ名', nameDefault) || nameDefault) : nameDefault;
+
+        const payload = {
+          account_id: accountId,
+          name,
+          started_at: new Date(startTs).toISOString(),
+          ended_at: new Date(endTs).toISOString(),
+          distance_m,
+          duration_s,
+          geojson: gj,
+          polyline: poly
         };
 
-        await safeRender();
+        let redirected = false;
+        try {
+          console.log('RUN INSERT payload', payload);
+          const { data: newRow, error, status } = await window.supabase
+            .from('runs')
+            .insert([payload])
+            .select('id')
+            .maybeSingle();
 
-        supabase.auth.onAuthStateChange(async (_event, session) => {
+          if (error || !newRow) {
+            console.error('RUN INSERT ERROR', { status, error, payload });
+            alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
+            return;
+          }
+
+          location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=run&v=${V()}`;
+          redirected = true;
+          return;
+        } catch (e) {
+          console.error('RUN SAVE EXCEPTION', e);
+          alert('保存に失敗: ' + (e?.message || '不明なエラー'));
+        } finally {
+          window.__logStartedAt = null;
+          try { layerOn?.remove(); layerOn = null; layerOff?.remove(); layerOff = null; } catch (_) { }
+          if (!redirected) { await renderLogs(); setTab('logs'); }
+        }
+      });
+
+      followBtn.addEventListener('click', () => {
+        follow = !follow;
+        followBtn.textContent = follow ? '🔁 追従 ON' : '🔁 追従 OFF';
+      });
+
+      locateBtn.addEventListener('click', () => {
+        if (!('geolocation' in navigator)) {
+          alert('この端末では位置情報が使えません');
+          return;
+        }
+        clearWatchIfAny();
+        follow = true;
+        followBtn.textContent = '🔁 追従 ON';
+        _watchId = navigator.geolocation.watchPosition(onPos, onErr, GEO_OPTIONS);
+      });
+
+      editToggleBtn.addEventListener('click', () => {
+        if (recording) {
+          alert('記録中は編集できません');
+          return;
+        }
+        setEditMode(!editMode);
+      });
+
+      backLogsBtn.addEventListener('click', () => {
+        setTab('logs');
+      });
+
+      tabLogs.addEventListener('click', () => setTab('logs'));
+      tabRun.addEventListener('click', () => {
+        setTab('run');
+        resetRunLayers();
+      });
+
+      const safeRender = async () => {
+        try {
+          await renderAuthBar();
+        } catch (e) {
+          console.error('renderAuthBar failure', e);
+          if (authBar) authBar.textContent = '認証状態の取得に失敗しました';
+        }
+        try {
+          await renderLogs();
+        } catch (e) {
+          console.error('renderLogs failure', e);
+          if (logsList) logsList.textContent = 'ログの読み込みに失敗しました';
+        }
+      };
+
+      await safeRender();
+
+      supabase.auth.onAuthStateChange(async (_event, session) => {
+        await safeRender();
+        if (session?.user) {
+          plannedRouteLoaded = false;
+          await loadPlannedRouteIfAny(true);
+        }
+      });
+      window.addEventListener('pageshow', async () => {
+        try {
           await safeRender();
-          if (session?.user) {
+          if (map) {
             plannedRouteLoaded = false;
             await loadPlannedRouteIfAny(true);
           }
-        });
-        window.addEventListener('pageshow', async () => {
-          try {
-            await safeRender();
-            if (map) {
-              plannedRouteLoaded = false;
-              await loadPlannedRouteIfAny(true);
-            }
-          } catch (e) {
-            console.warn('pageshow refresh error', e);
-          }
-        });
-        window.addEventListener('pagehide', cleanupRun, { passive: true });
-        window.addEventListener('beforeunload', cleanupRun);
-        if (canUseWakeLock()) {
-          document.addEventListener('visibilitychange', async () => {
-            if (document.visibilityState === 'visible' && recording) {
-              await requestWakeLock();
-            } else {
-              await releaseWakeLock();
-            }
-          }, { passive: true });
-        }
-
-        if (initialRouteId) {
-          try {
-            document.querySelector('#tabRun')?.click();
-            await loadPlannedRouteIfAny(true);
-          } catch (e) {
-            console.warn('initial route load failed', e);
-          }
-        } else {
-          setTab('logs');
+        } catch (e) {
+          console.warn('pageshow refresh error', e);
         }
       });
+      window.addEventListener('pagehide', cleanupRun, { passive: true });
+      window.addEventListener('beforeunload', cleanupRun);
+      if (canUseWakeLock()) {
+        document.addEventListener('visibilitychange', async () => {
+          if (document.visibilityState === 'visible' && recording) {
+            await requestWakeLock();
+          } else {
+            await releaseWakeLock();
+          }
+        }, { passive: true });
+      }
+
+      if (initialRouteId) {
+        try {
+          document.querySelector('#tabRun')?.click();
+          await loadPlannedRouteIfAny(true);
+        } catch (e) {
+          console.warn('initial route load failed', e);
+        }
+      } else {
+        setTab('logs');
+      }
+    });
   </script>
   <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register(`./service-worker.js?v=${encodeURIComponent(window.APP_VERSION || '')}`)
-          .catch(err => console.error('SW register failed', err));
-      }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register(`./service-worker.js?v=${encodeURIComponent(window.APP_VERSION || '')}`)
+        .catch(err => console.error('SW register failed', err));
+    }
   </script>
 </body>
 

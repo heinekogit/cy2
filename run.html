@@ -317,9 +317,11 @@
   </style>
   <script
     src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix"
+    data-supabase-lib="1"
     defer
-    onload="window.__supabaseLoaded = true;">
-  </script>
+    onload="window.__supabaseLoaded = true; window.dispatchEvent(new Event('supabase-script-loaded'));"
+    onerror="window.dispatchEvent(new Event('supabase-script-error'));"
+  ></script>
 </head>
 
 <body>
@@ -666,6 +668,8 @@
   // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+  const SUPABASE_SRC = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix';
+
   async function waitForSupabaseLibrary(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -681,16 +685,37 @@
       window.dispatchEvent(new Event('supabase-client-ready'));
       return true;
     }
-    const libReady = await waitForSupabaseLibrary(timeoutMs);
-    if (!libReady || !window.supabase?.createClient) return false;
+    let libReady = await waitForSupabaseLibrary(timeoutMs);
+    if (!libReady || !window.supabase?.createClient) {
+      // キャッシュ/読み込み順の問題がある場合に備え、改めて script を動的ロード（cache bust）する
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = `${SUPABASE_SRC}&bust=${Date.now()}`;
+          s.defer = true;
+          s.onload = () => resolve(true);
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      } catch (e) {
+        console.warn('supabase lib reload failed', e);
+      }
+      libReady = await waitForSupabaseLibrary(3000);
+      if (!libReady || !window.supabase?.createClient) return false;
+    }
 
-    window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-    });
-    AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
-    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
-    window.dispatchEvent(new Event('supabase-client-ready'));
-    return true;
+    try {
+      window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      });
+      AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+      window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
+      window.dispatchEvent(new Event('supabase-client-ready'));
+      return true;
+    } catch (e) {
+      console.error('supabase client init failed', e);
+      return false;
+    }
   }
 
   document.addEventListener('DOMContentLoaded', async () => {

@@ -657,10 +657,10 @@
   // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-  async function waitForSupabaseLibrary(timeoutMs = 5000) {
+  async function waitForSupabaseClient(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (window.supabase && typeof window.supabase.createClient === 'function') return true;
+      if (window.supabaseClient) return true;
       await new Promise((r) => setTimeout(r, 50));
     }
     return false;
@@ -669,18 +669,18 @@
   document.addEventListener('DOMContentLoaded', async () => {
     const authBar = document.getElementById('authBar');
 
-    const ok = await waitForSupabaseLibrary(5000);
-    if (!ok) {
-      if (authBar) authBar.textContent = 'ERROR: supabase.js が初期化されていません（5秒待っても window.supabase が来ない）';
-      return;
-    }
-
-    if (!window.supabaseClient) {
+    if (!window.supabaseClient && window.supabase?.createClient) {
       window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
       });
       AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
       window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
+    }
+
+    const ok = await waitForSupabaseClient(5000);
+    if (!ok) {
+      if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
+      return;
     }
   });
 </script>
@@ -711,9 +711,9 @@
         }
       }, 3500);
 
-      const supabaseReady = await waitForSupabaseLibrary(5000);
+      const supabaseReady = await waitForSupabaseClient(5000);
       if (!supabaseReady) {
-        if (authBar) authBar.textContent = 'ERROR: supabase.js が初期化されていません（5秒待っても window.supabase が来ない）';
+        if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
         return;
       }
 

@@ -377,7 +377,11 @@
   <script>
     document.getElementById('ver').textContent = window.APP_VERSION;
   </script>
-<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
+<script
+  src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"
+  defer
+  onerror="document.getElementById('authBar').textContent='ERROR: supabase.js の読み込み失敗';">
+</script>
 <script src="js/app-common.js" defer></script>
 <!-- <script src="js/run-photo-summary.js" defer></script> -->
 <script src="js/auth-common.js" defer></script>

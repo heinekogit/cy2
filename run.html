@@ -667,7 +667,19 @@
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
-      console.log('DOMContentLoaded reached');
+      // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
+      const authBar = document.getElementById('authBar');
+      if (authBar) authBar.textContent = 'JS起動…（DOMContentLoaded到達）';
+      console.log('[run] DOMContentLoaded reached', new Date().toISOString());
+      // ★ウォッチドッグ：何が起きても3.5秒後に「確認中」から変える
+      setTimeout(() => {
+        const el = document.getElementById('authBar');
+        if (!el) return;
+        if (el.textContent && el.textContent.includes('認証状態を確認中')) {
+          el.textContent = '認証確認がタイムアウトしました（JSは動いています）。キャッシュ/通信/認証モジュールを確認してください。';
+        }
+      }, 3500);
+
       const supabase = window.supabase;
 
       const tabLogs = document.getElementById('tabLogs');

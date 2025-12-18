@@ -203,7 +203,8 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      z-index: 1100; /* ボタンを最前面に */
+      z-index: 1100;
+      /* ボタンを最前面に */
       pointer-events: auto;
     }
 
@@ -233,7 +234,7 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
-.route-photo-upload label {
+    .route-photo-upload label {
       cursor: pointer;
       display: block;
       align-items: center;
@@ -350,48 +351,51 @@
           <div id="route-photo-upload-status" style="margin-top:4px;"></div>
           <div id="route-photo-list"></div>
         </div>
-        <div class="toolbar" style="display:none;"><button id="editToggleBtn" class="btn ghost" type="button">✏️ 編集モード</button></div>
+        <div class="toolbar" style="display:none;"><button id="editToggleBtn" class="btn ghost" type="button">✏️
+            編集モード</button></div>
         <div id="hint" class="hint">▶でGPS+記録+追従ON</div>
         <div id="toast" class="toast"></div>
       </section>
     </main>
 
-    <div id="photoSummary" class="card" style="margin:12px 12px 0; display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.08);" hidden>
+    <div id="photoSummary" class="card"
+      style="margin:12px 12px 0; display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.08);"
+      hidden>
       <div>📷 撮った写真: <strong data-photo-count>0</strong>枚</div>
       <a id="lnPhotoList" class="btn ghost" role="button" style="text-decoration:none;">写真一覧を見る</a>
     </div>
 
-  <footer class="muted" style="margin-top:10px;">v: <code id="ver"></code></footer>
-</div>
+    <footer class="muted" style="margin-top:10px;">v: <code id="ver"></code></footer>
+  </div>
 
-<script>
-  document.getElementById('ver').textContent = window.APP_VERSION;
-</script>
-<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script>
-  // Supabase 初期化を最初に行う
-  (function () {
-    const supabaseLib = window.supabase;
-    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    const client = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-    });
-    window.supabaseClient = client;
-    window.supabase = client;
-  })();
-</script>
-<script src="js/app-common.js"></script>
-<script src="js/run-photo-summary.js"></script>
-<script src="js/auth-common.js"></script>
-<script>
-  AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
-  window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
-</script>
-<script>
-  // 走行中に紐づく routes.id（run ログと紐づけるためのID）
-  let currentRouteId = null;
-  let accountId = null;
+  <script>
+    document.getElementById('ver').textContent = window.APP_VERSION;
+  </script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    // Supabase 初期化を最初に行う
+    (function () {
+      const supabaseLib = window.supabase;
+      const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+      const client = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      });
+      window.supabaseClient = client;
+      window.supabase = client;
+    })();
+  </script>
+  <script src="js/app-common.js"></script>
+  <script src="js/run-photo-summary.js"></script>
+  <script src="js/auth-common.js"></script>
+  <script>
+    AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
+  </script>
+  <script>
+    // 走行中に紐づく routes.id（run ログと紐づけるためのID）
+    let currentRouteId = null;
+    let accountId = null;
 
     const supabase = window.supabaseClient;
     const fileInput = document.getElementById('route-photo-input');
@@ -568,9 +572,9 @@
 
         try {
           // ① Storage へアップロード
-        const { data, error } = await supabase.storage
-          .from('route-photos')
-          .upload(filePath, file, { upsert: false });
+          const { data, error } = await supabase.storage
+            .from('route-photos')
+            .upload(filePath, file, { upsert: false });
 
           if (error) {
             console.error('photo upload error', error);
@@ -912,9 +916,9 @@
               plannedLayer = null;
             }
             plannedRouteLoaded = false;
-          setBadge('', '');
-          return;
-        }
+            setBadge('', '');
+            return;
+          }
           if (plannedRouteLoaded && !force) return;
           const { data: route, error } = await supabase
             .from('routes')
@@ -1289,7 +1293,7 @@
           showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
         }, 8000);
       });
-      });
+
 
       stopBtn.addEventListener('click', async () => {
         if (!recording) { showToast('記録は開始されていません'); return; }

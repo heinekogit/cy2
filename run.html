@@ -396,14 +396,14 @@
     let supabase = supabaseClient;
     let ensureAuth = supabase ? AppCommon.createEnsureAuth({
       supabase,
-      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+      getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null
     }) : null;
     function syncSupabaseClient() {
       supabaseClient = window.supabaseClient || null;
       supabase = supabaseClient;
       ensureAuth = supabase ? AppCommon.createEnsureAuth({
         supabase,
-        getAccountId: () => AuthCommon.getMyAccountId(supabase)
+        getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null
       }) : null;
     }
     window.addEventListener('supabase-client-ready', syncSupabaseClient);
@@ -710,14 +710,30 @@
       window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
       });
-      AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
-      window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
-      window.dispatchEvent(new Event('supabase-client-ready'));
-      return true;
     } catch (e) {
       console.error('supabase client init failed', e);
       return false;
     }
+
+    // AuthCommon がまだ読み込まれていない場合でもクライアント生成は成功させる
+    try {
+      if (window.AuthCommon?.init) {
+        window.AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+      } else {
+        console.warn('AuthCommon not ready yet');
+      }
+      if (window.AuthCommon?.getMyAccountId) {
+        window.getMyAccountId = () => window.AuthCommon.getMyAccountId(window.supabaseClient);
+      } else {
+        window.getMyAccountId = () => null;
+      }
+    } catch (e) {
+      console.warn('AuthCommon init failed (continue without blocking)', e);
+      window.getMyAccountId = () => null;
+    }
+
+    window.dispatchEvent(new Event('supabase-client-ready'));
+    return true;
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
@@ -760,10 +776,17 @@
       }
 
       supabase = supabaseClient;
-      ensureAuth = AppCommon.createEnsureAuth({
-        supabase,
-        getAccountId: () => AuthCommon.getMyAccountId(supabase)
-      });
+      const getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null;
+      ensureAuth = AppCommon.createEnsureAuth({ supabase, getAccountId });
+      if (window.AuthCommon?.init) {
+        try {
+          window.AuthCommon.init(supabase, { redirectUrl: 'index.html' });
+        } catch (e) {
+          console.warn('AuthCommon init (startApp) failed', e);
+        }
+      } else {
+        console.warn('AuthCommon not ready yet (startApp)');
+      }
       if (!supabase) {
         if (authBar) authBar.textContent = 'ERROR: supabase クライアントが初期化されていません';
         return;

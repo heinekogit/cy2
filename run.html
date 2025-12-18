@@ -390,11 +390,20 @@
     let currentRouteId = null;
     let accountId = null;
 
-    const supabase = window.supabaseClient || null;
-    const ensureAuth = supabase ? AppCommon.createEnsureAuth({
+    let supabase = window.supabaseClient || null;
+    let ensureAuth = supabase ? AppCommon.createEnsureAuth({
       supabase,
       getAccountId: () => AuthCommon.getMyAccountId(supabase)
     }) : null;
+    function syncSupabaseClient() {
+      supabase = window.supabaseClient || null;
+      ensureAuth = supabase ? AppCommon.createEnsureAuth({
+        supabase,
+        getAccountId: () => AuthCommon.getMyAccountId(supabase)
+      }) : null;
+    }
+    window.addEventListener('supabase-client-ready', syncSupabaseClient);
+    syncSupabaseClient();
 
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
@@ -650,34 +659,44 @@
     }
   </script>
 
-  <script src="js/storage.js" defer></script>
+<script src="js/storage.js" defer></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
 <script defer>
   // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-  async function waitForSupabaseClient(timeoutMs = 5000) {
+  async function waitForSupabaseLibrary(timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (window.supabaseClient) return true;
+      if (window.supabase && typeof window.supabase.createClient === 'function') return true;
+      if (window.__supabaseLoaded) return !!window.supabase;
       await new Promise((r) => setTimeout(r, 50));
     }
     return false;
   }
 
+  async function ensureSupabaseClient(timeoutMs = 5000) {
+    if (window.supabaseClient) {
+      window.dispatchEvent(new Event('supabase-client-ready'));
+      return true;
+    }
+    const libReady = await waitForSupabaseLibrary(timeoutMs);
+    if (!libReady || !window.supabase?.createClient) return false;
+
+    window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+    AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
+    window.dispatchEvent(new Event('supabase-client-ready'));
+    return true;
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     const authBar = document.getElementById('authBar');
 
-    if (!window.supabaseClient && window.supabase?.createClient) {
-      window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-      });
-      AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
-      window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
-    }
-
-    const ok = await waitForSupabaseClient(5000);
+    const ok = await ensureSupabaseClient(5000);
     if (!ok) {
       if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
       return;
@@ -711,19 +730,14 @@
         }
       }, 3500);
 
-      const supabaseReady = await waitForSupabaseClient(5000);
+      const supabaseReady = await ensureSupabaseClient(5000);
       if (!supabaseReady) {
         if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
         return;
       }
 
       if (!supabaseClient) {
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-        });
-        AuthCommon.init(supabaseClient, { redirectUrl: 'index.html' });
-        window.supabaseClient = supabaseClient; // 参照用のみ（グローバル汚染しない）
-        window.getMyAccountId = () => AuthCommon.getMyAccountId(supabaseClient);
+        supabaseClient = window.supabaseClient; // ensureSupabaseClient で生成済み
       }
 
       supabase = supabaseClient;

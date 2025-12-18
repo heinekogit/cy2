@@ -392,13 +392,15 @@
     let currentRouteId = null;
     let accountId = null;
 
-    let supabase = window.supabaseClient || null;
+    let supabaseClient = window.supabaseClient || null;
+    let supabase = supabaseClient;
     let ensureAuth = supabase ? AppCommon.createEnsureAuth({
       supabase,
       getAccountId: () => AuthCommon.getMyAccountId(supabase)
     }) : null;
     function syncSupabaseClient() {
-      supabase = window.supabaseClient || null;
+      supabaseClient = window.supabaseClient || null;
+      supabase = supabaseClient;
       ensureAuth = supabase ? AppCommon.createEnsureAuth({
         supabase,
         getAccountId: () => AuthCommon.getMyAccountId(supabase)
@@ -728,19 +730,11 @@
     }
   });
 </script>
-  <script defer>
-    // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
-    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    let supabaseClient = window.supabaseClient || null;
-    let supabase = supabaseClient;
-    let ensureAuth = supabase ? AppCommon.createEnsureAuth({
-      supabase,
-      getAccountId: () => AuthCommon.getMyAccountId(supabase)
-    }) : null;
-    let __runBooted = false;
+<script defer>
+  // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
+  let __runBooted = false;
 
-    async function startApp(trigger = 'dcl') {
+  async function startApp(trigger = 'dcl') {
       if (__runBooted) return;
       // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
       const authBar = document.getElementById('authBar');

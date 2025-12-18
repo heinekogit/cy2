@@ -415,6 +415,14 @@
       getAccountId: () => AuthCommon.getMyAccountId(supabase)
     });
     const V = () => encodeURIComponent(window.APP_VERSION || '');
+    function withTimeout(promise, ms, label = 'timeout') {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms)
+        )
+      ]);
+    }
 
     function setLinkEnabled(a, enabled) {
       if (!a) return;
@@ -806,19 +814,33 @@
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
-          const ensured = await ensureAuth();
-          accountId = ensured.accountId;
-          const email = ensured.user?.email || '';
+          // ① Supabase Authでユーザーだけ先に確定
+          const { data, error } = await withTimeout(supabase.auth.getUser(), 1500, 'getUser timeout');
+          if (error) throw error;
+          if (!data?.user) throw new Error('NOT_AUTHENTICATED');
+
+          const email = data.user.email || '';
+
+          // ② accountId は取得できたら使う（失敗してもUIは前に進める）
+          try {
+            const ensured = await withTimeout(ensureAuth(), 2000, 'ensureAuth timeout');
+            accountId = ensured.accountId;
+          } catch (e) {
+            console.warn('accountId not ready (ensureAuth failed)', e);
+            accountId = null;
+          }
+
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
         <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
           <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
           <button class="btn ghost" data-signout type="button">サインアウト</button>
         </div>
+        ${accountId ? '' : '<div class="meta" style="margin-top:6px;">※アカウント情報の取得が遅れています（ログ表示/保存が制限される場合があります）</div>'}
       `;
           const isRecording = !!recording;
-          if (startBtn) startBtn.disabled = isRecording;
-          if (stopBtn) stopBtn.disabled = !isRecording;
+          if (startBtn) startBtn.disabled = isRecording || !accountId;
+          if (stopBtn) stopBtn.disabled = !isRecording || !accountId;
         } catch (e) {
           console.error('renderAuthBar error', e);
           authBar.innerHTML = `

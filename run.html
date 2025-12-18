@@ -585,13 +585,18 @@
           console.log('アップロード成功 URL:', publicUrl);
 
           // ③ ログイン中ユーザー取得
-          const {
-            data: { user },
-            error: userError,
-          } = await supabase.auth.getUser();
-
-          if (userError || !user) {
-            console.error('user取得エラー:', userError);
+          // ③ 認証確認（キャッシュ経由）
+          let ensured;
+          try {
+            ensured = await ensureAuth();
+          } catch (e) {
+            console.error('ensureAuth (upload) error', e);
+            statusEl.textContent = 'アップロード成功（DB登録は失敗：未ログイン）';
+            return;
+          }
+          const user = ensured?.user;
+          const accId = ensured?.accountId;
+          if (!user?.id) {
             statusEl.textContent = 'アップロード成功（DB登録は失敗：ユーザー不明）';
             return;
           }
@@ -602,6 +607,7 @@
             .insert({
               route_id: currentRouteId,
               user_id: user.id,
+              account_id: accId || null,
               image_url: publicUrl,
             });
 
@@ -673,7 +679,6 @@
       let tracedLine = null;
       let lastAddTs = 0;
       let lastSavedLogId = null;
-      let isLoggedIn = false;
       accountId = null;
       let rawTrack = [];
       let wakeLock = null;
@@ -777,54 +782,28 @@
       }
 
       async function renderAuthBar() {
+        const loginUrl = `login.html?v=${V()}`;
+        const myPageUrl = `mypage.html?v=${V()}`;
         try {
-          const getSessionWithTimeout = () => Promise.race([
-            supabase.auth.getSession(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 3000))
-          ]);
-
-          const { data: { session } } = await getSessionWithTimeout();
-          const loginUrl = `login.html?v=${V()}`;
-          const myPageUrl = `mypage.html?v=${V()}`;
-          if (!session?.user) {
-            isLoggedIn = false;
-            accountId = null;
-            authBar.innerHTML = `
-        未ログインです。ログを保存するには <a class="btn ghost" href="${loginUrl}">ログイン</a> してください。
-      `;
-            startBtn.disabled = true;
-            stopBtn.disabled = true;
-          } else {
-            isLoggedIn = true;
-            accountId = null;
-            try {
-              if (window.getMyAccountId) {
-                const fetched = await window.getMyAccountId();
-                if (fetched) accountId = fetched;
-              }
-            } catch (idErr) {
-              console.warn('getMyAccountId failed', idErr);
-              accountId = null;
-            }
-            const email = session.user.email || '';
-            const accountNotice = accountId ? '' : '<div class="meta" style="margin-top:6px; color:#b91c1c;">アカウント情報の取得に失敗しました。マイページを開き直してから再度お試しください。</div>';
-            authBar.innerHTML = `
+          const ensured = await ensureAuth();
+          accountId = ensured.accountId;
+          const email = ensured.user?.email || '';
+          authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
         <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
           <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
           <button class="btn ghost" data-signout type="button">サインアウト</button>
         </div>
-        ${accountNotice}
       `;
-            startBtn.disabled = false; // accountId が取れなくても開始は許可し、stop時に再確認する
-            stopBtn.disabled = true;
-          }
+          if (startBtn) startBtn.disabled = false;
+          if (stopBtn) stopBtn.disabled = true;
         } catch (e) {
           console.error('renderAuthBar error', e);
-          authBar.textContent = '認証状態の取得に失敗しました';
-          isLoggedIn = false;
+          authBar.innerHTML = `
+        未ログインです。ログを保存するには <a class="btn ghost" href="${loginUrl}">ログイン</a> してください。
+      `;
           accountId = null;
-          if (startBtn) startBtn.disabled = false; // 最低限押せるようにする
+          if (startBtn) startBtn.disabled = true;
           if (stopBtn) stopBtn.disabled = true;
         }
       }

@@ -382,32 +382,19 @@
 <!-- <script src="js/run-photo-summary.js" defer></script> -->
 <script src="js/auth-common.js" defer></script>
   <script defer>
-    // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
-    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-    });
-    window.supabaseClient = supabaseClient;
-    AuthCommon.init(supabaseClient, { redirectUrl: 'index.html' });
-    window.getMyAccountId = () => AuthCommon.getMyAccountId(supabaseClient);
-  </script>
-  <script defer>
     // 走行中に紐づく routes.id（run ログと紐づけるためのID）
     let currentRouteId = null;
     let accountId = null;
 
-    const supabase = supabaseClient;
+    let supabase = null; // 実行時に supabaseClient をセット
+    let ensureAuth = null;
+
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
     const photoSummary = document.getElementById('photoSummary');
     const photoCountEl = photoSummary?.querySelector('[data-photo-count]');
     const photoListBtn = document.getElementById('lnPhotoList');
-    const ensureAuth = AppCommon.createEnsureAuth({
-      supabase,
-      getAccountId: () => AuthCommon.getMyAccountId(supabase)
-    });
     const V = () => encodeURIComponent(window.APP_VERSION || '');
     function withTimeout(promise, ms, label = 'timeout') {
       return Promise.race([
@@ -660,8 +647,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
   <script defer>
+    // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+    let supabaseClient = null;
     let __runBooted = false;
 
     async function startApp(trigger = 'dcl') {
@@ -679,7 +668,24 @@
         }
       }, 3500);
 
-      const supabase = supabaseClient;
+      if (!supabaseClient) {
+        if (!window.supabase?.createClient) {
+          if (authBar) authBar.textContent = 'ERROR: supabase ライブラリが読み込まれていません';
+          return;
+        }
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+        AuthCommon.init(supabaseClient, { redirectUrl: 'index.html' });
+        window.supabaseClient = supabaseClient; // 参照用のみ（グローバル汚染しない）
+        window.getMyAccountId = () => AuthCommon.getMyAccountId(supabaseClient);
+      }
+
+      supabase = supabaseClient;
+      ensureAuth = AppCommon.createEnsureAuth({
+        supabase,
+        getAccountId: () => AuthCommon.getMyAccountId(supabase)
+      });
       if (!supabase) {
         if (authBar) authBar.textContent = 'ERROR: supabase クライアントが初期化されていません';
         return;

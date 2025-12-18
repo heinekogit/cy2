@@ -331,7 +331,7 @@
       </div>
     </header>
 
-    <div id="authBar" class="auth-card">DEBUG: HTMLが更新されています</div>
+    <div id="authBar" class="auth-card">認証状態を確認中…</div>
 
     <main>
       <section id="logsSection" class="panel active" aria-label="logs">
@@ -377,52 +377,27 @@
   <script>
     document.getElementById('ver').textContent = window.APP_VERSION;
   </script>
-<script>
-  // DOMContentLoaded が発火しない場合の監視
-  (function () {
-    const el = document.getElementById('authBar');
-    const timer = setTimeout(() => {
-      if (!window.__run_dcl_fired && el) {
-        el.textContent = 'ERROR: DOMContentLoaded 未到達（外部JS読込待ちの可能性）';
-      }
-    }, 3500);
-    document.addEventListener('DOMContentLoaded', () => {
-      window.__run_dcl_fired = true;
-      clearTimeout(timer);
-    }, { once: true });
-  })();
-</script>
-<script
-  src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"
-  defer
-  onerror="document.getElementById('authBar').textContent='ERROR: supabase.js の読み込み失敗';">
-</script>
-<script src="js/app-common.js" defer onerror="document.getElementById('authBar').textContent='ERROR: app-common.js 読み込み失敗';"></script>
-<!-- <script src="js/run-photo-summary.js" defer onerror="document.getElementById('authBar').textContent='ERROR: run-photo-summary.js 読み込み失敗';"></script> -->
-<script src="js/auth-common.js" defer onerror="document.getElementById('authBar').textContent='ERROR: auth-common.js 読み込み失敗';"></script>
-<script defer>
-  // Supabase 初期化（外部JS読込完了後に実行）
-  (function () {
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
+<script src="js/app-common.js" defer></script>
+<!-- <script src="js/run-photo-summary.js" defer></script> -->
+<script src="js/auth-common.js" defer></script>
+  <script defer>
+    // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
-
-    window.supabaseClient = client;
-    window.supabase = client;
-
-    AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
-    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
-  })();
-</script>
+    window.supabaseClient = supabaseClient;
+    AuthCommon.init(supabaseClient, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(supabaseClient);
+  </script>
   <script defer>
     // 走行中に紐づく routes.id（run ログと紐づけるためのID）
     let currentRouteId = null;
     let accountId = null;
 
-    const supabase = window.supabaseClient;
+    const supabase = supabaseClient;
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
@@ -687,32 +662,7 @@
   <script defer>
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    const SUPABASE_LIB_SOURCES = [
-      'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
-      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js'
-    ];
-    let __supabaseSrcIdx = 0;
-    let __supabaseRetries = 0;
-    const SUPABASE_MAX_RETRIES = 3;
     let __runBooted = false;
-    let __supabaseLoading = false;
-
-    function ensureSupabaseClient() {
-      if (window.supabaseClient && window.supabase) return window.supabaseClient;
-      if (!window.supabase?.createClient) throw new Error('supabase lib missing');
-      const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-      });
-      window.supabaseClient = client;
-      window.supabase = client;
-      try {
-        AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
-        window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
-      } catch (e) {
-        console.warn('AuthCommon init failed', e);
-      }
-      return client;
-    }
 
     async function startApp(trigger = 'dcl') {
       if (__runBooted) return;
@@ -729,36 +679,9 @@
         }
       }, 3500);
 
-      if (!window.supabase) {
-        __runBooted = false;
-        if (authBar) authBar.textContent = 'ERROR: supabase が未ロードです（再試行します）';
-        if (!__supabaseLoading && __supabaseRetries < SUPABASE_MAX_RETRIES) {
-          __supabaseLoading = true;
-          const src = SUPABASE_LIB_SOURCES[Math.min(__supabaseSrcIdx, SUPABASE_LIB_SOURCES.length - 1)];
-          const s = document.createElement('script');
-          s.src = src + '?retry=' + (__supabaseRetries + 1);
-          s.async = true;
-          s.onload = () => { __supabaseLoading = false; __supabaseRetries++; startApp('supabase-onload'); };
-          s.onerror = () => {
-            __supabaseLoading = false;
-            __supabaseRetries++;
-            __supabaseSrcIdx++;
-            authBar && (authBar.textContent = 'ERROR: supabase.js 再読込失敗');
-            setTimeout(() => startApp('supabase-error-retry'), 1000);
-          };
-          document.head.appendChild(s);
-        } else if (__supabaseRetries >= SUPABASE_MAX_RETRIES) {
-          if (authBar) authBar.textContent = 'ERROR: supabase.js の読み込みに繰り返し失敗しました';
-        }
-        return;
-      }
-
-      let supabase;
-      try {
-        supabase = ensureSupabaseClient();
-      } catch (e) {
-        console.warn('ensureSupabaseClient failed', e);
-        if (authBar) authBar.textContent = 'ERROR: supabase 初期化に失敗しました';
+      const supabase = supabaseClient;
+      if (!supabase) {
+        if (authBar) authBar.textContent = 'ERROR: supabase クライアントが初期化されていません';
         return;
       }
       __runBooted = true;
@@ -962,7 +885,7 @@
             }
           }
 
-          const { data: runs, error } = await window.supabase
+          const { data: runs, error } = await supabase
             .from('runs')
             .select('id, name, created_at, started_at, ended_at, distance_m, duration_s')
             .eq('account_id', accountId)
@@ -1509,7 +1432,7 @@
         let redirected = false;
         try {
           console.log('RUN INSERT payload', payload);
-          const { data: newRow, error, status } = await window.supabase
+          const { data: newRow, error, status } = await supabase
             .from('runs')
             .insert([payload])
             .select('id')

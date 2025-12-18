@@ -687,6 +687,13 @@
   <script defer>
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+    const SUPABASE_LIB_SOURCES = [
+      'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js'
+    ];
+    let __supabaseSrcIdx = 0;
+    let __supabaseRetries = 0;
+    const SUPABASE_MAX_RETRIES = 3;
     let __runBooted = false;
     let __supabaseLoading = false;
 
@@ -723,15 +730,25 @@
       }, 3500);
 
       if (!window.supabase) {
+        __runBooted = false;
         if (authBar) authBar.textContent = 'ERROR: supabase が未ロードです（再試行します）';
-        if (!__supabaseLoading) {
+        if (!__supabaseLoading && __supabaseRetries < SUPABASE_MAX_RETRIES) {
           __supabaseLoading = true;
+          const src = SUPABASE_LIB_SOURCES[Math.min(__supabaseSrcIdx, SUPABASE_LIB_SOURCES.length - 1)];
           const s = document.createElement('script');
-          s.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js?retry=1';
+          s.src = src + '?retry=' + (__supabaseRetries + 1);
           s.async = true;
-          s.onload = () => { __supabaseLoading = false; startApp('supabase-onload'); };
-          s.onerror = () => { __supabaseLoading = false; authBar && (authBar.textContent = 'ERROR: supabase.js 再読込失敗'); };
+          s.onload = () => { __supabaseLoading = false; __supabaseRetries++; startApp('supabase-onload'); };
+          s.onerror = () => {
+            __supabaseLoading = false;
+            __supabaseRetries++;
+            __supabaseSrcIdx++;
+            authBar && (authBar.textContent = 'ERROR: supabase.js 再読込失敗');
+            setTimeout(() => startApp('supabase-error-retry'), 1000);
+          };
           document.head.appendChild(s);
+        } else if (__supabaseRetries >= SUPABASE_MAX_RETRIES) {
+          if (authBar) authBar.textContent = 'ERROR: supabase.js の読み込みに繰り返し失敗しました';
         }
         return;
       }

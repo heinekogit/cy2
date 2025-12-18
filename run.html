@@ -315,6 +315,11 @@
       cursor: not-allowed;
     }
   </style>
+  <script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix"
+    defer
+    onload="window.__supabaseLoaded = true;">
+  </script>
 </head>
 
 <body>
@@ -376,11 +381,6 @@
 
   <script>
     document.getElementById('ver').textContent = window.APP_VERSION;
-  </script>
-  <script
-    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=debug"
-    defer
-    onload="window.__supabaseLoaded = true;">
   </script>
 <script src="js/app-common.js" defer></script>
 <!-- <script src="js/run-photo-summary.js" defer></script> -->
@@ -657,15 +657,21 @@
   // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-  function ensureSupabaseLibraryReady() {
-    return !!(window.supabase && typeof window.supabase.createClient === 'function');
+  async function waitForSupabaseLibrary(timeoutMs = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (window.supabase && typeof window.supabase.createClient === 'function') return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     const authBar = document.getElementById('authBar');
 
-    if (!ensureSupabaseLibraryReady()) {
-      if (authBar) authBar.textContent = 'ERROR: supabase.js が初期化されていません（読み込み順/キャッシュの問題）';
+    const ok = await waitForSupabaseLibrary(5000);
+    if (!ok) {
+      if (authBar) authBar.textContent = 'ERROR: supabase.js が初期化されていません（5秒待っても window.supabase が来ない）';
       return;
     }
 
@@ -705,16 +711,9 @@
         }
       }, 3500);
 
-      if (!ensureSupabaseLibraryReady()) {
-        // supabase.js が生える前に走ってしまう場合があるので、次のtickで再確認する
-        setTimeout(() => {
-          if (__runBooted) return;
-          if (ensureSupabaseLibraryReady()) {
-            startApp('retry-supabase-ready');
-          } else if (authBar) {
-            authBar.textContent = 'ERROR: supabase.js が初期化されていません（読み込み順/キャッシュの問題）';
-          }
-        }, 0);
+      const supabaseReady = await waitForSupabaseLibrary(5000);
+      if (!supabaseReady) {
+        if (authBar) authBar.textContent = 'ERROR: supabase.js が初期化されていません（5秒待っても window.supabase が来ない）';
         return;
       }
 

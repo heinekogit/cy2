@@ -689,20 +689,30 @@
     }
     let libReady = await waitForSupabaseLibrary(timeoutMs);
     if (!libReady || !window.supabase?.createClient) {
-      // キャッシュ/読み込み順の問題がある場合に備え、改めて script を動的ロード（cache bust）する
-      try {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = `${SUPABASE_SRC}&bust=${Date.now()}`;
-          s.defer = true;
-          s.onload = () => resolve(true);
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      } catch (e) {
-        console.warn('supabase lib reload failed', e);
+      // すでに supabase.js script が存在するなら追加ロードせずに待ち直す
+      const existingScript = document.querySelector('[data-supabase-lib]');
+      if (existingScript) {
+        libReady = await waitForSupabaseLibrary(3000);
+      } else if (!window.__supabaseInjecting) {
+        // script が無い場合だけ1度だけ再挿入する
+        window.__supabaseInjecting = true;
+        try {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = `${SUPABASE_SRC}&bust=${Date.now()}`;
+            s.defer = true;
+            s.setAttribute('data-supabase-lib', '1');
+            s.onload = () => resolve(true);
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        } catch (e) {
+          console.warn('supabase lib reload failed', e);
+        } finally {
+          window.__supabaseInjecting = false;
+        }
+        libReady = await waitForSupabaseLibrary(3000);
       }
-      libReady = await waitForSupabaseLibrary(3000);
       if (!libReady || !window.supabase?.createClient) return false;
     }
 

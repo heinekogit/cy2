@@ -595,7 +595,8 @@
             return;
           }
           const user = ensured?.user;
-          const accId = ensured?.accountId;
+          const ensuredAccountId = ensured?.accountId || null;
+          if (ensuredAccountId) accountId = ensuredAccountId;
           if (!user?.id) {
             statusEl.textContent = 'アップロード成功（DB登録は失敗：ユーザー不明）';
             return;
@@ -607,7 +608,7 @@
             .insert({
               route_id: currentRouteId,
               user_id: user.id,
-              account_id: accId || null,
+              account_id: ensuredAccountId,
               image_url: publicUrl,
             });
 
@@ -679,7 +680,6 @@
       let tracedLine = null;
       let lastAddTs = 0;
       let lastSavedLogId = null;
-      accountId = null;
       let rawTrack = [];
       let wakeLock = null;
 
@@ -795,8 +795,9 @@
           <button class="btn ghost" data-signout type="button">サインアウト</button>
         </div>
       `;
-          if (startBtn) startBtn.disabled = false;
-          if (stopBtn) stopBtn.disabled = true;
+          const isRecording = !!recording;
+          if (startBtn) startBtn.disabled = isRecording;
+          if (stopBtn) stopBtn.disabled = !isRecording;
         } catch (e) {
           console.error('renderAuthBar error', e);
           authBar.innerHTML = `
@@ -1293,10 +1294,15 @@
       stopBtn.addEventListener('click', async () => {
         if (!recording) { showToast('記録は開始されていません'); return; }
 
-        if (!accountId && window.getMyAccountId) {
-          try { const refreshed = await window.getMyAccountId(); if (refreshed) accountId = refreshed; } catch (_) { }
+        if (!accountId) {
+          try {
+            const ensured = await ensureAuth();
+            accountId = ensured.accountId;
+          } catch (e) {
+            alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
+            return;
+          }
         }
-        if (!accountId) { alert('アカウント情報を確認できないため、保存できません。ログイン状態を確認してください。'); return; }
 
         recording = false;
         clearWatchIfAny();

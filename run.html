@@ -1490,10 +1490,11 @@
 
       const safeRender = async () => {
         try {
-          await renderAuthBar();
+          await withTimeout(renderAuthBar(), 2500, 'renderAuthBar timeout');
         } catch (e) {
           console.error('renderAuthBar failure', e);
-          if (authBar) authBar.textContent = '認証状態の取得に失敗しました';
+          const el = document.getElementById('authBar');
+          if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
         }
         try {
           await renderLogs();

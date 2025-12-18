@@ -240,14 +240,11 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
     const ROUTE_DRAW_PATH = 'route-edit.html';
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const sb = window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
-    window.supabaseClient = supabase;
-    window.supabase = supabase;
-
-    AuthCommon.init(supabase, { redirectUrl: 'index.html' });
-    window.getMyAccountId = () => AuthCommon.getMyAccountId(supabase);
+    AuthCommon.init(sb, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(sb);
 
     const V = () => encodeURIComponent(window.APP_VERSION || '');
     const editingId = null; // 既存ルートの編集はサポートしない
@@ -334,7 +331,7 @@
     async function getDefaultRouteOrigin() {
       if (defaultRouteOrigin) return defaultRouteOrigin;
       try {
-        const { data, error } = await supabase
+        const { data, error } = await sb
           .from('routes')
           .select('origin')
           .eq('is_public', true)
@@ -689,7 +686,7 @@
 
     async function loadRoute(routeId) {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await sb
           .from('routes')
           .select('*')
           .eq('id', routeId)
@@ -833,7 +830,7 @@
       let routeTypeValue = state.currentRoute?.route_type || null;
       if (!routeTypeValue) {
         try {
-          const { data, error } = await supabase.from('routes').select('route_type').eq('is_public', true).limit(1);
+          const { data, error } = await sb.from('routes').select('route_type').eq('is_public', true).limit(1);
           if (!error && Array.isArray(data) && data.length && data[0]?.route_type) {
             routeTypeValue = data[0].route_type;
           }
@@ -852,7 +849,7 @@
       showToast('保存中…', 1200);
 
       try {
-        const result = await supabase
+        const result = await sb
           .from('routes')
           .insert([payload])
           .select('id')
@@ -915,7 +912,7 @@
       }
     });
 
-    supabase.auth.onAuthStateChange(async () => { await refreshAuth(); });
+    sb.auth.onAuthStateChange(async () => { await refreshAuth(); });
     window.addEventListener('beforeunload', (e) => {
       if (!state.dirty) return;
       e.preventDefault();

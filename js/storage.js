@@ -27,14 +27,18 @@ window.dbPut = async function(store, obj) {
     bbox: obj.bbox ?? null
   };
 
-  const { data, error } = await supabase.from('runs').insert([row]).select().single();
+  const sb = window.supabaseClient;
+  if (!sb) throw new Error('supabaseClient not ready');
+  const { data, error } = await sb.from('runs').insert([row]).select().single();
   if (error) { console.error('[dbPut runs] ', error); throw error; }
   return data;
 };
 
 window.dbGetAll = async function(store) {
   if (store !== 'logs') return [];
-  const { data, error } = await supabase
+  const sb = window.supabaseClient;
+  if (!sb) return [];
+  const { data, error } = await sb
     .from('runs')
     .select('id, name, started_at, ended_at, distance_m, duration_s, avg_speed_kmh, route_id, mode, created_at')
     .order('ended_at', { ascending: false, nullsFirst: false })
@@ -55,13 +59,17 @@ window.dbGetAll = async function(store) {
 
 window.dbDelete = async function(store, id) {
   if (store !== 'logs') return;
-  const { error } = await supabase.from('runs').delete().eq('id', id);
+  const sb = window.supabaseClient;
+  if (!sb) throw new Error('supabaseClient not ready');
+  const { error } = await sb.from('runs').delete().eq('id', id);
   if (error) { console.error('[dbDelete runs] ', error); throw error; }
 };
 
 window.dbGetById = async function(store, id) {
   if (store !== 'logs') return null;
-  const { data, error } = await supabase.from('runs').select('*').eq('id', id).single();
+  const sb = window.supabaseClient;
+  if (!sb) return null;
+  const { data, error } = await sb.from('runs').select('*').eq('id', id).single();
   if (error) { console.error('[dbGetById runs] ', error); return null; }
   return data;
 };

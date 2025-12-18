@@ -393,17 +393,17 @@
     let accountId = null;
 
     let supabaseClient = window.supabaseClient || null;
-    let supabase = supabaseClient;
-    let ensureAuth = supabase ? AppCommon.createEnsureAuth({
-      supabase,
-      getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null
+    let sb = supabaseClient;
+    let ensureAuth = sb ? AppCommon.createEnsureAuth({
+      supabase: sb,
+      getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null
     }) : null;
     function syncSupabaseClient() {
       supabaseClient = window.supabaseClient || null;
-      supabase = supabaseClient;
-      ensureAuth = supabase ? AppCommon.createEnsureAuth({
-        supabase,
-        getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null
+      sb = supabaseClient;
+      ensureAuth = sb ? AppCommon.createEnsureAuth({
+        supabase: sb,
+        getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null
       }) : null;
     }
     window.addEventListener('supabase-client-ready', syncSupabaseClient);
@@ -504,7 +504,7 @@
       }
 
       try {
-        const { data, error, status } = await supabase
+        const { data, error, status } = await sb
           .from('routes')
           .insert(payload)
           .select('id')
@@ -545,7 +545,7 @@
         return;
       }
 
-      const { data, error, count } = await supabase
+      const { data, error, count } = await sb
         .from('route_spot_photos')
         .select('id, image_url, taken_at', { count: 'exact' })
         .eq('route_id', currentRouteId)
@@ -599,7 +599,7 @@
 
         try {
           // ① Storage へアップロード
-          const { data, error } = await supabase.storage
+          const { data, error } = await sb.storage
             .from('route-photos')
             .upload(filePath, file, { upsert: false });
 
@@ -612,7 +612,7 @@
           // ② 公開URL取得
           const {
             data: { publicUrl },
-          } = supabase.storage.from('route-photos').getPublicUrl(data.path);
+          } = sb.storage.from('route-photos').getPublicUrl(data.path);
           console.log('アップロード成功 URL:', publicUrl);
 
           // ③ ログイン中ユーザー取得
@@ -634,7 +634,7 @@
           }
 
           // ④ route_spot_photos に1行INSERT
-          const { error: insertError } = await supabase
+          const { error: insertError } = await sb
             .from('route_spot_photos')
             .insert({
               route_id: currentRouteId,
@@ -670,7 +670,6 @@
   // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
   const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-  const SUPABASE_SRC = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix';
 
   async function waitForSupabaseLibrary(timeoutMs = 5000) {
     const start = Date.now();
@@ -687,37 +686,11 @@
       window.dispatchEvent(new Event('supabase-client-ready'));
       return true;
     }
-    let libReady = await waitForSupabaseLibrary(timeoutMs);
-    if (!libReady || !window.supabase?.createClient) {
-      // すでに supabase.js script が存在するなら追加ロードせずに待ち直す
-      const existingScript = document.querySelector('[data-supabase-lib]');
-      if (existingScript) {
-        libReady = await waitForSupabaseLibrary(3000);
-      } else if (!window.__supabaseInjecting) {
-        // script が無い場合だけ1度だけ再挿入する
-        window.__supabaseInjecting = true;
-        try {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = `${SUPABASE_SRC}&bust=${Date.now()}`;
-            s.defer = true;
-            s.setAttribute('data-supabase-lib', '1');
-            s.onload = () => resolve(true);
-            s.onerror = reject;
-            document.head.appendChild(s);
-          });
-        } catch (e) {
-          console.warn('supabase lib reload failed', e);
-        } finally {
-          window.__supabaseInjecting = false;
-        }
-        libReady = await waitForSupabaseLibrary(3000);
-      }
-      if (!libReady || !window.supabase?.createClient) return false;
-    }
+    const libReady = await waitForSupabaseLibrary(timeoutMs);
+    if (!libReady || !window.supabase?.createClient) return false;
 
     try {
-      window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
       });
     } catch (e) {
@@ -785,19 +758,19 @@
         supabaseClient = window.supabaseClient; // ensureSupabaseClient で生成済み
       }
 
-      supabase = supabaseClient;
-      const getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(supabase) : () => null;
-      ensureAuth = AppCommon.createEnsureAuth({ supabase, getAccountId });
+      sb = supabaseClient;
+      const getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null;
+      ensureAuth = AppCommon.createEnsureAuth({ supabase: sb, getAccountId });
       if (window.AuthCommon?.init) {
         try {
-          window.AuthCommon.init(supabase, { redirectUrl: 'index.html' });
+          window.AuthCommon.init(sb, { redirectUrl: 'index.html' });
         } catch (e) {
           console.warn('AuthCommon init (startApp) failed', e);
         }
       } else {
         console.warn('AuthCommon not ready yet (startApp)');
       }
-      if (!supabase) {
+      if (!sb) {
         if (authBar) authBar.textContent = 'ERROR: supabase クライアントが初期化されていません';
         return;
       }
@@ -943,7 +916,7 @@
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
           // ① Supabase Authでユーザーだけ先に確定
-          const { data, error } = await withTimeout(supabase.auth.getUser(), 1500, 'getUser timeout');
+          const { data, error } = await withTimeout(sb.auth.getUser(), 1500, 'getUser timeout');
           if (error) throw error;
           if (!data?.user) throw new Error('NOT_AUTHENTICATED');
 
@@ -1002,7 +975,7 @@
             }
           }
 
-          const { data: runs, error } = await supabase
+          const { data: runs, error } = await sb
             .from('runs')
             .select('id, name, created_at, started_at, ended_at, distance_m, duration_s')
             .eq('account_id', accountId)
@@ -1103,7 +1076,7 @@
             return;
           }
           if (plannedRouteLoaded && !force) return;
-          const { data: route, error } = await supabase
+          const { data: route, error } = await sb
             .from('routes')
             .select('*')
             .eq('id', rid)
@@ -1549,7 +1522,7 @@
         let redirected = false;
         try {
           console.log('RUN INSERT payload', payload);
-          const { data: newRow, error, status } = await supabase
+          const { data: newRow, error, status } = await sb
             .from('runs')
             .insert([payload])
             .select('id')
@@ -1626,7 +1599,7 @@
 
       await safeRender();
 
-      supabase.auth.onAuthStateChange(async (_event, session) => {
+      sb.auth.onAuthStateChange(async (_event, session) => {
         await safeRender();
         if (session?.user) {
           plannedRouteLoaded = false;

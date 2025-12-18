@@ -43,14 +43,14 @@
     const routeId = params.get('route_id');
 
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9zZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+    const sb = window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
-    AuthCommon.init(supabase, { redirectUrl: 'login.html' });
+    AuthCommon.init(sb, { redirectUrl: 'login.html' });
     const ensureAuth = AppCommon.createEnsureAuth({
-      supabase,
-      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+      supabase: sb,
+      getAccountId: () => AuthCommon.getMyAccountId(sb)
     });
 
     const statusEl = document.getElementById('status');
@@ -90,7 +90,7 @@
       }
 
       try {
-        const { data, error } = await supabase
+        const { data, error } = await sb
           .from('route_spot_photos')
           .select('id, image_url, taken_at')
           .eq('route_id', routeId)

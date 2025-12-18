@@ -665,11 +665,14 @@
   <script>
     (function () {
       const version = encodeURIComponent(window.APP_VERSION || '');
-      document.write(`<script src="js/storage.js?v=${version}"><\/script>`);
+      const s = document.createElement('script');
+      s.src = `js/storage.js?v=${version}`;
+      s.async = true;
+      document.head.appendChild(s);
     })();
   </script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" async></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" async></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const supabase = window.supabase;
@@ -927,6 +930,11 @@
 
       function initMapOnce() {
         if (map) return;
+        if (!window.L || !window.turf) {
+          console.warn('map libs not ready yet; retrying...');
+          setTimeout(initMapOnce, 300);
+          return;
+        }
         map = L.map('map').setView([35.681236, 139.767125], 14);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
@@ -1150,6 +1158,10 @@
       };
 
       const updateCourseStatus = (latlng) => {
+        if (!window.turf) {
+          setBadge('', 'ルート判定待ち（ライブラリ読込中）');
+          return;
+        }
         const ref = currentFollowLineLatLngs();
         if (!ref.length) {
           setBadge('', 'ルート未設定');
@@ -1227,7 +1239,7 @@
         ensureLiveLayers();
         let isOn = true;
         const ref = currentFollowLineLatLngs();
-        if (ref.length >= 2) {
+        if (ref.length >= 2 && window.turf) {
           try {
             const point = turf.point([lng, lat]);
             const line = turf.lineString(ref.map(([la, ln]) => [ln, la]));

@@ -315,13 +315,9 @@
       cursor: not-allowed;
     }
   </style>
-  <script
-    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix"
-    data-supabase-lib="1"
-    defer
-    onload="window.__supabaseLoaded = true; window.dispatchEvent(new Event('supabase-script-loaded'));"
-    onerror="window.dispatchEvent(new Event('supabase-script-error'));"
-  ></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix" data-supabase-lib="1"
+    defer onload="window.__supabaseLoaded = true; window.dispatchEvent(new Event('supabase-script-loaded'));"
+    onerror="window.dispatchEvent(new Event('supabase-script-error'));"></script>
 </head>
 
 <body>
@@ -384,9 +380,9 @@
   <script>
     document.getElementById('ver').textContent = window.APP_VERSION;
   </script>
-<script src="js/app-common.js" defer></script>
-<!-- <script src="js/run-photo-summary.js" defer></script> -->
-<script src="js/auth-common.js" defer></script>
+  <script src="js/app-common.js" defer></script>
+  <!-- <script src="js/run-photo-summary.js" defer></script> -->
+  <script src="js/auth-common.js" defer></script>
   <script defer>
     // 走行中に紐づく routes.id（run ログと紐づけるためのID）
     let currentRouteId = null;
@@ -633,6 +629,25 @@
             return;
           }
 
+          let photoLat = null;
+          let photoLng = null;
+
+          if (navigator.geolocation) {
+            try {
+              const pos = await new Promise((resolve, reject) =>
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  enableHighAccuracy: true,
+                  timeout: 5000,
+                  maximumAge: 0,
+                })
+              );
+              photoLat = pos.coords.latitude;
+              photoLng = pos.coords.longitude;
+            } catch (e) {
+              console.warn('写真の位置情報が取得できませんでした', e);
+            }
+          }
+
           // ④ route_spot_photos に1行INSERT
           const { error: insertError } = await sb
             .from('route_spot_photos')
@@ -641,6 +656,8 @@
               user_id: user.id,
               account_id: ensuredAccountId,
               image_url: publicUrl,
+              lat: photoLat,
+              lng: photoLng,
             });
 
           if (insertError) {
@@ -663,77 +680,77 @@
     }
   </script>
 
-<script src="js/storage.js" defer></script>
+  <script src="js/storage.js" defer></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
-<script defer>
-  // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
-  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
+  <script defer>
+    // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
+    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
 
-  async function waitForSupabaseLibrary(timeoutMs = 5000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (window.supabase && typeof window.supabase.createClient === 'function') return true;
-      if (window.__supabaseLoaded) return !!window.supabase;
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return false;
-  }
-
-  async function ensureSupabaseClient(timeoutMs = 5000) {
-    if (window.supabaseClient) {
-      window.dispatchEvent(new Event('supabase-client-ready'));
-      return true;
-    }
-    const libReady = await waitForSupabaseLibrary(timeoutMs);
-    if (!libReady || !window.supabase?.createClient) return false;
-
-    try {
-      window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-      });
-    } catch (e) {
-      console.error('supabase client init failed', e);
+    async function waitForSupabaseLibrary(timeoutMs = 5000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (window.supabase && typeof window.supabase.createClient === 'function') return true;
+        if (window.__supabaseLoaded) return !!window.supabase;
+        await new Promise((r) => setTimeout(r, 50));
+      }
       return false;
     }
 
-    // AuthCommon がまだ読み込まれていない場合でもクライアント生成は成功させる
-    try {
-      if (window.AuthCommon?.init) {
-        window.AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
-      } else {
-        console.warn('AuthCommon not ready yet');
+    async function ensureSupabaseClient(timeoutMs = 5000) {
+      if (window.supabaseClient) {
+        window.dispatchEvent(new Event('supabase-client-ready'));
+        return true;
       }
-      if (window.AuthCommon?.getMyAccountId) {
-        window.getMyAccountId = () => window.AuthCommon.getMyAccountId(window.supabaseClient);
-      } else {
+      const libReady = await waitForSupabaseLibrary(timeoutMs);
+      if (!libReady || !window.supabase?.createClient) return false;
+
+      try {
+        window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+      } catch (e) {
+        console.error('supabase client init failed', e);
+        return false;
+      }
+
+      // AuthCommon がまだ読み込まれていない場合でもクライアント生成は成功させる
+      try {
+        if (window.AuthCommon?.init) {
+          window.AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+        } else {
+          console.warn('AuthCommon not ready yet');
+        }
+        if (window.AuthCommon?.getMyAccountId) {
+          window.getMyAccountId = () => window.AuthCommon.getMyAccountId(window.supabaseClient);
+        } else {
+          window.getMyAccountId = () => null;
+        }
+      } catch (e) {
+        console.warn('AuthCommon init failed (continue without blocking)', e);
         window.getMyAccountId = () => null;
       }
-    } catch (e) {
-      console.warn('AuthCommon init failed (continue without blocking)', e);
-      window.getMyAccountId = () => null;
+
+      window.dispatchEvent(new Event('supabase-client-ready'));
+      return true;
     }
 
-    window.dispatchEvent(new Event('supabase-client-ready'));
-    return true;
-  }
+    document.addEventListener('DOMContentLoaded', async () => {
+      const authBar = document.getElementById('authBar');
 
-  document.addEventListener('DOMContentLoaded', async () => {
-    const authBar = document.getElementById('authBar');
+      const ok = await ensureSupabaseClient(5000);
+      if (!ok) {
+        if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
+        return;
+      }
+    });
+  </script>
+  <script defer>
+    // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
+    let __runBooted = false;
 
-    const ok = await ensureSupabaseClient(5000);
-    if (!ok) {
-      if (authBar) authBar.textContent = 'ERROR: supabaseClient が初期化されていません';
-      return;
-    }
-  });
-</script>
-<script defer>
-  // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
-  let __runBooted = false;
-
-  async function startApp(trigger = 'dcl') {
+    async function startApp(trigger = 'dcl') {
       if (__runBooted) return;
       // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
       const authBar = document.getElementById('authBar');

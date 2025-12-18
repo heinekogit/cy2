@@ -685,10 +685,30 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
   <script>
+    const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
     let __runBooted = false;
+    let __supabaseLoading = false;
+
+    function ensureSupabaseClient() {
+      if (window.supabaseClient && window.supabase) return window.supabaseClient;
+      if (!window.supabase?.createClient) throw new Error('supabase lib missing');
+      const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      });
+      window.supabaseClient = client;
+      window.supabase = client;
+      try {
+        AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
+        window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
+      } catch (e) {
+        console.warn('AuthCommon init failed', e);
+      }
+      return client;
+    }
+
     async function startApp(trigger = 'dcl') {
       if (__runBooted) return;
-      __runBooted = true;
       // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
       const authBar = document.getElementById('authBar');
       if (authBar) authBar.textContent = 'JS起動…（DOMContentLoaded到達）';
@@ -702,13 +722,29 @@
         }
       }, 3500);
 
-      const supabase = window.supabase;
-      if (!supabase) {
+      if (!window.supabase) {
         if (authBar) authBar.textContent = 'ERROR: supabase が未ロードです（再試行します）';
-        __runBooted = false;
-        setTimeout(() => startApp('retry_supabase'), 1000);
+        if (!__supabaseLoading) {
+          __supabaseLoading = true;
+          const s = document.createElement('script');
+          s.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js?retry=1';
+          s.async = true;
+          s.onload = () => { __supabaseLoading = false; startApp('supabase-onload'); };
+          s.onerror = () => { __supabaseLoading = false; authBar && (authBar.textContent = 'ERROR: supabase.js 再読込失敗'); };
+          document.head.appendChild(s);
+        }
         return;
       }
+
+      let supabase;
+      try {
+        supabase = ensureSupabaseClient();
+      } catch (e) {
+        console.warn('ensureSupabaseClient failed', e);
+        if (authBar) authBar.textContent = 'ERROR: supabase 初期化に失敗しました';
+        return;
+      }
+      __runBooted = true;
 
       const tabLogs = document.getElementById('tabLogs');
       const tabRun = document.getElementById('tabRun');

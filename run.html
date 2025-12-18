@@ -386,8 +386,11 @@
     let currentRouteId = null;
     let accountId = null;
 
-    let supabase = null; // 実行時に supabaseClient をセット
-    let ensureAuth = null;
+    const supabase = window.supabaseClient || null;
+    const ensureAuth = supabase ? AppCommon.createEnsureAuth({
+      supabase,
+      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+    }) : null;
 
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
@@ -645,12 +648,32 @@
 
   <script src="js/storage.js" defer></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js" defer></script>
+<script defer>
+  // Supabaseクライアントを1回だけ生成（ライブラリwindow.supabaseは保持）
+  const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
+  if (window.supabase?.createClient && !window.supabaseClient) {
+    window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+    AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabaseClient);
+  } else if (!window.supabase?.createClient) {
+    const el = document.getElementById('authBar');
+    if (el) el.textContent = 'ERROR: supabase ライブラリが読み込まれていません';
+  }
+</script>
   <script defer>
     // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    let supabaseClient = null;
+    let supabaseClient = window.supabaseClient || null;
+    let supabase = supabaseClient;
+    let ensureAuth = supabase ? AppCommon.createEnsureAuth({
+      supabase,
+      getAccountId: () => AuthCommon.getMyAccountId(supabase)
+    }) : null;
     let __runBooted = false;
 
     async function startApp(trigger = 'dcl') {

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Supabase script check</title>
+</head>
+<body>
+  <div id="authBar">Checking supabase…</div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const el = document.getElementById('authBar');
+      if (window.supabase && window.supabase.createClient) {
+        el.textContent = 'OK: supabase is available';
+      } else {
+        el.textContent = 'NG: supabase undefined';
+      }
+    });
+  </script>
+</body>
+</html>

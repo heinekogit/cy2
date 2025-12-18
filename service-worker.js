@@ -19,8 +19,16 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
-// 重要：HTML(=navigate)は必ずネットワーク優先 + no-store
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // ✅ これが超重要：自ドメイン以外はSWで触らず、普通にネットへ流す
+  if (url.origin !== self.location.origin) {
+    return; // 何もしない = ブラウザ標準の fetch に任せる
+  }
+
+  // ↓ ここから先だけ、今までのキャッシュ処理をやる
+  // 重要：HTML(=navigate)は必ずネットワーク優先 + no-store
   const req = event.request;
 
   // ナビゲーション（HTML）
@@ -38,7 +46,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 画像/JS/CSS など同一オリジン静的は Cache First（v付与で更新保証済み）
-  const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
   const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(url.pathname);
 

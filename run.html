@@ -377,14 +377,29 @@
   <script>
     document.getElementById('ver').textContent = window.APP_VERSION;
   </script>
+<script>
+  // DOMContentLoaded が発火しない場合の監視
+  (function () {
+    const el = document.getElementById('authBar');
+    const timer = setTimeout(() => {
+      if (!window.__run_dcl_fired && el) {
+        el.textContent = 'ERROR: DOMContentLoaded 未到達（外部JS読込待ちの可能性）';
+      }
+    }, 3500);
+    document.addEventListener('DOMContentLoaded', () => {
+      window.__run_dcl_fired = true;
+      clearTimeout(timer);
+    }, { once: true });
+  })();
+</script>
 <script
   src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"
   defer
   onerror="document.getElementById('authBar').textContent='ERROR: supabase.js の読み込み失敗';">
 </script>
-<script src="js/app-common.js" defer></script>
-<!-- <script src="js/run-photo-summary.js" defer></script> -->
-<script src="js/auth-common.js" defer></script>
+<script src="js/app-common.js" defer onerror="document.getElementById('authBar').textContent='ERROR: app-common.js 読み込み失敗';"></script>
+<!-- <script src="js/run-photo-summary.js" defer onerror="document.getElementById('authBar').textContent='ERROR: run-photo-summary.js 読み込み失敗';"></script> -->
+<script src="js/auth-common.js" defer onerror="document.getElementById('authBar').textContent='ERROR: auth-common.js 読み込み失敗';"></script>
 <script defer>
   // Supabase 初期化（外部JS読込完了後に実行）
   (function () {

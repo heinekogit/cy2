@@ -852,6 +852,17 @@
         }
       }
 
+      // 念のため、初回描画が動かなかった場合に再試行する保険
+      setTimeout(() => {
+        try {
+          if (authBar?.textContent?.includes('認証状態を確認中')) {
+            renderAuthBar();
+          }
+        } catch (e) {
+          console.warn('authBar retry failed', e);
+        }
+      }, 2000);
+
       async function renderLogs() {
         logsList.textContent = '読み込み中…';
         try {

@@ -389,11 +389,11 @@
       });
       window.supabaseClient = client;
       window.supabase = client;
-    })();
-  </script>
-  <script src="js/app-common.js"></script>
-  <script src="js/run-photo-summary.js"></script>
-  <script src="js/auth-common.js"></script>
+  })();
+</script>
+<script src="js/app-common.js"></script>
+<!-- <script src="js/run-photo-summary.js"></script> -->
+<script src="js/auth-common.js"></script>
   <script>
     AuthCommon.init(window.supabase, { redirectUrl: 'index.html' });
     window.getMyAccountId = () => AuthCommon.getMyAccountId(window.supabase);
@@ -414,67 +414,44 @@
       supabase,
       getAccountId: () => AuthCommon.getMyAccountId(supabase)
     });
+    const V = () => encodeURIComponent(window.APP_VERSION || '');
+
+    function setLinkEnabled(a, enabled) {
+      if (!a) return;
+      a.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+      a.style.pointerEvents = enabled ? 'auto' : 'none';
+      a.style.opacity = enabled ? '1' : '0.5';
+    }
+
+    if (photoListBtn && !photoListBtn.dataset.guardInstalled) {
+      photoListBtn.dataset.guardInstalled = '1';
+      photoListBtn.addEventListener('click', (e) => {
+        if (photoListBtn.getAttribute('aria-disabled') === 'true') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+    }
 
     function updatePhotoSummaryLink() {
       if (!photoSummary) return;
-      if (!currentRouteId) {
+
+      const enabled = !!currentRouteId;
+      if (!enabled) {
         photoSummary.hidden = true;
+        setLinkEnabled(photoListBtn, false);
         return;
       }
+
       photoSummary.hidden = false;
       if (photoCountEl && !photoCountEl.textContent) photoCountEl.textContent = '0';
-      function setLinkEnabled(a, enabled) {
-        if (!a) return;
 
-        a.classList.toggle('is-disabled', !enabled);
-        a.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        a.tabIndex = enabled ? 0 : -1;
+      const url = new URL('route-photos.html', window.location.origin);
+      url.searchParams.set('route_id', String(currentRouteId));
+      url.searchParams.set('v', V());
 
-        // href は enabled のときだけ設定（無効時はクリックで遷移させない）
-        if (!enabled) {
-          a.dataset.href = a.getAttribute('href') || '';
-          a.setAttribute('href', '#');
-        } else {
-          const prev = a.dataset.href;
-          if (prev) a.setAttribute('href', prev);
-        }
-      }
-
-      // 1回だけガードを仕込む
-      if (photoListBtn && !photoListBtn.dataset.guardInstalled) {
-        photoListBtn.dataset.guardInstalled = '1';
-        photoListBtn.addEventListener('click', (e) => {
-          if (photoListBtn.getAttribute('aria-disabled') === 'true') {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        });
-      }
-
-      function updatePhotoSummaryLink() {
-        if (!photoSummary) return;
-
-        const enabled = !!currentRouteId;
-
-        if (!enabled) {
-          photoSummary.hidden = true;
-          setLinkEnabled(photoListBtn, false);
-          return;
-        }
-
-        photoSummary.hidden = false;
-        if (photoCountEl && !photoCountEl.textContent) photoCountEl.textContent = '0';
-
-        if (photoListBtn) {
-          // route_id をリンクへセット
-          const url = new URL('route-photos.html', window.location.origin);
-          url.searchParams.set('route_id', String(currentRouteId));
-          url.searchParams.set('v', V());
-          photoListBtn.href = url.toString();
-
-          setLinkEnabled(photoListBtn, true);
-        }
-      }
+      if (photoListBtn) photoListBtn.href = url.toString();
+      setLinkEnabled(photoListBtn, true);
     }
 
     // toast utility (page-wide)
@@ -594,16 +571,6 @@
     loadRoutePhotos();
     updatePhotoSummaryLink();
 
-    if (photoListBtn) {
-      photoListBtn.addEventListener('click', () => {
-        if (!currentRouteId) return;
-        const href = photoListBtn.dataset.href;
-        if (href) {
-          location.href = href;
-        }
-      });
-    }
-
     if (fileInput && statusEl) {
       fileInput.addEventListener('change', async (event) => {
         const file = event.target.files?.[0];
@@ -698,7 +665,6 @@
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const supabase = window.supabase;
-      const V = () => encodeURIComponent(window.APP_VERSION || '');
 
       const tabLogs = document.getElementById('tabLogs');
       const tabRun = document.getElementById('tabRun');

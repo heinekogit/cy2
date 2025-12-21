@@ -384,12 +384,14 @@
   <!-- <script src="js/run-photo-summary.js" defer></script> -->
   <script src="js/auth-common.js" defer></script>
   <script defer>
-    // 走行中に紐づく routes.id（run ログと紐づけるためのID）
-    let currentRouteId = null;
-    let accountId = null;
+  // 走行中に紐づく routes.id（run ログと紐づけるためのID）
+  let currentRouteId = null;
+  let accountId = null;
+  let map = null;
+  let photoPinLayer = null;
 
-    let supabaseClient = window.supabaseClient || null;
-    let sb = supabaseClient;
+  let supabaseClient = window.supabaseClient || null;
+  let sb = supabaseClient;
     let ensureAuth = sb ? AppCommon.createEnsureAuth({
       supabase: sb,
       getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null
@@ -853,7 +855,6 @@
       if (startBtn) startBtn.disabled = true; // 認証状態が判明するまで一旦無効、renderAuthBarで制御
       if (stopBtn) stopBtn.disabled = true;
 
-      let map;
       let routePts = [];
       let routeLine;
       let editMode = false;
@@ -868,7 +869,6 @@
       let lastSavedLogId = null;
       let rawTrack = [];
       let wakeLock = null;
-      let photoPinLayer = null;
 
       // 追従ルート＆ラインレイヤ
       let planned = [];        // 予定ルート（{lat,lng}[]）

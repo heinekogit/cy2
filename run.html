@@ -519,6 +519,7 @@
         showToast(`記録開始 #${currentRouteId}`);
         console.log('新しい route_id:', currentRouteId);
         loadRoutePhotos();
+        await loadPhotoPins();
         updatePhotoSummaryLink();
         return { ok: true, routeId: currentRouteId };
       } catch (e) {
@@ -570,6 +571,43 @@
       if (photoSummary) photoSummary.hidden = false;
       if (photoCountEl) photoCountEl.textContent = String(typeof count === 'number' ? count : data.length);
       updatePhotoSummaryLink();
+    }
+
+    // 写真ピン描画（サムネなし）
+    async function loadPhotoPins() {
+      if (!map || !photoPinLayer || !sb || !currentRouteId) return;
+      photoPinLayer.clearLayers();
+      try {
+        const { data, error } = await sb
+          .from('route_spot_photos')
+          .select('id, image_url, lat, lng, taken_at')
+          .eq('route_id', currentRouteId)
+          .order('taken_at', { ascending: true });
+        if (error || !data) return;
+        for (const row of data) {
+          const lat = Number(row.lat);
+          const lng = Number(row.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          const when = row.taken_at ? new Date(row.taken_at).toLocaleString() : '撮影時刻不明';
+          const marker = L.circleMarker([lat, lng], {
+            radius: 5,
+            color: '#111827',
+            weight: 2,
+            fillColor: '#ffffff',
+            fillOpacity: 0.9
+          });
+          const url = `route-photos.html?route_id=${encodeURIComponent(currentRouteId)}&focus_photo_id=${encodeURIComponent(row.id)}&v=${V()}`;
+          marker.bindPopup(`
+            <div style="min-width:160px;">
+              <div style="font-size:12px; color:#4b5563;">${when}</div>
+              <a href="${url}" style="font-weight:600; color:#111827; text-decoration:underline;">写真を見る</a>
+            </div>
+          `);
+          photoPinLayer.addLayer(marker);
+        }
+      } catch (e) {
+        console.warn('loadPhotoPins error', e);
+      }
     }
 
     // 初期表示時に読み込む
@@ -669,6 +707,7 @@
           statusEl.textContent = 'アップロード & DB登録 完了！';
           // 追加：最新一覧を再読み込み
           loadRoutePhotos();
+          await loadPhotoPins();
           updatePhotoSummaryLink();
         } catch (err) {
           console.error('photo upload exception', err);
@@ -829,6 +868,7 @@
       let lastSavedLogId = null;
       let rawTrack = [];
       let wakeLock = null;
+      let photoPinLayer = null;
 
       // 追従ルート＆ラインレイヤ
       let planned = [];        // 予定ルート（{lat,lng}[]）
@@ -1057,6 +1097,7 @@
         }).addTo(map);
         routeLine = L.polyline(routePts, { color: '#2563eb', weight: 4 }).addTo(map);
         ensureLiveLayers();
+        photoPinLayer = L.layerGroup().addTo(map);
         setBadge('', '');
         map.on('click', (e) => {
           if (!editMode || recording) return;

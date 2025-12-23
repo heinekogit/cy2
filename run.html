@@ -577,6 +577,10 @@
 
     // 写真ピン描画（サムネなし）
     async function loadPhotoPins() {
+      if (typeof photoPinLayer === 'undefined') return;
+      if (map && !photoPinLayer) {
+        photoPinLayer = L.layerGroup().addTo(map);
+      }
       if (!map || !photoPinLayer || !sb || !currentRouteId) return;
       photoPinLayer.clearLayers();
       try {

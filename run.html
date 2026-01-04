@@ -389,6 +389,8 @@
   let accountId = null;
   let map = null;
   let photoPinLayer = null;
+  // 位置情報は撮影時にも使うのでグローバルで共有する
+  let lastLatLng = null;
 
   let supabaseClient = window.supabaseClient || null;
   let sb = supabaseClient;
@@ -868,7 +870,6 @@
       let follow = false;
       let dot = null;
       let accCircle = null;
-      let lastLatLng = null;
       let traced = [];
       let tracedLine = null;
       let lastAddTs = 0;

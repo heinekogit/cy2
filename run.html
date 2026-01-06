@@ -412,15 +412,24 @@
     const fileInput = document.getElementById('route-photo-input');
     const statusEl = document.getElementById('route-photo-upload-status');
     const listEl = document.getElementById('route-photo-list');
-    const photoSummary = document.getElementById('photoSummary');
-    const photoCountEl = photoSummary?.querySelector('[data-photo-count]');
-    const photoListBtn = document.getElementById('lnPhotoList');
-    const V = () => encodeURIComponent(window.APP_VERSION || '');
-    function withTimeout(promise, ms, label = 'timeout') {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms)
+  const photoSummary = document.getElementById('photoSummary');
+  const photoCountEl = photoSummary?.querySelector('[data-photo-count]');
+  const photoListBtn = document.getElementById('lnPhotoList');
+  const V = () => encodeURIComponent(window.APP_VERSION || '');
+  const isMissingColumnError = (err) => {
+    const msg = err?.message || '';
+    return err?.code === '42703' || /column .* does not exist/i.test(msg);
+  };
+  const fmtSbError = (err) => {
+    if (!err) return '不明なエラー';
+    const code = err.code ? `[${err.code}] ` : '';
+    return `${code}${err.message || err.toString?.() || err}`;
+  };
+  function withTimeout(promise, ms, label = 'timeout') {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms)
         )
       ]);
     }
@@ -546,15 +555,40 @@
         return;
       }
 
-      const { data, error, count } = await sb
-        .from('route_spot_photos')
-        .select('id, image_url, taken_at', { count: 'exact' })
-        .eq('route_id', currentRouteId)
-        .order('taken_at', { ascending: true });
+      let orderCol = 'taken_at';
+      let data = null;
+      let error = null;
+      let count = null;
+
+      try {
+        ({ data, error, count } = await sb
+          .from('route_spot_photos')
+          .select('id, image_url, taken_at, lat, lng', { count: 'exact' })
+          .eq('route_id', currentRouteId)
+          .order(orderCol, { ascending: true }));
+      } catch (e) {
+        console.error('写真一覧取得例外:', e);
+        error = e;
+      }
+
+      if (error && isMissingColumnError(error)) {
+        console.warn('route_spot_photos schema mismatch, retrying with minimal columns', error);
+        orderCol = 'created_at';
+        try {
+          ({ data, error, count } = await sb
+            .from('route_spot_photos')
+            .select('id, image_url', { count: 'exact' })
+            .eq('route_id', currentRouteId)
+            .order(orderCol, { ascending: true }));
+        } catch (e) {
+          console.error('写真一覧取得例外(フォールバック):', e);
+          error = e;
+        }
+      }
 
       if (error) {
         console.error('写真一覧取得エラー:', error);
-        listEl.textContent = '';
+        listEl.textContent = `写真取得失敗: ${fmtSbError(error)}`;
         if (photoSummary) photoSummary.hidden = true;
         return;
       }
@@ -586,12 +620,38 @@
       if (!map || !photoPinLayer || !sb || !currentRouteId) return;
       photoPinLayer.clearLayers();
       try {
-        const { data, error } = await sb
-          .from('route_spot_photos')
-          .select('id, image_url, lat, lng, taken_at')
-          .eq('route_id', currentRouteId)
-          .order('taken_at', { ascending: true });
-        if (error || !data) return;
+        let orderCol = 'taken_at';
+        let data = null;
+        let error = null;
+
+        try {
+          ({ data, error } = await sb
+            .from('route_spot_photos')
+            .select('id, image_url, lat, lng, taken_at')
+            .eq('route_id', currentRouteId)
+            .order(orderCol, { ascending: true }));
+        } catch (e) {
+          error = e;
+        }
+
+        if (error && isMissingColumnError(error)) {
+          console.warn('route_spot_photos schema mismatch for pins, retry with minimal columns', error);
+          orderCol = 'created_at';
+          try {
+            ({ data, error } = await sb
+              .from('route_spot_photos')
+              .select('id, image_url, lat, lng')
+              .eq('route_id', currentRouteId)
+              .order(orderCol, { ascending: true }));
+          } catch (e) {
+            error = e;
+          }
+        }
+
+        if (error || !data) {
+          if (error) console.warn('loadPhotoPins error', error);
+          return;
+        }
         for (const row of data) {
           const lat = Number(row.lat);
           const lng = Number(row.lng);
@@ -647,7 +707,7 @@
 
           if (error) {
             console.error('photo upload error', error);
-            statusEl.textContent = 'アップロード失敗';
+            statusEl.textContent = `アップロード失敗: ${fmtSbError(error)}`;
             return;
           }
 
@@ -697,20 +757,21 @@
           }
 
           // ④ route_spot_photos に1行INSERT
-          const { error: insertError } = await sb
+          const insertPayload = {
+            route_id: currentRouteId,
+            user_id: user.id,
+            image_url: publicUrl,
+          };
+          if (typeof photoLat === 'number') insertPayload.lat = photoLat;
+          if (typeof photoLng === 'number') insertPayload.lng = photoLng;
+
+          const { error: insertError, status: insertStatus } = await sb
             .from('route_spot_photos')
-            .insert({
-              route_id: currentRouteId,
-              user_id: user.id,
-              account_id: ensuredAccountId,
-              image_url: publicUrl,
-              lat: photoLat,
-              lng: photoLng,
-            });
+            .insert(insertPayload);
 
           if (insertError) {
             console.error('route_spot_photos へのINSERTエラー:', insertError);
-            statusEl.textContent = 'アップロード成功（DB登録は失敗）';
+            statusEl.textContent = `DB登録失敗: ${fmtSbError(insertError)} / status:${insertStatus ?? ''}`;
             return;
           }
 
@@ -721,7 +782,7 @@
           updatePhotoSummaryLink();
         } catch (err) {
           console.error('photo upload exception', err);
-          statusEl.textContent = 'アップロード失敗';
+          statusEl.textContent = `アップロード失敗: ${err?.message || err}`;
         } finally {
           fileInput.value = '';
         }

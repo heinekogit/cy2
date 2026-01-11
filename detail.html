@@ -158,8 +158,32 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
+    function normalizePoints(points){
+      if (!Array.isArray(points)) return [];
+      const out = [];
+      for (const p of points) {
+        if (!p) continue;
+        if (Array.isArray(p)) {
+          const a = Number(p[0]);
+          const b = Number(p[1]);
+          if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+          if (Math.abs(a) > 90 && Math.abs(b) <= 90) out.push({ lat: b, lng: a });
+          else out.push({ lat: a, lng: b });
+          continue;
+        }
+        const lat = Number(p.lat ?? p.latitude);
+        const lng = Number(p.lng ?? p.lon ?? p.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        out.push({ lat, lng });
+      }
+      return out;
+    }
     function extractLatLngsFromRoute(route){
       try{
+        if (Array.isArray(route?.points)) {
+          const pts = normalizePoints(route.points);
+          if (pts.length) return pts;
+        }
         if (route?.geojson){
           const g = typeof route.geojson==='string' ? JSON.parse(route.geojson) : route.geojson;
           const out = [];
@@ -183,6 +207,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }catch(e){ console.warn('extract geojson', e); }
       if (route?.polyline){
         return decodePolyline(route.polyline).map(([lat,lng])=>({lat,lng}));
+      }
+      if (Array.isArray(route?.points)) {
+        const pts = normalizePoints(route.points);
+        if (pts.length) return pts;
       }
       return [];
     }
@@ -583,7 +611,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         const runPoints = extractLatLngsFromRoute(run);
         let runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
-        if (!runLayer && runPoints.length >= 2) {
+        if ((!runLayer || (runLayer.getBounds && !runLayer.getBounds().isValid())) && runPoints.length >= 2) {
           runLayer = L.polyline(runPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
         }
         if (runPoints.length >= 1) fitMapToPoints(runPoints);
@@ -661,7 +689,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         const routePoints = extractLatLngsFromRoute(route);
         let routeLayer = drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
-        if (!routeLayer && routePoints.length >= 2) {
+        if ((!routeLayer || (routeLayer.getBounds && !routeLayer.getBounds().isValid())) && routePoints.length >= 2) {
           routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);
         }
         if (routePoints.length >= 1) fitMapToPoints(routePoints);

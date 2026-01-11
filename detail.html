@@ -136,7 +136,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
     }
-    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix3';
+    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix4';
   </script>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -295,6 +295,67 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           ${extra}
         </div>
       `;
+    }
+
+    function closestByTime(items, timeKey, targetTimeMs){
+      if (!Array.isArray(items) || !Number.isFinite(targetTimeMs)) return null;
+      let best = null;
+      let bestDiff = Infinity;
+      for (const item of items) {
+        const t = item?.[timeKey];
+        if (!t) continue;
+        const ms = new Date(t).getTime();
+        if (!Number.isFinite(ms)) continue;
+        const diff = Math.abs(ms - targetTimeMs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = item;
+        }
+      }
+      return best ? { item: best, diffMs: bestDiff } : null;
+    }
+
+    async function resolveRouteForRun(runRow){
+      if (!runRow?.account_id) return null;
+      const targetMs = new Date(runRow.started_at || runRow.created_at || runRow.ended_at || Date.now()).getTime();
+      try{
+        const { data, error } = await client
+          .from('routes')
+          .select('id,created_at,account_id,route_type')
+          .eq('account_id', runRow.account_id)
+          .eq('route_type', 'from_run')
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error || !data) return null;
+        const best = closestByTime(data, 'created_at', targetMs);
+        if (!best) return null;
+        const withinMs = 6 * 60 * 60 * 1000;
+        return best.diffMs <= withinMs ? best.item : null;
+      }catch(e){
+        console.warn('resolveRouteForRun failed', e);
+        return null;
+      }
+    }
+
+    async function resolveRunForRoute(routeRow){
+      if (!routeRow?.account_id) return null;
+      const targetMs = new Date(routeRow.created_at || Date.now()).getTime();
+      try{
+        const { data, error } = await client
+          .from('runs')
+          .select('id,created_at,started_at,ended_at,polyline,geojson,distance_m,duration_s')
+          .eq('account_id', routeRow.account_id)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error || !data) return null;
+        const best = closestByTime(data, 'created_at', targetMs);
+        if (!best) return null;
+        const withinMs = 6 * 60 * 60 * 1000;
+        return best.diffMs <= withinMs ? best.item : null;
+      }catch(e){
+        console.warn('resolveRunForRoute failed', e);
+        return null;
+      }
     }
 
     const totalDistanceMeters = (points) => {
@@ -660,7 +721,11 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         if (runPoints.length >= 1) fitMapToPoints(runPoints);
         await renderElevationPanel(runPoints);
-        const photoRouteId = await resolvePhotoRouteIdForRun(run.id);
+        let photoRouteId = await resolvePhotoRouteIdForRun(run.id);
+        if (!photoRouteId) {
+          const fallbackRoute = await resolveRouteForRun(run);
+          photoRouteId = fallbackRoute?.id || null;
+        }
         const photoPoints = await loadRoutePhotos(photoRouteId);
         if (runPoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
 
@@ -720,9 +785,18 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        const routePoints = extractLatLngsFromRoute(routeRow);
+        let routePoints = extractLatLngsFromRoute(routeRow);
         console.log('[detail] routePoints=', routePoints.length);
-        let routeLayer = drawLineOnMap(__map, routeRow.polyline, routeRow.geojson, COLORS.routePlanned);
+        let lineSource = routeRow;
+        if (routePoints.length < 2 && routeRow.route_type === 'from_run') {
+          const fallbackRun = await resolveRunForRoute(routeRow);
+          if (fallbackRun) {
+            lineSource = fallbackRun;
+            routePoints = extractLatLngsFromRoute(fallbackRun);
+            console.log('[detail] routePoints (fallback run)=', routePoints.length);
+          }
+        }
+        let routeLayer = drawLineOnMap(__map, lineSource.polyline, lineSource.geojson, COLORS.routePlanned);
         if ((!routeLayer || (routeLayer.getBounds && !routeLayer.getBounds().isValid())) && routePoints.length >= 2) {
           routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);
         }

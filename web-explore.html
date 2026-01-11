@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Explore（公開ルート）</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; flex-wrap:wrap; gap:8px; }
+    .muted { color:#6b7280; }
+    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .card:hover { background:#f9fafb; }
+    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; text-decoration:none; color:#111827; }
+    .btn:visited { color:#111827; text-decoration:none; }
+    .btn:hover { background:#f3f4f6; color:#111827; text-decoration:none; }
+    #routesWrap { margin-top: 14px; }
+  </style>
+
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+    window.APP_VERSION = String(window.APP_VERSION) + '-webexplore1';
+  </script>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700; font-size:20px;">Explore（公開ルート）</div>
+  </header>
+
+  <div id="status" class="muted">読み込み中…</div>
+  <div id="routesWrap"></div>
+
+  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+
+  <script>
+    document.getElementById('ver').textContent = window.APP_VERSION || '';
+
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const sb = window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('routesWrap');
+    const V = () => encodeURIComponent(window.APP_VERSION || '');
+
+    function renderRoutes(routes, countsByRoute) {
+      if (!routes.length) {
+        statusEl.textContent = '公開ルートがありません。';
+        listEl.innerHTML = '';
+        return;
+      }
+      statusEl.textContent = '';
+      listEl.innerHTML = routes.map((r) => {
+        const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+        const count = countsByRoute[r.id] || 0;
+        const photoText = count > 0 ? `写真: ${count}枚` : '写真: -';
+        return `
+          <button class="card" style="width:100%;text-align:left;" data-id="${r.id}">
+            <div>
+              <div style="font-weight:600;">${r.name || '(無題ルート)'} <span class="muted">#${r.id}</span></div>
+              <div class="muted" style="font-size:12px;">${when}</div>
+              <div class="muted" style="font-size:12px;">${photoText}</div>
+            </div>
+            <div class="muted">詳細</div>
+          </button>
+        `;
+      }).join('');
+      listEl.querySelectorAll('[data-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const id = el.getAttribute('data-id');
+          if (!id) return;
+          location.href = `web-route-detail.html?id=${encodeURIComponent(id)}&v=${V()}`;
+        });
+      });
+    }
+
+    async function loadExploreRoutes() {
+      statusEl.textContent = '読み込み中…';
+      listEl.innerHTML = '';
+      try {
+        const { data: routes, error } = await sb
+          .from('routes')
+          .select('id,name,created_at')
+          .eq('is_public', true)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error) throw error;
+        const list = routes || [];
+        if (!list.length) {
+          renderRoutes([], {});
+          return;
+        }
+
+        const ids = list.map((r) => r.id);
+        let countsByRoute = {};
+        try {
+          const { data: photos, error: photoError } = await sb
+            .from('route_spot_photos')
+            .select('route_id')
+            .in('route_id', ids);
+          if (!photoError && Array.isArray(photos)) {
+            for (const row of photos) {
+              if (!row?.route_id) continue;
+              countsByRoute[row.route_id] = (countsByRoute[row.route_id] || 0) + 1;
+            }
+          }
+        } catch (photoErr) {
+          console.warn('photo count fetch failed', photoErr);
+        }
+
+        renderRoutes(list, countsByRoute);
+      } catch (e) {
+        const msg = e?.message || e || '不明なエラー';
+        statusEl.textContent = `読み込みに失敗しました: ${msg}`;
+        listEl.innerHTML = '';
+        console.error('loadExploreRoutes error', e);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadExploreRoutes, { once: true });
+  </script>
+</body>
+</html>

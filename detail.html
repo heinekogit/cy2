@@ -133,7 +133,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
     }
-    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix1';
+    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix2';
   </script>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -179,6 +179,18 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }
       return out;
     }
+    function parseGeojsonMaybeTwice(input){
+      if (input == null) return null;
+      if (typeof input !== 'string') return input;
+      try{
+        let parsed = JSON.parse(input);
+        if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+        return parsed;
+      }catch(e){
+        console.warn('parseGeojsonMaybeTwice', e);
+        return null;
+      }
+    }
     function extractLatLngsFromRoute(route){
       try{
         if (Array.isArray(route?.points)) {
@@ -186,7 +198,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           if (pts.length) return pts;
         }
         if (route?.geojson){
-          const g = typeof route.geojson==='string' ? JSON.parse(route.geojson) : route.geojson;
+          const g = parseGeojsonMaybeTwice(route.geojson);
+          if (!g) return [];
           const out = [];
           const walk = (geom)=>{
             if(!geom) return;
@@ -936,9 +949,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     try{
       const col = color || COLORS.routePlanned;
       if(geojson){
-        const gj = typeof geojson==='string' ? JSON.parse(geojson) : geojson;
+        const gj = parseGeojsonMaybeTwice(geojson);
+        if (!gj) return null;
         const layer = L.geoJSON(gj, { style:{ color: col, weight:5 }}).addTo(map);
-        try{ map.fitBounds(layer.getBounds(), { padding:[20,20], maxZoom:16 }); }catch(_){}
+        try{
+          const bounds = layer.getBounds?.();
+          if (bounds && bounds.isValid && bounds.isValid()) {
+            map.fitBounds(bounds, { padding:[20,20], maxZoom:16 });
+          }
+        }catch(_){}
         return layer;
       }
       if(polyline){

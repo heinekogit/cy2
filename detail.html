@@ -18,7 +18,7 @@
     .detail-kind { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#f9fafb; }
     .detail-meta-lines { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
     .photo-box { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
-    .photo-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .photo-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
     .photo-thumb { width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #e5e7eb; display:block; }
     .photo-pin-icon { background: transparent; border: none; }
     .photo-pin {
@@ -582,7 +582,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       try {
         ({ data, error } = await client
           .from('route_spot_photos')
-          .select('id, image_url, taken_at, lat, lng')
+          .select('id, image_url, thumb_url, taken_at, lat, lng')
           .eq('route_id', routeId)
           .order(orderCol, { ascending: false }));
       } catch (e) {
@@ -594,7 +594,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         try {
           ({ data, error } = await client
             .from('route_spot_photos')
-            .select('id, image_url, lat, lng')
+            .select('id, image_url, thumb_url, lat, lng')
             .eq('route_id', routeId)
             .order(orderCol, { ascending: false }));
         } catch (e) {
@@ -615,17 +615,24 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         return [];
       }
 
-      const limit = 12;
+      const limit = 5;
       const show = data.slice(0, limit);
       photoStatus.textContent = data.length > limit
         ? `最新${show.length}枚（全${data.length}枚）`
         : `${data.length}枚`;
 
       const urlBase = `route-photos.html?route_id=${encodeURIComponent(routeId)}&v=${V()}`;
-      photoList.innerHTML = show.map((row) => {
+      const thumbsHtml = show.map((row) => {
         const url = `${urlBase}&focus_photo_id=${encodeURIComponent(row.id)}`;
-        return `<a href="${url}"><img class="photo-thumb" src="${row.image_url}" alt="route photo" /></a>`;
+        const thumbSrc = row.thumb_url || row.image_url;
+        return `<a href="${url}"><img class="photo-thumb" src="${thumbSrc}" alt="route photo" /></a>`;
       }).join('');
+      const hasMore = data.length > show.length;
+      const moreHtml = hasMore
+        ? `<span style="display:inline-block; color:#6b7280; font-weight:600;">…</span>`
+        : '';
+      const listLink = `<a href="${urlBase}" style="color:#111827; text-decoration:underline; font-weight:600;">画像一覧</a>`;
+      photoList.innerHTML = `${thumbsHtml}${moreHtml}${listLink}`;
 
       const pinLayer = ensurePhotoPinLayer();
       if (!pinLayer) return;

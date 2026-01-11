@@ -590,7 +590,7 @@
       try {
         ({ data, error, count } = await sb
           .from('route_spot_photos')
-          .select('id, image_url, taken_at, lat, lng', { count: 'exact' })
+          .select('id, image_url, thumb_url, taken_at, lat, lng', { count: 'exact' })
           .eq('route_id', currentRouteId)
           .order(orderCol, { ascending: false })
           .limit(3));
@@ -605,7 +605,7 @@
         try {
           ({ data, error, count } = await sb
             .from('route_spot_photos')
-            .select('id, image_url', { count: 'exact' })
+            .select('id, image_url, thumb_url', { count: 'exact' })
             .eq('route_id', currentRouteId)
             .order(orderCol, { ascending: false })
             .limit(3));
@@ -630,11 +630,18 @@
         return;
       }
 
-      listEl.innerHTML = data.map((photo) => `
+      const thumbsHtml = data.map((photo) => `
         <div style="display:inline-block; margin:4px;">
-          <img src="${photo.image_url}" style="width:54px; height:54px; object-fit:cover; border-radius:4px;" />
+          <img src="${photo.thumb_url || photo.image_url}" style="width:54px; height:54px; object-fit:cover; border-radius:4px;" />
         </div>
       `).join('');
+      const totalCount = typeof count === 'number' ? count : data.length;
+      const hasMore = totalCount > data.length;
+      const moreHtml = hasMore
+        ? `<span style="display:inline-block; margin:4px; color:#6b7280; font-weight:600;">…</span>`
+        : '';
+      const listLink = `<a href="route-photos.html?route_id=${encodeURIComponent(currentRouteId)}&v=${V()}" style="display:inline-block; margin:4px; color:#111827; text-decoration:underline; font-weight:600;">画像一覧</a>`;
+      listEl.innerHTML = `${thumbsHtml}${moreHtml}${listLink}`;
       if (photoSummary) photoSummary.hidden = false;
       if (photoCountEl) photoCountEl.textContent = String(typeof count === 'number' ? count : data.length);
       updatePhotoSummaryLink();
@@ -713,6 +720,97 @@
     loadRoutePhotos();
     updatePhotoSummaryLink();
 
+    async function fileToThumbBlob(file, maxSize = 256, quality = 0.7) {
+      const img = await loadImageFromFile(file);
+      const w0 = img.width || 1;
+      const h0 = img.height || 1;
+      const scale = Math.min(1, maxSize / Math.max(w0, h0));
+      const w = Math.max(1, Math.round(w0 * scale));
+      const h = Math.max(1, Math.round(h0 * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality);
+      });
+
+      if (img && img.tagName === 'IMG' && img.src.startsWith('blob:')) {
+        URL.revokeObjectURL(img.src);
+      }
+
+      return blob;
+    }
+
+    function loadImageFromFile(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = (e) => {
+          URL.revokeObjectURL(url);
+          reject(e);
+        };
+        img.src = url;
+      });
+    }
+
+    function generatePhotoId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    async function uploadRoutePhotoWithThumb({ file, routeId, userId, accountId, lat, lng }) {
+      const photoId = generatePhotoId();
+      const base = `${routeId}/${photoId}`;
+      const originalExt = (file.type && file.type.includes('/')) ? file.type.split('/')[1] : (file.name.split('.').pop() || 'jpg');
+      const originalPath = `original/${base}.${originalExt}`;
+      const thumbPath = `thumb/${base}.jpg`;
+
+      const up1 = await sb.storage
+        .from('route-photos')
+        .upload(originalPath, file, {
+          contentType: file.type || 'image/jpeg',
+          upsert: false,
+        });
+      if (up1.error) throw up1.error;
+
+      const thumbBlob = await fileToThumbBlob(file, 256, 0.7);
+      const up2 = await sb.storage
+        .from('route-photos')
+        .upload(thumbPath, thumbBlob, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
+      if (up2.error) throw up2.error;
+
+      const originalUrl = sb.storage.from('route-photos').getPublicUrl(originalPath).data.publicUrl;
+      const thumbUrl = sb.storage.from('route-photos').getPublicUrl(thumbPath).data.publicUrl;
+
+      const insertPayload = {
+        route_id: routeId,
+        user_id: userId,
+        image_url: originalUrl,
+        thumb_url: thumbUrl,
+        taken_at: new Date().toISOString(),
+      };
+      if (accountId) insertPayload.account_id = accountId;
+      if (typeof lat === 'number') insertPayload.lat = lat;
+      if (typeof lng === 'number') insertPayload.lng = lng;
+
+      const { error: insertError } = await sb
+        .from('route_spot_photos')
+        .insert(insertPayload);
+      if (insertError) throw insertError;
+
+      return { photoId, originalUrl, thumbUrl };
+    }
+
     if (fileInput && statusEl) {
       fileInput.addEventListener('change', async (event) => {
         const file = event.target.files?.[0];
@@ -726,29 +824,8 @@
 
         statusEl.textContent = 'アップロード中…';
 
-        const timestamp = Date.now();
-        const ext = file.name.split('.').pop() || 'jpg';
-        const filePath = `${timestamp}.${ext}`;
-
         try {
-          // ① Storage へアップロード
-          const { data, error } = await sb.storage
-            .from('route-photos')
-            .upload(filePath, file, { upsert: false });
-
-          if (error) {
-            console.error('photo upload error', error);
-            statusEl.textContent = `アップロード失敗: ${fmtSbError(error)}`;
-            return;
-          }
-
-          // ② 公開URL取得
-          const {
-            data: { publicUrl },
-          } = sb.storage.from('route-photos').getPublicUrl(data.path);
-          console.log('アップロード成功 URL:', publicUrl);
-
-          // ③ ログイン中ユーザー取得
+          // ① ログイン中ユーザー取得
           // ③ 認証確認（キャッシュ経由）
           let ensured;
           try {
@@ -787,24 +864,15 @@
             }
           }
 
-          // ④ route_spot_photos に1行INSERT
-          const insertPayload = {
-            route_id: currentRouteId,
-            user_id: user.id,
-            image_url: publicUrl,
-          };
-          if (typeof photoLat === 'number') insertPayload.lat = photoLat;
-          if (typeof photoLng === 'number') insertPayload.lng = photoLng;
-
-          const { error: insertError, status: insertStatus } = await sb
-            .from('route_spot_photos')
-            .insert(insertPayload);
-
-          if (insertError) {
-            console.error('route_spot_photos へのINSERTエラー:', insertError);
-            statusEl.textContent = `DB登録失敗: ${fmtSbError(insertError)} / status:${insertStatus ?? ''}`;
-            return;
-          }
+          // ④ 本体＋サムネを直列アップロード → DB登録
+          await uploadRoutePhotoWithThumb({
+            file,
+            routeId: currentRouteId,
+            userId: user.id,
+            accountId: ensuredAccountId || accountId || null,
+            lat: photoLat,
+            lng: photoLng,
+          });
 
           statusEl.textContent = 'アップロード & DB登録 完了！';
           // 追加：最新一覧を再読み込み

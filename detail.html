@@ -14,6 +14,9 @@
     .muted{ color:#6b7280; }
     .elev-card { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
     #elevChart { width:100%; height:140px; display:block; margin-top:8px; }
+    .detail-meta-title { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+    .detail-kind { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#f9fafb; }
+    .detail-meta-lines { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
     .photo-box { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
     .photo-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
     .photo-thumb { width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #e5e7eb; display:block; }
@@ -133,7 +136,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
     }
-    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix2';
+    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix3';
   </script>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -267,6 +270,31 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
     function fmtSbError(err){
       return err?.message || String(err || '不明なエラー');
+    }
+
+    function fmtKmText(m){
+      return m == null ? '-' : (Number(m) / 1000).toFixed(2) + ' km';
+    }
+    function fmtMinText(s){
+      return s == null ? '-' : Math.round(Number(s) / 60) + ' 分';
+    }
+
+    function renderDetailMeta(kindLabel, idValue, title, when, distanceText, durationText, extraHtml){
+      const box = $('#meta');
+      if (!box) return;
+      const extra = extraHtml || '';
+      box.innerHTML = `
+        <div class="detail-meta-title">
+          <span class="detail-kind">${kindLabel}</span>
+          <div style="font-weight:600;">${title}</div>
+          <span class="muted">#${idValue}</span>
+        </div>
+        <div class="detail-meta-lines">
+          <div class="muted">日時: ${when || '-'}</div>
+          <div class="muted">距離: ${distanceText || '-'} ・ 時間: ${durationText || '-'}</div>
+          ${extra}
+        </div>
+      `;
     }
 
     const totalDistanceMeters = (points) => {
@@ -605,12 +633,14 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     async function loadRun(){
       const box = $('#meta'); const btn = $('#btnToRoute');
       try{
-        const { data: run, error } = await client.from('runs').select('id,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
+        const { data: run, error } = await client.from('runs').select('id,name,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
         if(error || !run){ box.textContent='読み込み失敗'; console.error(error); return; }
-        const when = run.ended_at ? new Date(run.ended_at).toLocaleString() : (run.started_at? new Date(run.started_at).toLocaleString():'-');
-        const km = run.distance_m!=null ? (Number(run.distance_m)/1000).toFixed(2)+' km' : '-';
-        const min = run.duration_s!=null ? Math.round(Number(run.duration_s)/60)+' 分' : '-';
-        box.innerHTML = `<div>日時: ${when}</div><div class=\"muted\">距離: ${km} ・ 時間: ${min}</div>`;
+        const when = run.ended_at ? new Date(run.ended_at).toLocaleString() : (run.started_at ? new Date(run.started_at).toLocaleString() : '-');
+        const title = run.name || '実走ログ';
+        const extra = run.started_at
+          ? `<div class="muted">開始: ${new Date(run.started_at).toLocaleString()}</div>`
+          : '';
+        renderDetailMeta('ログ', run.id, title, when, fmtKmText(run.distance_m), fmtMinText(run.duration_s), extra);
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();
@@ -664,33 +694,20 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         if(error || !routeRow){ box.textContent='読み込み失敗'; console.error(error); return; }
         __currentRoute = routeRow;
         const when = routeRow.created_at ? new Date(routeRow.created_at).toLocaleString() : '-';
-        const km = routeRow.distance_m != null ? (Number(routeRow.distance_m)/1000).toFixed(2)+' km' : '-';
-        const min = routeRow.duration_s != null ? Math.round(Number(routeRow.duration_s)/60)+' 分' : '-';
-        const typeBadge = routeRow.route_type === 'from_run' ? 'ログ由来' : (routeRow.route_type || '');
-        const pubBadge = routeRow.is_public ? '公開' : '非公開';
+        const title = routeRow.name || 'ルート';
+        const typeLabel = routeRow.route_type === 'from_run' ? 'ログ由来' : (routeRow.route_type || '-');
+        const pubLabel = routeRow.is_public ? '公開' : '非公開';
         const owner = routeRow.account_id || '-';
-        const descBlock = routeRow.description ? `<div class="muted" style="margin-top:4px;">説明: ${routeRow.description}</div>` : '';
-        const typeBlock = `
-          <div style="margin-top:6px;">
-            ${typeBadge ? `<span class=\"muted\" style=\"margin-right:8px;\">[${typeBadge}]</span>` : ''}
-            <span class="muted">[${pubBadge}]</span>
-          </div>`;
-        const ownerBlock = `<div class="muted" style="margin-top:4px;">Owner Account: ${owner}</div>`;
-        const sourceBlock = routeRow.source_run_id ? `
-          <div style="margin-top:6px;">
-            元ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">Run #${routeRow.source_run_id}</a>
-          </div>
-        ` : '';
-        box.innerHTML = `
-          <div style="font-size:18px;font-weight:600;">Route #${routeRow.id}</div>
-          <div>名称: <strong>${routeRow.name || '(無題ルート)'}</strong></div>
-          <div class="muted">作成日: ${when}</div>
-          <div class="muted">距離: ${km} ・ 時間: ${min}</div>
-          ${descBlock}
-          ${typeBlock}
-          ${ownerBlock}
-          ${sourceBlock}
-        `;
+        const extraParts = [];
+        if (routeRow.description) extraParts.push(`<div class="muted">説明: ${routeRow.description}</div>`);
+        extraParts.push(`<div class="muted">種別: ${typeLabel} ・ 公開: ${pubLabel}</div>`);
+        extraParts.push(`<div class="muted">Owner Account: ${owner}</div>`);
+        if (routeRow.source_run_id) {
+          extraParts.push(
+            `<div class="muted">元ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">Run #${routeRow.source_run_id}</a></div>`
+          );
+        }
+        renderDetailMeta('ルート', routeRow.id, title, when, fmtKmText(routeRow.distance_m), fmtMinText(routeRow.duration_s), extraParts.join(''));
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();

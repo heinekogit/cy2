@@ -417,6 +417,18 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return __photoPinLayer;
     }
 
+    function fitMapToPoints(points){
+      if (!__map || !Array.isArray(points) || points.length === 0) return;
+      try{
+        if (points.length === 1) {
+          __map.setView(points[0], 16);
+        } else {
+          const bounds = L.latLngBounds(points);
+          __map.fitBounds(bounds, { padding:[20,20], maxZoom:16 });
+        }
+      }catch(e){ console.warn('fitMapToPoints', e); }
+    }
+
     async function loadRoutePhotos(routeId){
       const photoBox = document.getElementById('photoBox');
       const photoStatus = document.getElementById('photoStatus');
@@ -426,7 +438,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       if (!routeId) {
         photoBox.style.display = 'none';
         if (__photoPinLayer) __photoPinLayer.clearLayers();
-        return;
+        return [];
       }
 
       photoBox.style.display = 'block';
@@ -463,13 +475,13 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         console.error('route_spot_photos list error', error);
         photoStatus.textContent = `写真取得失敗: ${fmtSbError(error)}`;
         if (__photoPinLayer) __photoPinLayer.clearLayers();
-        return;
+        return [];
       }
 
       if (!data || data.length === 0) {
         photoStatus.textContent = '写真なし';
         if (__photoPinLayer) __photoPinLayer.clearLayers();
-        return;
+        return [];
       }
 
       const limit = 12;
@@ -494,10 +506,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         iconAnchor: [13, 26],
         popupAnchor: [0, -24],
       });
+      const points = [];
       for (const row of data) {
         const lat = Number(row.lat);
         const lng = Number(row.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        points.push({ lat, lng });
         const when = row.taken_at ? new Date(row.taken_at).toLocaleString() : '撮影時刻不明';
         const url = `${urlBase}&focus_photo_id=${encodeURIComponent(row.id)}`;
         const marker = L.marker([lat, lng], { icon });
@@ -509,6 +523,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         `);
         pinLayer.addLayer(marker);
       }
+      return points;
     }
 
     async function resolvePhotoRouteIdForRun(runId){
@@ -566,10 +581,16 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
-        await renderElevationPanel(extractLatLngsFromRoute(run));
+        const runPoints = extractLatLngsFromRoute(run);
+        let runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
+        if (!runLayer && runPoints.length >= 2) {
+          runLayer = L.polyline(runPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
+        }
+        if (runPoints.length >= 1) fitMapToPoints(runPoints);
+        await renderElevationPanel(runPoints);
         const photoRouteId = await resolvePhotoRouteIdForRun(run.id);
-        await loadRoutePhotos(photoRouteId);
+        const photoPoints = await loadRoutePhotos(photoRouteId);
+        if (runPoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -638,9 +659,15 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
-        await renderElevationPanel(extractLatLngsFromRoute(route));
-        await loadRoutePhotos(route.id);
+        const routePoints = extractLatLngsFromRoute(route);
+        let routeLayer = drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
+        if (!routeLayer && routePoints.length >= 2) {
+          routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);
+        }
+        if (routePoints.length >= 1) fitMapToPoints(routePoints);
+        await renderElevationPanel(routePoints);
+        const photoPoints = await loadRoutePhotos(route.id);
+        if (routePoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
@@ -868,19 +895,21 @@ document.addEventListener('DOMContentLoaded', ()=>{
     try{
       const col = color || COLORS.routePlanned;
       if(geojson){
-        let gj = typeof geojson==='string'? JSON.parse(geojson): geojson;
-        L.geoJSON(gj, { style:{ color: col, weight:5 }}).addTo(map);
-        try{ const layer = L.geoJSON(gj); map.fitBounds(layer.getBounds(), { padding:[20,20], maxZoom:16 }); }catch(_){}
-        return;
+        const gj = typeof geojson==='string' ? JSON.parse(geojson) : geojson;
+        const layer = L.geoJSON(gj, { style:{ color: col, weight:5 }}).addTo(map);
+        try{ map.fitBounds(layer.getBounds(), { padding:[20,20], maxZoom:16 }); }catch(_){}
+        return layer;
       }
       if(polyline){
         const latlngs = decodePolyline(polyline);
         if(latlngs.length){
           const line = L.polyline(latlngs,{ color: col, weight:5 }).addTo(map);
           map.fitBounds(line.getBounds(),{ padding:[20,20], maxZoom:16 });
+          return line;
         }
       }
     }catch(e){ console.error('draw error', e); }
+    return null;
   }
 </script>
 

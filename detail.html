@@ -14,6 +14,30 @@
     .muted{ color:#6b7280; }
     .elev-card { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
     #elevChart { width:100%; height:140px; display:block; margin-top:8px; }
+    .photo-box { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
+    .photo-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .photo-thumb { width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #e5e7eb; display:block; }
+    .photo-pin-icon { background: transparent; border: none; }
+    .photo-pin {
+      width: 26px;
+      height: 26px;
+      background: #1a73e8;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      position: relative;
+      box-shadow: 0 2px 6px rgba(17, 24, 39, 0.35);
+      border: 2px solid #fff;
+    }
+    .photo-pin__inner {
+      width: 8px;
+      height: 8px;
+      background: #fff;
+      border-radius: 50%;
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      transform: rotate(45deg);
+    }
 
 /* --- 描画モード：地図を実質フルスクリーン化 --- */
 body.mode-draw #map { height: calc(var(--vh, 1vh) * 100); }
@@ -126,6 +150,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     const kind = q.get('kind') || 'run';
     let __map;
     let __currentRoute = null;
+    let __photoPinLayer = null;
 
     async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
     async function getMyAccountId(){
@@ -197,6 +222,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const s = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
       return 2 * R * Math.asin(Math.sqrt(s));
     };
+
+    function fmtSbError(err){
+      return err?.message || String(err || '不明なエラー');
+    }
 
     const totalDistanceMeters = (points) => {
       if (!Array.isArray(points) || points.length < 2) return 0;
@@ -382,6 +411,122 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       drawElevationProfile(chartEl, elevs, points, { marginRatio: 0.15 });
     }
 
+    function ensurePhotoPinLayer(){
+      if (!__map) return null;
+      if (!__photoPinLayer) __photoPinLayer = L.layerGroup().addTo(__map);
+      return __photoPinLayer;
+    }
+
+    async function loadRoutePhotos(routeId){
+      const photoBox = document.getElementById('photoBox');
+      const photoStatus = document.getElementById('photoStatus');
+      const photoList = document.getElementById('photoList');
+      if (!photoBox || !photoStatus || !photoList) return;
+
+      if (!routeId) {
+        photoBox.style.display = 'none';
+        if (__photoPinLayer) __photoPinLayer.clearLayers();
+        return;
+      }
+
+      photoBox.style.display = 'block';
+      photoStatus.textContent = '写真読み込み中…';
+      photoList.innerHTML = '';
+
+      let orderCol = 'taken_at';
+      let data = null;
+      let error = null;
+      try {
+        ({ data, error } = await client
+          .from('route_spot_photos')
+          .select('id, image_url, taken_at, lat, lng')
+          .eq('route_id', routeId)
+          .order(orderCol, { ascending: false }));
+      } catch (e) {
+        error = e;
+      }
+
+      if (error && String(error?.message || '').includes('column')) {
+        orderCol = 'created_at';
+        try {
+          ({ data, error } = await client
+            .from('route_spot_photos')
+            .select('id, image_url, lat, lng')
+            .eq('route_id', routeId)
+            .order(orderCol, { ascending: false }));
+        } catch (e) {
+          error = e;
+        }
+      }
+
+      if (error) {
+        console.error('route_spot_photos list error', error);
+        photoStatus.textContent = `写真取得失敗: ${fmtSbError(error)}`;
+        if (__photoPinLayer) __photoPinLayer.clearLayers();
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        photoStatus.textContent = '写真なし';
+        if (__photoPinLayer) __photoPinLayer.clearLayers();
+        return;
+      }
+
+      const limit = 12;
+      const show = data.slice(0, limit);
+      photoStatus.textContent = data.length > limit
+        ? `最新${show.length}枚（全${data.length}枚）`
+        : `${data.length}枚`;
+
+      const urlBase = `route-photos.html?route_id=${encodeURIComponent(routeId)}&v=${V()}`;
+      photoList.innerHTML = show.map((row) => {
+        const url = `${urlBase}&focus_photo_id=${encodeURIComponent(row.id)}`;
+        return `<a href="${url}"><img class="photo-thumb" src="${row.image_url}" alt="route photo" /></a>`;
+      }).join('');
+
+      const pinLayer = ensurePhotoPinLayer();
+      if (!pinLayer) return;
+      pinLayer.clearLayers();
+      const icon = L.divIcon({
+        className: 'photo-pin-icon',
+        html: '<div class="photo-pin"><div class="photo-pin__inner"></div></div>',
+        iconSize: [26, 26],
+        iconAnchor: [13, 26],
+        popupAnchor: [0, -24],
+      });
+      for (const row of data) {
+        const lat = Number(row.lat);
+        const lng = Number(row.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const when = row.taken_at ? new Date(row.taken_at).toLocaleString() : '撮影時刻不明';
+        const url = `${urlBase}&focus_photo_id=${encodeURIComponent(row.id)}`;
+        const marker = L.marker([lat, lng], { icon });
+        marker.bindPopup(`
+          <div style="min-width:160px;">
+            <div style="font-size:12px; color:#4b5563;">${when}</div>
+            <a href="${url}" style="font-weight:600; color:#111827; text-decoration:underline;">写真を見る</a>
+          </div>
+        `);
+        pinLayer.addLayer(marker);
+      }
+    }
+
+    async function resolvePhotoRouteIdForRun(runId){
+      try{
+        const { data, error } = await client
+          .from('routes')
+          .select('id')
+          .eq('source_run_id', runId)
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) return null;
+        return data?.id || null;
+      }catch(e){
+        return null;
+      }
+    }
+
     async function renderAuthBar(){
       const bar = $('#authBar');
       try{
@@ -414,6 +559,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           __map.remove();
           __map = undefined;
         }
+        __photoPinLayer = null;
         if (mapEl && mapEl._leaflet_id) {
           mapEl._leaflet_id = null;
           mapEl.innerHTML = '';
@@ -422,6 +568,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
         await renderElevationPanel(extractLatLngsFromRoute(run));
+        const photoRouteId = await resolvePhotoRouteIdForRun(run.id);
+        await loadRoutePhotos(photoRouteId);
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -483,6 +631,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           __map.remove();
           __map = undefined;
         }
+        __photoPinLayer = null;
         if (mapEl && mapEl._leaflet_id) {
           mapEl._leaflet_id = null;
           mapEl.innerHTML = '';
@@ -491,6 +640,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
         await renderElevationPanel(extractLatLngsFromRoute(route));
+        await loadRoutePhotos(route.id);
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
@@ -688,6 +838,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <div style="font-weight:600;">標高・斜度</div>
       <div id="elevStats" class="muted" style="margin-top:4px;">標高データ取得中…</div>
       <svg id="elevChart"></svg>
+    </div>
+    <div id="photoBox" class="photo-box">
+      <div style="font-weight:600;">撮影写真</div>
+      <div id="photoStatus" class="muted" style="margin-top:4px;">写真読み込み中…</div>
+      <div id="photoList" class="photo-list"></div>
     </div>
 
 <!-- 描画モード用 パレット（必要時だけ表示） -->

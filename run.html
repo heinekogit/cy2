@@ -70,6 +70,33 @@
       border-color: #111827;
     }
 
+    .photo-pin-icon {
+      background: transparent;
+      border: none;
+    }
+
+    .photo-pin {
+      width: 26px;
+      height: 26px;
+      background: #1a73e8;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      position: relative;
+      box-shadow: 0 2px 6px rgba(17, 24, 39, 0.35);
+      border: 2px solid #fff;
+    }
+
+    .photo-pin__inner {
+      width: 8px;
+      height: 8px;
+      background: #fff;
+      border-radius: 50%;
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      transform: rotate(45deg);
+    }
+
     .btn {
       border: none;
       border-radius: 10px;
@@ -565,7 +592,8 @@
           .from('route_spot_photos')
           .select('id, image_url, taken_at, lat, lng', { count: 'exact' })
           .eq('route_id', currentRouteId)
-          .order(orderCol, { ascending: true }));
+          .order(orderCol, { ascending: false })
+          .limit(3));
       } catch (e) {
         console.error('写真一覧取得例外:', e);
         error = e;
@@ -579,7 +607,8 @@
             .from('route_spot_photos')
             .select('id, image_url', { count: 'exact' })
             .eq('route_id', currentRouteId)
-            .order(orderCol, { ascending: true }));
+            .order(orderCol, { ascending: false })
+            .limit(3));
         } catch (e) {
           console.error('写真一覧取得例外(フォールバック):', e);
           error = e;
@@ -603,7 +632,7 @@
 
       listEl.innerHTML = data.map((photo) => `
         <div style="display:inline-block; margin:4px;">
-          <img src="${photo.image_url}" style="width:80px; height:80px; object-fit:cover; border-radius:4px;" />
+          <img src="${photo.image_url}" style="width:54px; height:54px; object-fit:cover; border-radius:4px;" />
         </div>
       `).join('');
       if (photoSummary) photoSummary.hidden = false;
@@ -657,12 +686,14 @@
           const lng = Number(row.lng);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
           const when = row.taken_at ? new Date(row.taken_at).toLocaleString() : '撮影時刻不明';
-          const marker = L.circleMarker([lat, lng], {
-            radius: 6,
-            color: '#111827',
-            weight: 2,
-            fillColor: '#3b82f6',
-            fillOpacity: 0.85
+          const marker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: 'photo-pin-icon',
+              html: '<div class="photo-pin"><div class="photo-pin__inner"></div></div>',
+              iconSize: [26, 26],
+              iconAnchor: [13, 26],
+              popupAnchor: [0, -24],
+            }),
           });
           const url = `route-photos.html?route_id=${encodeURIComponent(currentRouteId)}&focus_photo_id=${encodeURIComponent(row.id)}&v=${V()}`;
           marker.bindPopup(`

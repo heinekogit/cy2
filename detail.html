@@ -133,6 +133,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
     }
+    window.APP_VERSION = String(window.APP_VERSION) + '-detailfix1';
   </script>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -641,33 +642,35 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
     async function loadRoute(){
       const box = $('#meta'); const toggleWrap = $('#toggleWrap'); const toggle = $('#visToggle');
+      let routeRow = null;
       try{
-        const { data: route, error } = await client.from('routes')
+        const { data, error } = await client.from('routes')
           .select('*')
           .eq('id', id).maybeSingle();
-        if(error || !route){ box.textContent='読み込み失敗'; console.error(error); return; }
-        __currentRoute = route;
-        const when = route.created_at ? new Date(route.created_at).toLocaleString() : '-';
-        const km = route.distance_m != null ? (Number(route.distance_m)/1000).toFixed(2)+' km' : '-';
-        const min = route.duration_s != null ? Math.round(Number(route.duration_s)/60)+' 分' : '-';
-        const typeBadge = route.route_type === 'from_run' ? 'ログ由来' : (route.route_type || '');
-        const pubBadge = route.is_public ? '公開' : '非公開';
-        const owner = route.account_id || '-';
-        const descBlock = route.description ? `<div class="muted" style="margin-top:4px;">説明: ${route.description}</div>` : '';
+        routeRow = data;
+        if(error || !routeRow){ box.textContent='読み込み失敗'; console.error(error); return; }
+        __currentRoute = routeRow;
+        const when = routeRow.created_at ? new Date(routeRow.created_at).toLocaleString() : '-';
+        const km = routeRow.distance_m != null ? (Number(routeRow.distance_m)/1000).toFixed(2)+' km' : '-';
+        const min = routeRow.duration_s != null ? Math.round(Number(routeRow.duration_s)/60)+' 分' : '-';
+        const typeBadge = routeRow.route_type === 'from_run' ? 'ログ由来' : (routeRow.route_type || '');
+        const pubBadge = routeRow.is_public ? '公開' : '非公開';
+        const owner = routeRow.account_id || '-';
+        const descBlock = routeRow.description ? `<div class="muted" style="margin-top:4px;">説明: ${routeRow.description}</div>` : '';
         const typeBlock = `
           <div style="margin-top:6px;">
             ${typeBadge ? `<span class=\"muted\" style=\"margin-right:8px;\">[${typeBadge}]</span>` : ''}
             <span class="muted">[${pubBadge}]</span>
           </div>`;
         const ownerBlock = `<div class="muted" style="margin-top:4px;">Owner Account: ${owner}</div>`;
-        const sourceBlock = route.source_run_id ? `
+        const sourceBlock = routeRow.source_run_id ? `
           <div style="margin-top:6px;">
-            元ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(route.source_run_id)}&kind=run&v=${V()}">Run #${route.source_run_id}</a>
+            元ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">Run #${routeRow.source_run_id}</a>
           </div>
         ` : '';
         box.innerHTML = `
-          <div style="font-size:18px;font-weight:600;">Route #${route.id}</div>
-          <div>名称: <strong>${route.name || '(無題ルート)'}</strong></div>
+          <div style="font-size:18px;font-weight:600;">Route #${routeRow.id}</div>
+          <div>名称: <strong>${routeRow.name || '(無題ルート)'}</strong></div>
           <div class="muted">作成日: ${when}</div>
           <div class="muted">距離: ${km} ・ 時間: ${min}</div>
           ${descBlock}
@@ -687,25 +690,26 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        const routePoints = extractLatLngsFromRoute(route);
-        let routeLayer = drawLineOnMap(__map, route.polyline, route.geojson, COLORS.routePlanned);
+        const routePoints = extractLatLngsFromRoute(routeRow);
+        console.log('[detail] routePoints=', routePoints.length);
+        let routeLayer = drawLineOnMap(__map, routeRow.polyline, routeRow.geojson, COLORS.routePlanned);
         if ((!routeLayer || (routeLayer.getBounds && !routeLayer.getBounds().isValid())) && routePoints.length >= 2) {
           routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);
         }
         if (routePoints.length >= 1) fitMapToPoints(routePoints);
         await renderElevationPanel(routePoints);
-        const photoPoints = await loadRoutePhotos(route.id);
+        const photoPoints = await loadRoutePhotos(routeRow.id);
         if (routePoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
           const acc = await getMyAccountId();
-          if(acc && String(acc) === String(route.account_id)){
+          if(acc && String(acc) === String(routeRow.account_id)){
             toggleWrap.style.display='block';
-            toggle.checked = route.is_public === true;
+            toggle.checked = routeRow.is_public === true;
             toggle.onchange = async ()=>{
               try{
-                const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', route.id);
+                const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', routeRow.id);
                 if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; }
               }catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
             };
@@ -716,12 +720,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           console.warn('owner toggle skipped', toggleErr);
           toggleWrap.style.display='none';
         }
+        window.__currentRouteId = routeRow.id;  // ← 保存時に使う
       }catch(e){
         box.textContent='読み込み失敗';
         console.error('loadRoute error', e);
+        return;
       }
-
-      window.__currentRouteId = route.id;  // ← 保存時に使う
     }
 
     async function init(){
@@ -821,10 +825,15 @@ function exitDrawMode(){
   setTimeout(()=> __map.invalidateSize(true), 220);
 }
 
-// 操作ボタン
-document.getElementById('btnDrawExit').onclick = exitDrawMode;
-document.getElementById('btnDrawUndo').onclick = ()=>{ if(Draw.pts.length){ Draw.pts.pop(); updateDrawLayers(); } };
-document.getElementById('btnDrawClear').onclick = ()=>{ Draw.pts=[]; updateDrawLayers(); };
+// 操作ボタン（DOM準備後に登録）
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btnExit = document.getElementById('btnDrawExit');
+  if (btnExit) btnExit.addEventListener('click', exitDrawMode);
+  const btnUndo = document.getElementById('btnDrawUndo');
+  if (btnUndo) btnUndo.addEventListener('click', ()=>{ if(Draw.pts.length){ Draw.pts.pop(); updateDrawLayers(); } });
+  const btnClear = document.getElementById('btnDrawClear');
+  if (btnClear) btnClear.addEventListener('click', ()=>{ Draw.pts=[]; updateDrawLayers(); });
+});
 
 // 保存：GeoJSON LineString と距離を routes に保存（polyline は null に）
 async function saveDrawnRoute(){
@@ -844,7 +853,10 @@ async function saveDrawnRoute(){
     if (typeof loadRoute === 'function') await loadRoute();
   }catch(e){ console.error(e); alert('保存に失敗しました'); }
 }
-document.getElementById('btnDrawSave').onclick = saveDrawnRoute;
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btnSave = document.getElementById('btnDrawSave');
+  if (btnSave) btnSave.addEventListener('click', saveDrawnRoute);
+});
 
 // ページに「描画モード」開始ボタンを生やす（既存ボタン群の近くに）
 document.addEventListener('DOMContentLoaded', ()=>{
@@ -857,7 +869,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (bar.innerHTML){
     const tgt = document.getElementById('btnToRoute')?.parentElement || host.firstElementChild;
     (tgt?.parentElement || host).insertBefore(bar, tgt);
-    document.getElementById('btnStartDraw').onclick = enterDrawMode;
+    const btn = bar.querySelector('#btnStartDraw');
+    if (btn) btn.addEventListener('click', enterDrawMode);
   }
 });
 </script>

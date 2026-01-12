@@ -1,34 +1,137 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Login</title>
+  <title>Cycling-Book Login</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 12px;color:#111827}
-    .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0;background:#fff}
-    label{display:block;margin-top:8px}
-    input{width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px}
-    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .btn{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;text-decoration:none;color:#111827}
-    .btn:visited{color:#111827;text-decoration:none}
-    .btn:hover{background:#f3f4f6;color:#111827;text-decoration:none}
-    .muted{color:#6b7280}
-    .tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #e5e7eb}
-    .tab{padding:10px 16px;font-size:14px;font-weight:600;background:transparent;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;margin-bottom:-1px;transition:color .15s ease,border-color .15s ease}
-    .tab + .tab{margin-left:12px}
-    .tab:hover{color:#111827}
-    .tab.active{color:#111827;border-bottom-color:#2563eb}
-    .tab:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
-    form.auth-form{display:flex;flex-direction:column;gap:10px}
-    form.auth-form .actions{display:flex;gap:10px}
-    #signupAgreeWrap{display:flex;align-items:center;gap:6px;font-size:14px}
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto;
+      max-width: 720px;
+      margin: 24px auto;
+      padding: 0 12px;
+      color: #111827
+    }
+
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+      margin: 12px 0;
+      background: #fff
+    }
+
+    label {
+      display: block;
+      margin-top: 8px
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 6px 0;
+      border: 1px solid #d1d5db;
+      border-radius: 8px
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px
+    }
+
+    .btn {
+      padding: 8px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      text-decoration: none;
+      color: #111827
+    }
+
+    .btn:visited {
+      color: #111827;
+      text-decoration: none
+    }
+
+    .btn:hover {
+      background: #f3f4f6;
+      color: #111827;
+      text-decoration: none
+    }
+
+    .muted {
+      color: #6b7280
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #e5e7eb
+    }
+
+    .tab {
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: #6b7280;
+      cursor: pointer;
+      margin-bottom: -1px;
+      transition: color .15s ease, border-color .15s ease
+    }
+
+    .tab+.tab {
+      margin-left: 12px
+    }
+
+    .tab:hover {
+      color: #111827
+    }
+
+    .tab.active {
+      color: #111827;
+      border-bottom-color: #2563eb
+    }
+
+    .tab:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px
+    }
+
+    form.auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    form.auth-form .actions {
+      display: flex;
+      gap: 10px
+    }
+
+    #signupAgreeWrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px
+    }
   </style>
 
   <script src="js/version.js"></script>
   <script>
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
-      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+      window.APP_VERSION = new Date().toISOString().slice(0, 10) + '-dev';
     }
   </script>
 
@@ -37,10 +140,15 @@
   <script>
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    let client = null;
+    if (window.supabase?.createClient) {
+      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    } else {
+      console.error('Supabase SDK is not available.');
+    }
 
     const V = () => encodeURIComponent(window.APP_VERSION || "");
-    const $ = (s)=>document.querySelector(s);
+    const $ = (s) => document.querySelector(s);
 
     const RETURN_TO = (() => {
       try {
@@ -54,11 +162,11 @@
       try {
         const url = new URL('web-login.html', window.location.href);
         if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
-      } catch(_){}
+      } catch (_) { }
       return 'https://heinekogit.github.io/cy2/web-login.html';
     })();
 
-    function setActiveAuthTab(which='login') {
+    function setActiveAuthTab(which = 'login') {
       const isLogin = which === 'login';
       const loginForm = document.getElementById('loginForm');
       const signupForm = document.getElementById('signupForm');
@@ -104,13 +212,20 @@
       document.getElementById('authForms')?.classList.toggle('muted', disabled);
     }
 
-    function showStatusMessage(msg){
+    function showStatusMessage(msg) {
       const box = document.getElementById('status');
       if (box) box.textContent = msg;
     }
 
-    async function cacheAccountInfo(user){
-      try{
+    function ensureAuthClient() {
+      if (client?.auth) return true;
+      showStatusMessage('認証の初期化に失敗しました。再読み込みしてください。');
+      setAuthFormsDisabled(true);
+      return false;
+    }
+
+    async function cacheAccountInfo(user) {
+      try {
         const uid = user?.id;
         if (!uid || !window.AuthCommon?.setCachedAccount) return;
         const { data, error } = await client
@@ -121,13 +236,14 @@
         if (!error && data?.account_id) {
           window.AuthCommon.setCachedAccount(data.account_id, uid);
         }
-      }catch(err){
+      } catch (err) {
         console.warn('cacheAccountInfo failed', err);
       }
     }
 
     async function signIn(event) {
       event?.preventDefault();
+      if (!ensureAuthClient()) return;
       const email = $("#loginForm [name=email]")?.value.trim() || '';
       const password = $("#loginForm [name=password]")?.value || '';
       if (!email || !password) { alert("メール/パスワードを入力してください"); return; }
@@ -146,6 +262,7 @@
 
     async function signUp(event) {
       event?.preventDefault();
+      if (!ensureAuthClient()) return;
       const email = $("#signupForm [name=email]")?.value.trim() || '';
       const password = $("#signupForm [name=password]")?.value || '';
       const agree = document.getElementById('signupAgree')?.checked ?? false;
@@ -180,9 +297,10 @@
 
     async function refreshStatus() {
       try {
-        const { data:{ session } } = await client.auth.getSession();
+        if (!ensureAuthClient()) return;
+        const { data: { session } } = await client.auth.getSession();
         const user = session?.user ?? null;
-        document.getElementById('status').textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
+        document.getElementById('status').textContent = JSON.stringify(user ? { id: user.id, email: user.email } : null, null, 2);
         if (!user) {
           $("#links").innerHTML = `<a class="btn" href="web-explore.html?v=${V()}">一覧へ</a>`;
           setAuthFormsDisabled(false);
@@ -211,6 +329,7 @@
 
     async function init() {
       setupAuthForms();
+      if (!ensureAuthClient()) return;
       try {
         const topLink = document.getElementById('btnBackToTop');
         if (topLink) topLink.href = `web-explore.html?v=${V()}`;
@@ -218,19 +337,20 @@
         console.warn('set top link failed', e);
       }
       await refreshStatus();
-      client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
+      client.auth.onAuthStateChange(async () => { await refreshStatus(); });
     }
-    document.addEventListener("DOMContentLoaded", init, { once:true });
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   </script>
 
   <!-- ✅ ここから共通化パート -->
-<script src="js/auth-common.js"></script>
-<script>
-  AuthCommon.init(client, { redirectUrl: 'web-explore.html' });
-  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
-</script>
+  <script src="js/auth-common.js"></script>
+  <script>
+    AuthCommon.init(client, { redirectUrl: 'web-explore.html' });
+    window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
+  </script>
 
 </head>
+
 <body>
   <h1>Login</h1>
 
@@ -285,6 +405,9 @@
     </div>
   </div>
 
-  <footer class="muted">v: <script>document.write(window.APP_VERSION)</script></footer>
+  <footer class="muted">v:
+    <script>document.write(window.APP_VERSION)</script>
+  </footer>
 </body>
+
 </html>

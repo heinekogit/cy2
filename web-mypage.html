@@ -109,7 +109,7 @@
           el.addEventListener('click', ()=>{
             const id = el.closest('[data-id]')?.getAttribute('data-id');
             if (!id) return;
-            location.href = `detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`;
+            location.href = `web-detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`;
           });
         });
       }catch(e){
@@ -143,7 +143,7 @@
           const title = r.name ? r.name : when;
           return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${title}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
         }).join('');
-        document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
+        document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`web-detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
       }catch(e){
         const message = e && e.message ? e.message : String(e||'');
         const code = e && e.code ? String(e.code) : '';

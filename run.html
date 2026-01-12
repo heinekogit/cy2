@@ -721,28 +721,35 @@
     updatePhotoSummaryLink();
 
     async function fileToThumbBlob(file, maxSize = 256, quality = 0.7) {
-      const img = await loadImageFromFile(file);
-      const w0 = img.width || 1;
-      const h0 = img.height || 1;
-      const scale = Math.min(1, maxSize / Math.max(w0, h0));
-      const w = Math.max(1, Math.round(w0 * scale));
-      const h = Math.max(1, Math.round(h0 * scale));
+      let img = null;
+      try {
+        img = await loadImageFromFile(file);
+        const w0 = img.width || 1;
+        const h0 = img.height || 1;
+        const scale = Math.min(1, maxSize / Math.max(w0, h0));
+        const w = Math.max(1, Math.round(w0 * scale));
+        const h = Math.max(1, Math.round(h0 * scale));
 
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { alpha: false });
-      ctx.drawImage(img, 0, 0, w, h);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (!ctx) throw new Error('2d context unavailable');
+        ctx.drawImage(img, 0, 0, w, h);
 
-      const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality);
-      });
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', quality);
+        });
 
-      if (img && img.tagName === 'IMG' && img.src.startsWith('blob:')) {
-        URL.revokeObjectURL(img.src);
+        return blob;
+      } catch (e) {
+        console.warn('thumb generation failed', e);
+        return null;
+      } finally {
+        if (img && img.tagName === 'IMG' && img.src.startsWith('blob:')) {
+          URL.revokeObjectURL(img.src);
+        }
       }
-
-      return blob;
     }
 
     function loadImageFromFile(file) {
@@ -780,17 +787,22 @@
         });
       if (up1.error) throw up1.error;
 
-      const thumbBlob = await fileToThumbBlob(file, 256, 0.7);
-      const up2 = await sb.storage
-        .from('route-photos')
-        .upload(thumbPath, thumbBlob, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-      if (up2.error) throw up2.error;
-
       const originalUrl = sb.storage.from('route-photos').getPublicUrl(originalPath).data.publicUrl;
-      const thumbUrl = sb.storage.from('route-photos').getPublicUrl(thumbPath).data.publicUrl;
+      let thumbUrl = originalUrl;
+      const thumbBlob = await fileToThumbBlob(file, 256, 0.7);
+      if (thumbBlob) {
+        const up2 = await sb.storage
+          .from('route-photos')
+          .upload(thumbPath, thumbBlob, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
+        if (up2.error) {
+          console.warn('thumb upload failed, fallback to original', up2.error);
+        } else {
+          thumbUrl = sb.storage.from('route-photos').getPublicUrl(thumbPath).data.publicUrl;
+        }
+      }
 
       const insertPayload = {
         route_id: routeId,
@@ -861,6 +873,13 @@
               photoLng = pos.coords.longitude;
             } catch (e) {
               console.warn('写真の位置情報が取得できませんでした', e);
+            }
+          }
+          if (photoLat == null || photoLng == null) {
+            const center = map?.getCenter?.();
+            if (center) {
+              photoLat = center.lat;
+              photoLng = center.lng;
             }
           }
 

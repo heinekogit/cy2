@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Login</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto;max-width:720px;margin:24px auto;padding:0 12px;color:#111827}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0;background:#fff}
+    label{display:block;margin-top:8px}
+    input{width:100%;padding:10px;margin:6px 0;border:1px solid #d1d5db;border-radius:8px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .btn{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;text-decoration:none;color:#111827}
+    .btn:visited{color:#111827;text-decoration:none}
+    .btn:hover{background:#f3f4f6;color:#111827;text-decoration:none}
+    .muted{color:#6b7280}
+    .tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #e5e7eb}
+    .tab{padding:10px 16px;font-size:14px;font-weight:600;background:transparent;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;margin-bottom:-1px;transition:color .15s ease,border-color .15s ease}
+    .tab + .tab{margin-left:12px}
+    .tab:hover{color:#111827}
+    .tab.active{color:#111827;border-bottom-color:#2563eb}
+    .tab:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+    form.auth-form{display:flex;flex-direction:column;gap:10px}
+    form.auth-form .actions{display:flex;gap:10px}
+    #signupAgreeWrap{display:flex;align-items:center;gap:6px;font-size:14px}
+  </style>
+
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
+
+  <!-- Supabase UMD -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+
+    const V = () => encodeURIComponent(window.APP_VERSION || "");
+    const $ = (s)=>document.querySelector(s);
+
+    const RETURN_TO = (() => {
+      try {
+        return new URL(window.location.href).searchParams.get('returnTo') || '';
+      } catch (_) {
+        return '';
+      }
+    })();
+
+    const SIGNUP_REDIRECT = (() => {
+      try {
+        const url = new URL('web-login.html', window.location.href);
+        if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+      } catch(_){}
+      return 'https://heinekogit.github.io/cy2/web-login.html';
+    })();
+
+    function setActiveAuthTab(which='login') {
+      const isLogin = which === 'login';
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      if (loginForm) loginForm.style.display = isLogin ? '' : 'none';
+      if (signupForm) signupForm.style.display = isLogin ? 'none' : '';
+      tabLogin?.classList.toggle('active', isLogin);
+      tabSignup?.classList.toggle('active', !isLogin);
+    }
+
+    const buildReturnDestination = () => {
+      const fallback = `web-explore.html?v=${V()}`;
+      if (!RETURN_TO) return fallback;
+      try {
+        const url = new URL(RETURN_TO, window.location.href);
+        if (url.origin !== window.location.origin) return fallback;
+        url.searchParams.set('v', window.APP_VERSION || '');
+        return url.toString();
+      } catch (e) {
+        console.warn('returnTo invalid', e);
+        return fallback;
+      }
+    };
+
+    function redirectAfterAuth() {
+      const dest = buildReturnDestination();
+      window.location.href = dest;
+    }
+
+    function resetAuthForms() {
+      document.getElementById('loginForm')?.reset();
+      document.getElementById('signupForm')?.reset();
+      const agree = document.getElementById('signupAgree');
+      if (agree) agree.checked = false;
+    }
+
+    function setAuthFormsDisabled(disabled) {
+      document.querySelectorAll('#authForms input, #authForms button').forEach(el => {
+        if (el.dataset && el.dataset.signout !== undefined) return;
+        el.disabled = disabled;
+      });
+      document.getElementById('authForms')?.classList.toggle('muted', disabled);
+    }
+
+    function showStatusMessage(msg){
+      const box = document.getElementById('status');
+      if (box) box.textContent = msg;
+    }
+
+    async function cacheAccountInfo(user){
+      try{
+        const uid = user?.id;
+        if (!uid || !window.AuthCommon?.setCachedAccount) return;
+        const { data, error } = await client
+          .from('users')
+          .select('account_id')
+          .eq('id', uid)
+          .maybeSingle();
+        if (!error && data?.account_id) {
+          window.AuthCommon.setCachedAccount(data.account_id, uid);
+        }
+      }catch(err){
+        console.warn('cacheAccountInfo failed', err);
+      }
+    }
+
+    async function signIn(event) {
+      event?.preventDefault();
+      const email = $("#loginForm [name=email]")?.value.trim() || '';
+      const password = $("#loginForm [name=password]")?.value || '';
+      if (!email || !password) { alert("メール/パスワードを入力してください"); return; }
+      try {
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) { alert("Sign in error: " + error.message); return; }
+        console.info('signIn succeeded', data?.user?.id || '(no user id)');
+        await cacheAccountInfo(data?.user);
+        await refreshStatus();
+        redirectAfterAuth();
+      } catch (err) {
+        console.error('signIn unexpected error', err);
+        alert('Sign in error: ' + (err?.message || err));
+      }
+    }
+
+    async function signUp(event) {
+      event?.preventDefault();
+      const email = $("#signupForm [name=email]")?.value.trim() || '';
+      const password = $("#signupForm [name=password]")?.value || '';
+      const agree = document.getElementById('signupAgree')?.checked ?? false;
+      if (!email || !password) { alert('メール/パスワードを入力してください'); return; }
+      if (!agree) { alert('利用規約に同意してください'); return; }
+      const payload = { email, password };
+      if (SIGNUP_REDIRECT) payload.options = { emailRedirectTo: SIGNUP_REDIRECT };
+      let redirectFallback = false;
+      try {
+        let { data, error } = await client.auth.signUp(payload);
+        if (error && SIGNUP_REDIRECT && /redirect/i.test(error.message || '')) {
+          redirectFallback = true;
+          console.warn('signUp redirect error, retrying without explicit redirect', error);
+          ({ data, error } = await client.auth.signUp({ email, password }));
+        }
+        if (error) { alert('登録エラー: ' + error.message); return; }
+        console.info('signUp succeeded', data?.user?.id || '(no user id)');
+        await cacheAccountInfo(data?.user);
+        const msg = '登録が完了しました。\n登録したメールアドレスとパスワードでログインできます。';
+        alert(msg);
+        setActiveAuthTab('login');
+        const loginEmail = document.querySelector('#loginForm [name=email]');
+        if (loginEmail) loginEmail.value = email;
+        document.querySelector('#loginForm [name=password]')?.focus();
+        document.getElementById('signupForm')?.reset();
+        redirectAfterAuth();
+      } catch (err) {
+        console.error('signUp unexpected error', err);
+        alert('登録エラー: ' + (err?.message || err));
+      }
+    }
+
+    async function refreshStatus() {
+      try {
+        const { data:{ session } } = await client.auth.getSession();
+        const user = session?.user ?? null;
+        document.getElementById('status').textContent = JSON.stringify(user ? { id:user.id, email:user.email } : null, null, 2);
+        if (!user) {
+          $("#links").innerHTML = `<a class="btn" href="web-explore.html?v=${V()}">一覧へ</a>`;
+          setAuthFormsDisabled(false);
+        } else {
+          $("#links").innerHTML = `
+            <a class=\"btn\" href=\"web-explore.html?v=${V()}\">一覧へ</a>
+            <a class=\"btn\" href=\"web-mypage.html?v=${V()}\">マイページへ</a>`;
+          setAuthFormsDisabled(true);
+        }
+      } catch (err) {
+        console.error('refreshStatus error', err);
+        showStatusMessage('error: ' + (err?.message || err));
+      }
+    }
+
+    function setupAuthForms() {
+      document.getElementById('tabLogin')?.addEventListener('click', () => {
+        setActiveAuthTab('login');
+        document.getElementById('loginForm')?.querySelector('[name=email]')?.focus();
+      });
+      document.getElementById('tabSignup')?.addEventListener('click', () => setActiveAuthTab('signup'));
+      document.getElementById('loginForm')?.addEventListener('submit', signIn);
+      document.getElementById('signupForm')?.addEventListener('submit', signUp);
+      setActiveAuthTab('login');
+    }
+
+    async function init() {
+      setupAuthForms();
+      try {
+        const topLink = document.getElementById('btnBackToTop');
+        if (topLink) topLink.href = `web-explore.html?v=${V()}`;
+      } catch (e) {
+        console.warn('set top link failed', e);
+      }
+      await refreshStatus();
+      client.auth.onAuthStateChange(async ()=>{ await refreshStatus(); });
+    }
+    document.addEventListener("DOMContentLoaded", init, { once:true });
+  </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'web-explore.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
+</script>
+
+</head>
+<body>
+  <h1>Login</h1>
+
+  <div id="authForms" class="card">
+    <div class="row" style="margin-bottom:8px;">
+      <a id="btnBackToTop" class="btn" href="web-explore.html">一覧へ戻る</a>
+    </div>
+    <div class="tabs">
+      <button type="button" id="tabLogin" class="tab active">ログイン</button>
+      <button type="button" id="tabSignup" class="tab">新規登録</button>
+    </div>
+
+    <form id="loginForm" class="auth-form">
+      <div>
+        <label>メール</label>
+        <input id="loginEmail" name="email" type="email" placeholder="you@example.com" required />
+      </div>
+      <div>
+        <label>パスワード</label>
+        <input id="loginPassword" name="password" type="password" placeholder="••••••••" required />
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit" id="btnSignIn">Sign in</button>
+      </div>
+    </form>
+
+    <form id="signupForm" class="auth-form" style="display:none;">
+      <div>
+        <label>メール</label>
+        <input name="email" type="email" placeholder="you@example.com" required />
+      </div>
+      <div>
+        <label>パスワード</label>
+        <input name="password" type="password" placeholder="••••••••" required />
+      </div>
+      <div id="signupAgreeWrap">
+        <label><input type="checkbox" id="signupAgree" required /> 利用規約に同意する</label>
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit" id="btnSignUp">新規登録</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:0;">登録直後からメールとパスワードでログインできます。</p>
+    </form>
+  </div>
+
+  <div class="card">
+    <strong>現在の状態</strong>
+    <pre id="status" class="muted">loading...</pre>
+    <div id="links" class="row"></div>
+    <div class="row">
+      <button class="btn" data-signout>サインアウト</button>
+    </div>
+  </div>
+
+  <footer class="muted">v: <script>document.write(window.APP_VERSION)</script></footer>
+</body>
+</html>

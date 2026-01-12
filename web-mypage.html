@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My Page – 自分のルート/ログ</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; flex-wrap:wrap; gap:8px; }
+    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; text-decoration:none; color:#111827; }
+    .btn:visited { color:#111827; text-decoration:none; }
+    .btn:hover { background:#f3f4f6; color:#111827; text-decoration:none; }
+    .muted { color:#6b7280; }
+    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; display:flex; justify-content:space-between; align-items:center; }
+    .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; }
+    .badge.pub { background:#d1fae5; color:#065f46; border-color:#a7f3d0; }
+    .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+    .tabs { display:flex; gap:8px; margin:8px 0; }
+    .tab { padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; cursor:pointer; }
+    .tab.active { background:#111827; color:#fff; border-color:#111827; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+  </style>
+
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
+
+  <!-- Supabase UMD -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    window.client = client; // デバッグ用に公開
+
+    const V = () => encodeURIComponent(window.APP_VERSION || "");
+    const $ = (s)=>document.querySelector(s);
+
+    async function getSession(){
+      try{ const { data:{ session } } = await client.auth.getSession(); if(session?.user) return session; }catch(e){ console.warn('getSession(getSession) warn', e); }
+      try{ const { data:{ user } } = await client.auth.getUser(); if(user) return { user }; }catch(e){ console.warn('getSession(getUser) warn', e); }
+      return null;
+    }
+    async function getMyAccountId(){
+      return AuthCommon.getMyAccountId(client);
+    }
+
+    function visToBool(r){ return r?.is_public===true || r?.visibility==='public'; }
+    const fmtKm = (m)=> m==null?'-':(Number(m)/1000).toFixed(2)+' km';
+    const fmtMin = (s)=> s==null?'-':Math.round(Number(s)/60)+' 分';
+
+    async function renderGate(){
+      const gate = $('#gate');
+      try{
+        const s = await getSession();
+        if(!s?.user){
+          gate.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`;
+          $('#list-routes').innerHTML='';
+          $('#list-runs').innerHTML='';
+          return false;
+        }
+        const email = s.user.email || '';
+        gate.innerHTML = `
+          ログイン中: <strong>${email}</strong>
+          <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
+          <a class="btn" style="margin-left:6px;" href="index.html?v=${V()}">トップへ</a>
+        `;
+        return true;
+      }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
+    }
+
+    async function loadMyRoutes(){
+      const box = $('#list-routes'); if(!box) return;
+      const acc = await getMyAccountId(); if(!acc){ box.textContent='未ログインのため表示できません。'; return; }
+      box.textContent='読み込み中…';
+      try{
+        const { data, error } = await client
+          .from('routes')
+          .select('id,name,created_at,is_public,route_type,source_run_id,account_id')
+          .eq('account_id', acc)
+          .order('created_at', { ascending:false });
+        if(error) throw error;
+        const routes = data||[]; if(!routes.length){ box.textContent='あなたのルートはまだありません。'; return; }
+        box.innerHTML = routes.map(r=>{
+          const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+          const badge = r.is_public ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
+          const from = r.route_type ? `<span class="muted" style="font-size:12px;">${r.route_type}${r.source_run_id?(' #'+r.source_run_id):''}</span>` : '';
+          const title = r.name || '(無題ルート)';
+          // 編集ボタンは当面用途がないため display:none で残す
+          return `
+            <div class="card" data-id="${r.id}" style="width:100%;gap:12px;align-items:flex-start;">
+              <div style="flex:1 1 auto;cursor:pointer;" data-detail>
+                <div style="font-weight:600;">${title} <span class="muted">#${r.id}</span></div>
+                <div class="muted" style="font-size:12px;">${when}</div>
+                ${from ? `<div>${from}</div>` : ''}
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                ${badge}
+                <a class="btn" href="route-edit.html?id=${encodeURIComponent(r.id)}" style="display:none;" aria-hidden="true">編集</a>
+              </div>
+            </div>`;
+        }).join('');
+        document.querySelectorAll('#list-routes [data-detail]').forEach(el=>{
+          el.addEventListener('click', ()=>{
+            const id = el.closest('[data-id]')?.getAttribute('data-id');
+            if (!id) return;
+            location.href = `detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`;
+          });
+        });
+      }catch(e){
+        const message = e && e.message ? e.message : String(e||'');
+        const code = e && e.code ? String(e.code) : '';
+        const normalized = message.toLowerCase();
+        if (code === '42703' || normalized.includes('runs.account_id')) {
+          console.warn('loadMyRuns: account_id column missing, treating as empty list');
+          box.textContent = 'あなたのログはまだありません。';
+        } else {
+          box.textContent = '読み込みに失敗しました: ' + message;
+        }
+        console.error('loadMyRuns error', e);
+      }
+    }
+
+    async function loadMyRuns(){
+      const box = $('#list-runs'); if(!box) return;
+      const acc = await getMyAccountId(); if(!acc){ box.textContent='未ログインのため表示できません。'; return; }
+      box.textContent='読み込み中…';
+      try{
+        const { data, error } = await client
+          .from('runs')
+          .select('id,name,created_at,distance_m,duration_s,geojson,polyline')
+          .eq('account_id', acc)
+          .order('created_at', { ascending:false });
+        if(error) throw error;
+        const runs = data||[]; if(!runs.length){ box.textContent='あなたのログはまだありません。'; return; }
+        box.innerHTML = runs.map(r=>{
+          const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+          const title = r.name ? r.name : when;
+          return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${title}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
+        }).join('');
+        document.querySelectorAll('#list-runs [data-id]').forEach(el=>{ el.addEventListener('click', ()=>{ const id=el.getAttribute('data-id'); location.href=`detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
+      }catch(e){
+        const message = e && e.message ? e.message : String(e||'');
+        const code = e && e.code ? String(e.code) : '';
+        const normalized = message.toLowerCase();
+        if (code === '42703' || normalized.includes('runs.account_id')) {
+          console.warn('loadMyRuns: account_id column missing, treating as empty list');
+          box.textContent = 'あなたのログはまだありません。';
+        } else {
+          box.textContent = '読み込みに失敗しました: ' + message;
+        }
+        console.error('loadMyRuns error', e);
+      }
+    }
+
+    async function init(){
+      // タブ
+      const tabRoutes = $('#tab-routes'); const tabRuns = $('#tab-runs');
+      const panelRoutes = $('#panel-routes'); const panelRuns = $('#panel-runs');
+      const activate = (which)=>{ const r=which==='routes'; tabRoutes.classList.toggle('active',r); tabRuns.classList.toggle('active',!r); panelRoutes.classList.toggle('active',r); panelRuns.classList.toggle('active',!r); };
+      tabRoutes.onclick = ()=>{ activate('routes'); loadMyRoutes(); };
+      tabRuns.onclick = ()=>{ activate('runs'); loadMyRuns(); };
+
+      // ヘッダのトップリンクに現在のバージョンを付与
+      try{
+        const lnTop = document.getElementById('lnTop');
+        const lnRun = document.getElementById('lnRun');
+        const lnRouteEdit = document.getElementById('lnRouteEdit');
+        const v = encodeURIComponent(window.APP_VERSION || '');
+        if (lnTop) lnTop.href = 'index.html?v=' + v;
+        if (lnRun) lnRun.href = 'run.html?v=' + v;
+        if (lnRouteEdit) lnRouteEdit.href = 'route-edit.html?v=' + v;
+      }catch(e){ console.warn('set header link failed', e); }
+
+      const ok = await renderGate(); if(ok) await loadMyRoutes();
+      client.auth.onAuthStateChange(async (_event, session)=>{
+        if (!session?.user) {
+          const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+          location.replace(url);
+          return;
+        }
+        const ok2 = await renderGate();
+        if(ok2){
+          if(tabRoutes.classList.contains('active')) await loadMyRoutes();
+          else await loadMyRuns();
+        }
+      });
+      window.addEventListener('pageshow', async ()=>{ const ok3=await renderGate(); if(ok3){ if(tabRoutes.classList.contains('active')) await loadMyRoutes(); else await loadMyRuns(); } });
+    }
+    document.addEventListener('DOMContentLoaded', init, { once:true });
+  </script>
+
+  <!-- ✅ ここから共通化パート -->
+<script src="js/auth-common.js"></script>
+<script>
+  AuthCommon.init(client, { redirectUrl: 'index.html' });
+  window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
+</script>
+
+</head>
+<body>
+  <header>
+    <div style="font-weight:700;">My Page</div>
+    <div>
+      <a id="lnRouteEdit" class="btn" href="route-edit.html">ルートを作成する</a>
+      <a id="lnRun" class="btn" href="run.html">実走を始める</a>
+      <a id="lnTop" class="btn" href="index.html">トップへ</a>
+    </div>
+  </header>
+
+  <div id="gate" class="card"></div>
+
+  <div class="tabs">
+    <button id="tab-routes" class="tab active">ルート</button>
+    <button id="tab-runs" class="tab">ログ</button>
+  </div>
+  <section id="panel-routes" class="panel active">
+    <div id="list-routes" class="muted">読み込み中…</div>
+  </section>
+  <section id="panel-runs" class="panel">
+    <div id="list-runs" class="muted">読み込み中…</div>
+  </section>
+
+  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+  <script>document.getElementById('ver').textContent = window.APP_VERSION;</script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js?v=' + (window.APP_VERSION||''))
+        .catch(err => console.error('SW register failed', err));
+    }
+  </script>
+</body>
+</html>

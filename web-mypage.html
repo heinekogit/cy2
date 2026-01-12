@@ -59,7 +59,7 @@
       try{
         const s = await getSession();
         if(!s?.user){
-          gate.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`;
+          gate.innerHTML = `未ログインです。<a class="btn" href="web-login.html?v=${V()}">ログインへ</a>`;
           $('#list-routes').innerHTML='';
           $('#list-runs').innerHTML='';
           return false;
@@ -68,7 +68,7 @@
         gate.innerHTML = `
           ログイン中: <strong>${email}</strong>
           <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
-          <a class="btn" style="margin-left:6px;" href="index.html?v=${V()}">トップへ</a>
+          <a class="btn" style="margin-left:6px;" href="web-explore.html?v=${V()}">トップへ</a>
         `;
         return true;
       }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
@@ -172,7 +172,7 @@
         const lnRun = document.getElementById('lnRun');
         const lnRouteEdit = document.getElementById('lnRouteEdit');
         const v = encodeURIComponent(window.APP_VERSION || '');
-        if (lnTop) lnTop.href = 'index.html?v=' + v;
+        if (lnTop) lnTop.href = 'web-explore.html?v=' + v;
         if (lnRun) lnRun.href = 'run.html?v=' + v;
         if (lnRouteEdit) lnRouteEdit.href = 'route-edit.html?v=' + v;
       }catch(e){ console.warn('set header link failed', e); }
@@ -180,7 +180,7 @@
       const ok = await renderGate(); if(ok) await loadMyRoutes();
       client.auth.onAuthStateChange(async (_event, session)=>{
         if (!session?.user) {
-          const url = 'index.html?v=' + V() + '&ts=' + Date.now();
+          const url = 'web-explore.html?v=' + V() + '&ts=' + Date.now();
           location.replace(url);
           return;
         }
@@ -198,7 +198,7 @@
   <!-- ✅ ここから共通化パート -->
 <script src="js/auth-common.js"></script>
 <script>
-  AuthCommon.init(client, { redirectUrl: 'index.html' });
+  AuthCommon.init(client, { redirectUrl: 'web-explore.html' });
   window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
 </script>
 
@@ -209,7 +209,7 @@
     <div>
       <a id="lnRouteEdit" class="btn" href="route-edit.html">ルートを作成する</a>
       <a id="lnRun" class="btn" href="run.html">実走を始める</a>
-      <a id="lnTop" class="btn" href="index.html">トップへ</a>
+      <a id="lnTop" class="btn" href="web-explore.html">トップへ</a>
     </div>
   </header>
 

@@ -15,9 +15,13 @@
     .elev-card { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
     #elevChart { width:100%; height:140px; display:block; margin-top:8px; }
     .detail-meta-title { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+    .detail-edit-link { text-decoration:none; font-size:16px; line-height:1; }
+    .detail-edit-link:visited { color:inherit; }
     .detail-kind { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#f9fafb; }
     .detail-meta-lines { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
     .photo-box { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
+    .photo-box-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .photo-manage-link { color:#111827; text-decoration:underline; font-weight:600; }
     .photo-list { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
     .photo-thumb { width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #e5e7eb; display:block; }
     .photo-pin-icon { background: transparent; border: none; }
@@ -283,10 +287,14 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const box = $('#meta');
       if (!box) return;
       const extra = extraHtml || '';
+      const editLink = (kindLabel === 'ルート' && idValue)
+        ? `<a class="detail-edit-link" href="detail-edit.html?id=${encodeURIComponent(idValue)}&v=${V()}" aria-label="編集">✏️</a>`
+        : '';
       box.innerHTML = `
         <div class="detail-meta-title">
           <span class="detail-kind">${kindLabel}</span>
           <div style="font-weight:600;">${title}</div>
+          ${editLink}
           <span class="muted">#${idValue}</span>
         </div>
         <div class="detail-meta-lines">
@@ -564,10 +572,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const photoBox = document.getElementById('photoBox');
       const photoStatus = document.getElementById('photoStatus');
       const photoList = document.getElementById('photoList');
+      const photoManage = document.getElementById('lnPhotoManage');
       if (!photoBox || !photoStatus || !photoList) return;
 
       if (!routeId) {
         photoBox.style.display = 'none';
+        if (photoManage) photoManage.removeAttribute('href');
         if (__photoPinLayer) __photoPinLayer.clearLayers();
         return [];
       }
@@ -622,6 +632,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         : `${data.length}枚`;
 
       const urlBase = `route-photos.html?route_id=${encodeURIComponent(routeId)}&v=${V()}`;
+      if (photoManage) {
+        photoManage.href = `detail-edit.html?id=${encodeURIComponent(routeId)}&v=${V()}`;
+      }
       const thumbsHtml = show.map((row) => {
         const url = `${urlBase}&focus_photo_id=${encodeURIComponent(row.id)}`;
         const thumbSrc = row.thumb_url || row.image_url;
@@ -1019,7 +1032,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <svg id="elevChart"></svg>
     </div>
     <div id="photoBox" class="photo-box">
-      <div style="font-weight:600;">撮影写真</div>
+      <div class="photo-box-header">
+        <div style="font-weight:600;">撮影写真</div>
+        <a id="lnPhotoManage" class="photo-manage-link" href="#">管理</a>
+      </div>
       <div id="photoStatus" class="muted" style="margin-top:4px;">写真読み込み中…</div>
       <div id="photoList" class="photo-list"></div>
     </div>

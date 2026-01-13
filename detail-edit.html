@@ -273,7 +273,7 @@
         return;
       }
 
-      lnBack.href = `detail.html?id=${encodeURIComponent(routeId)}&v=${V()}`;
+      lnBack.href = `detail.html?id=${encodeURIComponent(routeId)}&kind=route&v=${V()}`;
       lnPhotoList.href = `route-photos.html?route_id=${encodeURIComponent(routeId)}&v=${V()}`;
 
       const ensured = await ensureAuthOrStop();

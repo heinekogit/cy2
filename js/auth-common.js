@@ -75,8 +75,20 @@
         clearAccountCache();
       }
       if (event === 'SIGNED_OUT') {
-        if (!/index\.html$|login\.html$/.test(location.pathname)) {
-          location.replace(withV(target));
+        const path = location.pathname || '';
+        const isLoginPage = /(?:^|\/)(?:web-)?login\.html$/.test(path);
+        const isIndexPage = /(?:^|\/)(?:web-)?index\.html$/.test(path);
+        if (!isLoginPage && !isIndexPage) {
+          const dest = withV(target);
+          let samePage = false;
+          try {
+            const currentUrl = new URL(location.href);
+            const destUrl = new URL(dest, location.href);
+            samePage = currentUrl.origin === destUrl.origin && currentUrl.pathname === destUrl.pathname;
+          } catch (_) {}
+          if (!samePage) {
+            location.replace(dest);
+          }
         }
       }
     });

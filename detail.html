@@ -594,6 +594,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           .from('route_spot_photos')
           .select('id, image_url, thumb_url, taken_at, lat, lng')
           .eq('route_id', routeId)
+          .is('deleted_at', null)
           .order(orderCol, { ascending: false }));
       } catch (e) {
         error = e;
@@ -606,6 +607,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             .from('route_spot_photos')
             .select('id, image_url, thumb_url, lat, lng')
             .eq('route_id', routeId)
+            .is('deleted_at', null)
             .order(orderCol, { ascending: false }));
         } catch (e) {
           error = e;

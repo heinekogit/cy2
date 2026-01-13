@@ -226,21 +226,14 @@
       });
     }
 
-    async function fetchPhotos(withDeletedFilter = true) {
-      let query = sb
+    async function fetchPhotos() {
+      const { data, error, count } = await sb
         .from('route_spot_photos')
-        .select('id,image_url,thumb_url,taken_at', { count: 'exact' })
+        .select('id,image_url,thumb_url,taken_at,lat,lng', { count: 'exact' })
         .eq('route_id', routeId)
+        .is('deleted_at', null)
         .order('taken_at', { ascending: false })
         .limit(12);
-
-      if (withDeletedFilter) query = query.is('deleted_at', null);
-
-      const { data, error, count } = await query;
-      if (error && withDeletedFilter && (error.code === '42703' || /deleted_at/i.test(error.message || ''))) {
-        // NOTE: 本番は deleted_at で論理削除に切替予定
-        return fetchPhotos(false);
-      }
       if (error) throw error;
       return { rows: data || [], count: typeof count === 'number' ? count : (data || []).length };
     }
@@ -248,7 +241,7 @@
     async function loadPhotos() {
       if (!routeId) return;
       try {
-        const { rows, count } = await fetchPhotos(true);
+        const { rows, count } = await fetchPhotos();
         renderPhotos(rows, count);
         setUiEnabled(canEdit);
       } catch (e) {
@@ -260,29 +253,12 @@
     async function deletePhoto(photoId) {
       setStatus('削除中…');
       try {
-        let error = null;
-        try {
-          // NOTE: 本番は deleted_at で論理削除に切替予定
-          const res = await sb
-            .from('route_spot_photos')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', photoId);
-          error = res.error || null;
-        } catch (e) {
-          error = e;
-        }
-
-        if (error && (error.code === '42703' || /deleted_at/i.test(error.message || ''))) {
-          // deleted_at が無い場合は暫定で delete
-          const res = await sb
-            .from('route_spot_photos')
-            .delete()
-            .eq('id', photoId);
-          if (res.error) throw res.error;
-        } else if (error) {
-          throw error;
-        }
-
+        const { data: { user } } = await sb.auth.getUser();
+        const { error } = await sb
+          .from('route_spot_photos')
+          .update({ deleted_at: new Date().toISOString(), deleted_by: user?.id || null })
+          .eq('id', photoId);
+        if (error) throw error;
         setStatus('削除しました', 'success');
         await loadPhotos();
       } catch (e) {

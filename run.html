@@ -592,6 +592,7 @@
           .from('route_spot_photos')
           .select('id, image_url, thumb_url, taken_at, lat, lng', { count: 'exact' })
           .eq('route_id', currentRouteId)
+          .is('deleted_at', null)
           .order(orderCol, { ascending: false })
           .limit(3));
       } catch (e) {
@@ -607,6 +608,7 @@
             .from('route_spot_photos')
             .select('id, image_url, thumb_url', { count: 'exact' })
             .eq('route_id', currentRouteId)
+            .is('deleted_at', null)
             .order(orderCol, { ascending: false })
             .limit(3));
         } catch (e) {
@@ -665,6 +667,7 @@
             .from('route_spot_photos')
             .select('id, image_url, lat, lng, taken_at')
             .eq('route_id', currentRouteId)
+            .is('deleted_at', null)
             .order(orderCol, { ascending: true }));
         } catch (e) {
           error = e;
@@ -678,6 +681,7 @@
               .from('route_spot_photos')
               .select('id, image_url, lat, lng')
               .eq('route_id', currentRouteId)
+              .is('deleted_at', null)
               .order(orderCol, { ascending: true }));
           } catch (e) {
             error = e;

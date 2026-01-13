@@ -92,8 +92,9 @@
       try {
         const { data, error } = await sb
           .from('route_spot_photos')
-          .select('id, image_url, thumb_url, taken_at')
+          .select('id, image_url, thumb_url, taken_at, lat, lng')
           .eq('route_id', routeId)
+          .is('deleted_at', null)
           .order('taken_at', { ascending: false });
         if (error) {
           AppCommon.logSupabaseError('route_spot_photos list', error);

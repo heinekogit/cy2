@@ -444,8 +444,11 @@
   const photoListBtn = document.getElementById('lnPhotoList');
   const V = () => encodeURIComponent(window.APP_VERSION || '');
   const isMissingColumnError = (err) => {
-    const msg = err?.message || '';
-    return err?.code === '42703' || /column .* does not exist/i.test(msg);
+    const msg = String(err?.message || '').toLowerCase();
+    if (err?.code === '42703') return true;
+    if (msg.includes('schema cache') && msg.includes('column')) return true;
+    if (msg.includes('could not find') && msg.includes('column')) return true;
+    return /column .* does not exist/i.test(msg);
   };
   const fmtSbError = (err) => {
     if (!err) return '不明なエラー';
@@ -819,9 +822,20 @@
       if (typeof lat === 'number') insertPayload.lat = lat;
       if (typeof lng === 'number') insertPayload.lng = lng;
 
-      const { error: insertError } = await sb
+      let { error: insertError } = await sb
         .from('route_spot_photos')
         .insert(insertPayload);
+      if (insertError && isMissingColumnError(insertError)) {
+        console.warn('route_spot_photos insert schema mismatch, retrying with minimal columns', insertError);
+        const minimalPayload = {
+          route_id: routeId,
+          user_id: userId,
+          image_url: originalUrl,
+        };
+        ({ error: insertError } = await sb
+          .from('route_spot_photos')
+          .insert(minimalPayload));
+      }
       if (insertError) throw insertError;
 
       return { photoId, originalUrl, thumbUrl };

@@ -6,18 +6,178 @@
   <title>Route MVP – 公開ルート一覧</title>
   <link rel="icon" href="data:,">
   <style>
-    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 840px; margin: 20px auto; padding: 0 12px; color:#111827; }
-    header { display:flex; justify-content:space-between; align-items:center; padding:10px 0; }
-    .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; text-decoration:none; color:#111827; }
-    .btn:visited { color:#111827; text-decoration:none; }
-    .btn:hover { background:#f3f4f6; color:#111827; text-decoration:none; }
-    .muted { color:#6b7280; }
-    .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; display:flex; justify-content:space-between; align-items:center; }
-    .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; }
-    .badge.pub { background:#d1fae5; color:#065f46; border-color:#a7f3d0; }
-    .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
-    #routesWrap { margin-top: 14px; }
-    #filters { margin: 8px 0 4px; display:flex; gap:10px; align-items:center; }
+    :root{
+      --ink:#0f172a;
+      --muted:#6b7280;
+      --line:#cbd5f5;
+      --panel:#ffffff;
+      --accent:#1e40af;
+      --accent-soft:#e0ecff;
+      --shadow:0 8px 30px rgba(15,23,42,0.08);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      font-family:"Hiragino Sans","Avenir Next","Yu Gothic","Noto Sans JP",sans-serif;
+      color:var(--ink);
+      margin:0;
+      padding:24px 12px 36px;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #f6e6d9 0, transparent 60%),
+        radial-gradient(900px 600px at 90% -20%, #dce9ff 0, transparent 55%),
+        #f6f7fb;
+    }
+    .page{
+      max-width:880px;
+      margin:0 auto;
+    }
+    .shell{
+      background:var(--panel);
+      border:2px solid #1f2937;
+      border-radius:18px;
+      padding:22px 20px 18px;
+      box-shadow:var(--shadow);
+    }
+    header{
+      display:grid;
+      grid-template-columns: auto 1fr auto;
+      gap:12px;
+      align-items:center;
+    }
+    .title{
+      font-size:20px;
+      font-weight:700;
+      letter-spacing:0.2px;
+    }
+    .account{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      font-size:14px;
+      padding:6px 10px;
+      border:1px solid #e2e8f0;
+      border-radius:999px;
+      color:var(--muted);
+      background:#f8fafc;
+      min-height:34px;
+    }
+    .account strong{ color:var(--ink); font-weight:600; }
+    .header-actions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .btn{
+      padding:7px 12px;
+      border:1px solid #1f2937;
+      border-radius:8px;
+      background:#fff;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:4px;
+      text-decoration:none;
+      color:var(--ink);
+      font-size:14px;
+      font-weight:600;
+      transition:transform 0.15s ease, background 0.15s ease;
+    }
+    .btn:visited{ color:var(--ink); text-decoration:none; }
+    .btn:hover{ background:#f1f5f9; transform:translateY(-1px); text-decoration:none; }
+    .btn-primary{
+      background:var(--accent);
+      color:#fff;
+      border-color:var(--accent);
+      box-shadow:0 6px 16px rgba(30,64,175,0.25);
+    }
+    .btn-primary:hover{ background:#1d4ed8; }
+    .btn-disabled{
+      opacity:0.45;
+      pointer-events:none;
+    }
+    .muted{ color:var(--muted); }
+    .actions{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap:14px;
+      margin:18px 0 10px;
+    }
+    .action-card{
+      border:2px solid #1f2937;
+      border-radius:12px;
+      padding:18px 14px;
+      background:linear-gradient(120deg, #ffffff, #f4f7ff);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      min-height:92px;
+      font-weight:700;
+      color:var(--ink);
+      text-decoration:none;
+      transition:transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .action-card small{
+      display:block;
+      font-weight:600;
+      color:#475569;
+      margin-top:6px;
+      font-size:12px;
+      letter-spacing:0.2px;
+    }
+    .action-card:hover{
+      transform:translateY(-2px);
+      box-shadow:0 12px 20px rgba(15,23,42,0.12);
+    }
+    #routesWrap{ margin-top:16px; }
+    #filters{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin:12px 0 8px;
+      font-weight:600;
+    }
+    #filters label{
+      font-weight:600;
+      color:var(--muted);
+    }
+    #routesList .route-card{
+      border:2px solid #1f2937;
+      border-radius:12px;
+      padding:14px 16px;
+      margin:10px 0;
+      background:#fff;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      text-align:left;
+      width:100%;
+      cursor:pointer;
+      transition:background 0.15s ease, transform 0.15s ease;
+    }
+    #routesList .route-card:hover{ background:#f8fafc; transform:translateY(-1px); }
+    .route-title{ font-weight:700; font-size:15px; }
+    .route-meta{ font-size:12px; color:var(--muted); margin-top:4px; }
+    .badge{
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:12px;
+      border:1px solid #86a0ff;
+      background:var(--accent-soft);
+      color:#1e3a8a;
+      font-weight:700;
+    }
+    .badge.prv{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+    footer{ margin-top:14px; color:var(--muted); }
+    @media (max-width: 640px){
+      header{ grid-template-columns:1fr; justify-items:start; }
+      .header-actions{ width:100%; justify-content:flex-end; }
+      .account{ width:100%; justify-content:flex-start; }
+      .actions{ grid-template-columns:1fr; }
+      #filters{ flex-direction:column; align-items:flex-start; }
+    }
   </style>
 
   <script src="js/version.js"></script>
@@ -67,11 +227,20 @@ async function getMyAccountId() {
         const bar = $("#authBar");
         if (!bar) return;
         const session = await getSession();
+        const loginBtn = $("#lnLogin");
+        const myBtn = $("#lnMyPage");
         if (!session?.user) {
-          bar.innerHTML = `
-            未ログインです。
-            <a class="btn" href="login.html?v=${V()}">ログインへ</a>
-          `;
+          bar.innerHTML = `アカウント <strong>未ログイン</strong>`;
+          if (loginBtn) {
+            loginBtn.textContent = 'ログイン';
+            loginBtn.classList.add('btn-primary');
+            loginBtn.removeAttribute('data-signout');
+            loginBtn.setAttribute('href', `login.html?v=${V()}`);
+          }
+          if (myBtn) {
+            myBtn.classList.add('btn-disabled');
+            myBtn.setAttribute('aria-disabled', 'true');
+          }
           $("#filters")?.classList.add("muted");
           $("#mineOnlyWrap")?.classList.add("muted");
           const moff = document.getElementById('mineOnly');
@@ -83,11 +252,17 @@ async function getMyAccountId() {
           const mon = document.getElementById('mineOnly');
           if (mon) mon.removeAttribute('disabled');
           const email = session.user.email || "";
-          bar.innerHTML = `
-            ログイン中: <strong>${email}</strong>
-            <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
-            <a class="btn" style="margin-left:6px" href="mypage.html?v=${V()}">マイページへ</a>
-          `;
+          bar.innerHTML = `アカウント <strong>${email}</strong>`;
+          if (loginBtn) {
+            loginBtn.textContent = 'サインアウト';
+            loginBtn.classList.remove('btn-primary');
+            loginBtn.setAttribute('data-signout', '1');
+            loginBtn.setAttribute('href', `login.html?v=${V()}`);
+          }
+          if (myBtn) {
+            myBtn.classList.remove('btn-disabled');
+            myBtn.setAttribute('aria-disabled', 'false');
+          }
         }
       }catch(e){
         console.error('renderAuthBar error', e);
@@ -131,9 +306,9 @@ async function getMyAccountId() {
           const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
           const isPub = r?.is_public === true;
           const badge = isPub ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
-          html += '<button class="card" style="width:100%;text-align:left;" data-id="'+r.id+'">\n'
-               +   '<div><div style="font-weight:600;">'+(r.name||'(無題ルート)')+' <span class="muted">#'+r.id+'</span></div>'
-               +   '<div class="muted" style="font-size:12px;">'+when+'</div></div>'
+          html += '<button class="route-card" data-id="'+r.id+'">\n'
+               +   '<div><div class="route-title">'+(r.name||'(無題ルート)')+' <span class="muted">#'+r.id+'</span></div>'
+               +   '<div class="route-meta">'+when+'</div></div>'
                +   '<div>'+badge+'</div>'
                + '</button>';
         }
@@ -214,30 +389,44 @@ async function getMyAccountId() {
 
 </head>
 <body>
-  <header>
-    <div style="font-weight:700;">Route MVP</div>
-    <div>
-      <button id="btnDrawRoute" class="btn">ルートを描く</button>
-      <a id="lnRun" class="btn" href="run.html">実走する</a>
-      <a id="lnLogin" class="btn" href="login.html">ログイン</a>
-      <a id="lnMyPage" class="btn" href="mypage.html">マイページ</a>
+  <div class="page">
+    <div class="shell">
+      <header>
+        <div class="title">Route MVP</div>
+        <div id="authBar" class="account">アカウント <strong>認証状態を確認中</strong></div>
+        <div class="header-actions">
+          <a id="lnLogin" class="btn" href="login.html">ログイン</a>
+          <a id="lnMyPage" class="btn btn-disabled" href="mypage.html" aria-disabled="true">マイページ</a>
+        </div>
+      </header>
+
+      <section class="actions">
+        <button id="btnDrawRoute" class="action-card" type="button">
+          ライド
+          <small>（モデルルートあり）</small>
+          <small>ルートを描く</small>
+        </button>
+        <a id="lnRun" class="action-card" href="run.html">
+          ライド
+          <small>（モデルルートあり）</small>
+          <small>実走する</small>
+        </a>
+      </section>
+
+      <section id="routesWrap">
+        <div id="filters">
+          <span>公開ルート一覧</span>
+          <label id="mineOnlyWrap" class="muted">
+            <input id="mineOnly" type="checkbox" disabled />
+            自分の公開のみ
+          </label>
+        </div>
+        <div id="routesList" class="muted">読み込み中…</div>
+      </section>
+
+      <footer>v: <code id="ver"></code></footer>
     </div>
-  </header>
-
-  <div id="authBar" class="card"></div>
-
-  <section id="routesWrap">
-    <div id="filters">
-      <span class="muted">公開ルート一覧</span>
-      <label id="mineOnlyWrap" class="muted" style="margin-left:8px;">
-        <input id="mineOnly" type="checkbox" disabled />
-        自分の公開のみ
-      </label>
-    </div>
-    <div id="routesList" class="muted">読み込み中…</div>
-  </section>
-
-  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+  </div>
   <script>document.getElementById("ver").textContent = window.APP_VERSION;</script>
   <script>
     if ('serviceWorker' in navigator) {

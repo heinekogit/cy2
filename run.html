@@ -779,6 +779,15 @@
       return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     }
 
+    function extractMissingColumn(err) {
+      const msg = String(err?.message || '');
+      const m1 = msg.match(/column ["']?([a-zA-Z0-9_]+)["']?/i);
+      if (m1 && m1[1]) return m1[1];
+      const m2 = msg.match(/'([^']+)' column/i);
+      if (m2 && m2[1]) return m2[1];
+      return null;
+    }
+
     async function uploadRoutePhotoWithThumb({ file, routeId, userId, accountId, lat, lng }) {
       const photoId = generatePhotoId();
       const base = `${routeId}/${photoId}`;
@@ -822,21 +831,28 @@
       if (typeof lat === 'number') insertPayload.lat = lat;
       if (typeof lng === 'number') insertPayload.lng = lng;
 
-      let { error: insertError } = await sb
-        .from('route_spot_photos')
-        .insert(insertPayload);
-      if (insertError && isMissingColumnError(insertError)) {
-        console.warn('route_spot_photos insert schema mismatch, retrying with minimal columns', insertError);
-        const minimalPayload = {
-          route_id: routeId,
-          user_id: userId,
-          image_url: originalUrl,
-        };
-        ({ error: insertError } = await sb
+      let workingPayload = { ...insertPayload };
+      const optionalCols = ['thumb_url', 'taken_at', 'account_id', 'lat', 'lng'];
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        let { error: insertError } = await sb
           .from('route_spot_photos')
-          .insert(minimalPayload));
+          .insert(workingPayload);
+        if (!insertError) break;
+        if (!isMissingColumnError(insertError)) throw insertError;
+        const missingCol = extractMissingColumn(insertError);
+        if (missingCol && Object.prototype.hasOwnProperty.call(workingPayload, missingCol)) {
+          console.warn('route_spot_photos insert missing column, retrying without', missingCol);
+          delete workingPayload[missingCol];
+          continue;
+        }
+        const fallbackCol = optionalCols.find((c) => Object.prototype.hasOwnProperty.call(workingPayload, c));
+        if (fallbackCol) {
+          console.warn('route_spot_photos insert schema mismatch, retrying without', fallbackCol);
+          delete workingPayload[fallbackCol];
+          continue;
+        }
+        throw insertError;
       }
-      if (insertError) throw insertError;
 
       return { photoId, originalUrl, thumbUrl };
     }

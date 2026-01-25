@@ -53,50 +53,99 @@
     }
   }
 
-  function createEnsureAuth({ supabase, getAccountId }) {
-    let cachedUser = null;
-    let cachedAccountId = null;
+  function withTimeout(promise, ms, label = 'timeout') {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms))
+    ]);
+  }
 
-    return async function ensureAuth() {
-      if (cachedUser && cachedAccountId) return { user: cachedUser, accountId: cachedAccountId };
+  async function ensureAuth(opts = {}) {
+    const {
+      redirectToLogin = false,
+      supabase = global.supabaseClient,
+      getAccountId
+    } = opts || {};
 
-      const { data, error } = await supabase.auth.getSession();
-      const session = data?.session || null;
-      const user = session?.user || null;
-      if (error || !user) {
-        const err = new Error('auth_required');
-        err.code = 'auth_required';
-        throw err;
+    console.log('[ensureAuth] start', {
+      hasClient: !!supabase,
+      visibility: global.document?.visibilityState,
+      path: global.location?.pathname
+    });
+
+    if (!supabase) {
+      return { ok: false, user: null, session: null, ensuredAccountId: null, error: 'supabaseClient missing' };
+    }
+
+    let session = null;
+    let user = null;
+    let sessionError = null;
+    try {
+      const { data, error } = await withTimeout(supabase.auth.getSession(), 3000, 'getSession timeout');
+      session = data?.session || null;
+      user = session?.user || null;
+      sessionError = error || null;
+    } catch (e) {
+      sessionError = e;
+    }
+
+    if (!user) {
+      const err = sessionError || new Error('auth_required');
+      err.code = err.code || 'auth_required';
+      if (redirectToLogin) {
+        const redirect = (global.location?.pathname || '') + (global.location?.search || '');
+        global.location.href = `login.html?redirect=${encodeURIComponent(redirect)}`;
       }
+      console.log('[ensureAuth] end (no user)', {
+        hasUser: false,
+        visibility: global.document?.visibilityState,
+        path: global.location?.pathname
+      });
+      return { ok: false, user: null, session, ensuredAccountId: null, error: err };
+    }
 
-      cachedUser = user;
-
-      if (typeof getAccountId === 'function') {
-        try {
-          const ensured = await getAccountId();
-          if (ensured) cachedAccountId = ensured;
-        } catch (e) {
-          console.warn('ensureAuth getAccountId failed', e);
-        }
+    let ensuredAccountId = null;
+    if (typeof getAccountId === 'function') {
+      try {
+        ensuredAccountId = await getAccountId();
+      } catch (e) {
+        console.warn('ensureAuth getAccountId failed', e);
       }
+    }
 
-      if (!cachedAccountId) {
+    if (!ensuredAccountId) {
+      try {
         const { data: row, error: accErr } = await supabase
           .from('users')
           .select('account_id')
           .eq('id', user.id)
           .maybeSingle();
-        if (accErr) throw accErr;
-        cachedAccountId = row?.account_id || null;
+        if (!accErr) ensuredAccountId = row?.account_id || null;
+      } catch (e) {
+        console.warn('ensureAuth account fetch failed', e);
       }
+    }
 
-      if (!cachedAccountId) {
-        const err = new Error('account_missing');
-        err.code = 'account_missing';
+    console.log('[ensureAuth] end', {
+      hasUser: !!user,
+      userId: user?.id || null,
+      ensuredAccountId,
+      visibility: global.document?.visibilityState,
+      path: global.location?.pathname
+    });
+
+    return { ok: true, user, session, ensuredAccountId, error: null };
+  }
+
+  function createEnsureAuth({ supabase, getAccountId }) {
+    return async function ensureAuthCompat() {
+      const res = await ensureAuth({ supabase, getAccountId, redirectToLogin: false });
+      if (!res.ok) {
+        const err = res.error || new Error('auth_required');
+        err.code = err.code || 'auth_required';
         throw err;
       }
-
-      return { user, accountId: cachedAccountId };
+      return { user: res.user, accountId: res.ensuredAccountId };
     };
   }
 
@@ -107,6 +156,7 @@
 
   global.AppCommon = {
     buildRoutePayload,
+    ensureAuth,
     createEnsureAuth,
     logSupabaseError,
     formatErrorMessage,

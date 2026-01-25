@@ -48,6 +48,19 @@ self.addEventListener('fetch', (event) => {
   // 画像/JS/CSS など同一オリジン静的は Cache First（v付与で更新保証済み）
   const sameOrigin = url.origin === self.location.origin;
   const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(url.pathname);
+  const bypassPaths = new Set([
+    '/js/app-common.js',
+    '/js/storage.js',
+    '/run.html',
+    '/detail.html',
+    '/detail-edit.html',
+    '/route-photos.html'
+  ]);
+
+  if (sameOrigin && bypassPaths.has(url.pathname)) {
+    event.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
 
   if (isStatic) {
     event.respondWith((async () => {

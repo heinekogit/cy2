@@ -44,14 +44,12 @@
 
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
-    const sb = window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
+    const sb = window.supabaseClient;
     AuthCommon.init(sb, { redirectUrl: 'login.html' });
-    const ensureAuth = AppCommon.createEnsureAuth({
-      supabase: sb,
-      getAccountId: () => AuthCommon.getMyAccountId(sb)
-    });
+    const getAccountId = () => AuthCommon.getMyAccountId(sb);
 
     const statusEl = document.getElementById('status');
     const listEl = document.getElementById('photoList');
@@ -75,6 +73,31 @@
       }).join('');
     }
 
+    function renderLoginPrompt(reason) {
+      const loginUrl = `login.html?redirect=${encodeURIComponent(location.pathname + location.search)}`;
+      const msg = reason ? `ログインが必要です (${reason})` : 'ログインが必要です';
+      statusEl.innerHTML = `${msg}。<a class="btn" href="${loginUrl}">ログインへ</a>`;
+      listEl.innerHTML = '';
+    }
+
+    async function refreshAuthUI(trigger = 'manual') {
+      console.log('[route-photos] refreshAuthUI', {
+        trigger,
+        visibility: document.visibilityState,
+        path: location.pathname
+      });
+      const timer = setTimeout(() => {
+        if (statusEl) statusEl.textContent = '認証状態の確認がタイムアウトしました';
+      }, 3000);
+      const ensured = await AppCommon.ensureAuth({ supabase: sb, getAccountId, redirectToLogin: false });
+      clearTimeout(timer);
+      if (!ensured.ok) {
+        renderLoginPrompt(ensured.error?.message || ensured.error);
+        return false;
+      }
+      return true;
+    }
+
     async function loadPhotos() {
       if (!routeId) {
         statusEl.textContent = 'route_id が指定されていません。';
@@ -82,10 +105,9 @@
       }
       statusEl.textContent = '読み込み中…';
 
-      try {
-        await ensureAuth();
-      } catch (authErr) {
-        statusEl.textContent = AppCommon.formatErrorMessage('ログインが必要です', authErr);
+      const authOk = await AppCommon.ensureAuth({ supabase: sb, getAccountId, redirectToLogin: false });
+      if (!authOk.ok) {
+        renderLoginPrompt(authOk.error?.message || authOk.error);
         return;
       }
 
@@ -112,6 +134,18 @@
       if (backBtn) backBtn.addEventListener('click', () => history.back());
       loadPhotos();
     }, { once:true });
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        const ok = await refreshAuthUI('visibilitychange');
+        if (ok) await loadPhotos();
+      }
+    });
+
+    window.addEventListener('pageshow', async () => {
+      const ok = await refreshAuthUI('pageshow');
+      if (ok) await loadPhotos();
+    });
   </script>
 </body>
 </html>

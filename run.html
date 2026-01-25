@@ -421,17 +421,13 @@
 
   let supabaseClient = window.supabaseClient || null;
   let sb = supabaseClient;
-    let ensureAuth = sb ? AppCommon.createEnsureAuth({
-      supabase: sb,
-      getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null
-    }) : null;
+  let getAccountId = () => null;
+  let ensureAuth = (opts = {}) => AppCommon.ensureAuth({ supabase: sb, getAccountId, ...opts });
     function syncSupabaseClient() {
       supabaseClient = window.supabaseClient || null;
       sb = supabaseClient;
-      ensureAuth = sb ? AppCommon.createEnsureAuth({
-        supabase: sb,
-        getAccountId: window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null
-      }) : null;
+      getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null;
+      ensureAuth = (opts = {}) => AppCommon.ensureAuth({ supabase: sb, getAccountId, ...opts });
     }
     window.addEventListener('supabase-client-ready', syncSupabaseClient);
     syncSupabaseClient();
@@ -516,14 +512,13 @@
     async function startNewRoute() {
       if (currentRouteId !== null) return { ok: true, routeId: currentRouteId };
 
-      try {
-        const ensured = await ensureAuth();
-        accountId = ensured.accountId;
-      } catch (authErr) {
-        console.error('ensureAuth failed', authErr);
-        alert(AppCommon.formatErrorMessage('ログインが必要です', authErr));
-        return { ok: false, error: authErr };
+      const ensured = await ensureAuth({ redirectToLogin: true });
+      if (!ensured.ok) {
+        console.error('ensureAuth failed', ensured.error);
+        alert(AppCommon.formatErrorMessage('ログインが必要です', ensured.error));
+        return { ok: false, error: ensured.error };
       }
+      accountId = ensured.ensuredAccountId;
 
       let payload;
       try {
@@ -581,6 +576,12 @@
 
       if (!currentRouteId) {
         listEl.textContent = '';
+        if (photoSummary) photoSummary.hidden = true;
+        return;
+      }
+      const ensured = await ensureAuth({ redirectToLogin: false });
+      if (!ensured.ok) {
+        listEl.textContent = AppCommon.formatErrorMessage('ログインが必要です', ensured.error);
         if (photoSummary) photoSummary.hidden = true;
         return;
       }
@@ -659,6 +660,8 @@
         photoPinLayer = L.layerGroup().addTo(map);
       }
       if (!map || !photoPinLayer || !sb || !currentRouteId) return;
+      const ensured = await ensureAuth({ redirectToLogin: false });
+      if (!ensured.ok) return;
       photoPinLayer.clearLayers();
       try {
         let orderCol = 'taken_at';
@@ -873,16 +876,14 @@
         try {
           // ① ログイン中ユーザー取得
           // ③ 認証確認（キャッシュ経由）
-          let ensured;
-          try {
-            ensured = await ensureAuth();
-          } catch (e) {
-            console.error('ensureAuth (upload) error', e);
-            statusEl.textContent = 'アップロード成功（DB登録は失敗：未ログイン）';
+          const ensured = await ensureAuth({ redirectToLogin: true });
+          if (!ensured.ok) {
+            console.error('ensureAuth (upload) error', ensured.error);
+            statusEl.textContent = AppCommon.formatErrorMessage('ログインが必要です', ensured.error);
             return;
           }
-          const user = ensured?.user;
-          const ensuredAccountId = ensured?.accountId || null;
+          const user = ensured.user;
+          const ensuredAccountId = ensured.ensuredAccountId || null;
           if (ensuredAccountId) accountId = ensuredAccountId;
           if (!user?.id) {
             statusEl.textContent = 'アップロード成功（DB登録は失敗：ユーザー不明）';
@@ -1038,8 +1039,8 @@
       }
 
       sb = supabaseClient;
-      const getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null;
-      ensureAuth = AppCommon.createEnsureAuth({ supabase: sb, getAccountId });
+      getAccountId = window.AuthCommon?.getMyAccountId ? () => window.AuthCommon.getMyAccountId(sb) : () => null;
+      ensureAuth = (opts = {}) => AppCommon.ensureAuth({ supabase: sb, getAccountId, ...opts });
       if (window.AuthCommon?.init) {
         try {
           window.AuthCommon.init(sb, { redirectUrl: 'index.html' });
@@ -1192,21 +1193,12 @@
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
-          // ① Supabase Authでユーザーだけ先に確定
-          const { data, error } = await withTimeout(sb.auth.getUser(), 1500, 'getUser timeout');
-          if (error) throw error;
-          if (!data?.user) throw new Error('NOT_AUTHENTICATED');
-
-          const email = data.user.email || '';
-
-          // ② accountId は取得できたら使う（失敗してもUIは前に進める）
-          try {
-            const ensured = await withTimeout(ensureAuth(), 2000, 'ensureAuth timeout');
-            accountId = ensured.accountId;
-          } catch (e) {
-            console.warn('accountId not ready (ensureAuth failed)', e);
-            accountId = null;
+          const ensured = await withTimeout(ensureAuth({ redirectToLogin: false }), 2500, 'ensureAuth timeout');
+          if (!ensured.ok) {
+            throw ensured.error || new Error('NOT_AUTHENTICATED');
           }
+          const email = ensured.user?.email || '';
+          accountId = ensured.ensuredAccountId || null;
 
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
@@ -1227,6 +1219,27 @@
           accountId = null;
           if (startBtn) startBtn.disabled = true;
           if (stopBtn) stopBtn.disabled = true;
+        }
+      }
+
+      async function refreshAuthUI(trigger = 'manual') {
+        console.log('[run] refreshAuthUI', {
+          trigger,
+          visibility: document.visibilityState,
+          path: location.pathname
+        });
+        const timer = setTimeout(() => {
+          const el = document.getElementById('authBar');
+          if (el) el.textContent = '認証状態の確認がタイムアウトしました';
+        }, 3000);
+        try {
+          await withTimeout(renderAuthBar(), 2500, 'renderAuthBar timeout');
+        } catch (e) {
+          console.error('renderAuthBar failure', e);
+          const el = document.getElementById('authBar');
+          if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
+        } finally {
+          clearTimeout(timer);
         }
       }
 
@@ -1736,15 +1749,12 @@
       stopBtn.addEventListener('click', async () => {
         if (!recording) { showToast('記録は開始されていません'); return; }
 
-        if (!accountId) {
-          try {
-            const ensured = await ensureAuth();
-            accountId = ensured.accountId;
-          } catch (e) {
-            alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
-            return;
-          }
+        const ensured = await ensureAuth({ redirectToLogin: true });
+        if (!ensured.ok) {
+          alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
+          return;
         }
+        accountId = ensured.ensuredAccountId;
 
         recording = false;
         clearWatchIfAny();
@@ -1860,13 +1870,7 @@
       });
 
       const safeRender = async () => {
-        try {
-          await withTimeout(renderAuthBar(), 2500, 'renderAuthBar timeout');
-        } catch (e) {
-          console.error('renderAuthBar failure', e);
-          const el = document.getElementById('authBar');
-          if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
-        }
+        await refreshAuthUI('safeRender');
         try {
           await renderLogs();
         } catch (e) {
@@ -1893,6 +1897,15 @@
           }
         } catch (e) {
           console.warn('pageshow refresh error', e);
+        }
+      });
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState !== 'visible') return;
+        try {
+          await refreshAuthUI('visibilitychange');
+          await renderLogs();
+        } catch (e) {
+          console.warn('visibility refresh error', e);
         }
       });
       window.addEventListener('pagehide', cleanupRun, { passive: true });

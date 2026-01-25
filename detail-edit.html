@@ -80,9 +80,10 @@
     const SUPABASE_URL = 'https://cqiqhczxuiyakptdjowr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k';
 
-    const sb = window.supabaseClient || window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
     });
+    const sb = window.supabaseClient;
     if (!sb) {
       const statusEl = document.getElementById('status');
       statusEl.textContent = 'ERROR: supabaseClient が初期化されていません';
@@ -132,20 +133,23 @@
       })[c] || c);
     }
 
-    async function ensureAuthOrStop() {
-      const ensureAuth = AppCommon.createEnsureAuth({
-        supabase: sb,
-        getAccountId: () => AuthCommon.getMyAccountId(sb)
+    const getAccountId = () => AuthCommon.getMyAccountId(sb);
+
+    async function ensureAuthOrStop({ redirectToLogin = false, reason = '' } = {}) {
+      console.log('[detail-edit] ensureAuthOrStop', {
+        reason,
+        visibility: document.visibilityState,
+        path: location.pathname
       });
-      try {
-        const ensured = await ensureAuth();
-        ensuredAccountId = ensured.accountId;
-        return ensured;
-      } catch (e) {
-        setStatus('未ログインです。ログインしてください', 'error');
+      const ensured = await AppCommon.ensureAuth({ supabase: sb, getAccountId, redirectToLogin });
+      if (!ensured.ok) {
+        const msg = AppCommon.formatErrorMessage('ログインが必要です', ensured.error);
+        setStatus(msg, 'error');
         setUiEnabled(false);
         return null;
       }
+      ensuredAccountId = ensured.ensuredAccountId;
+      return ensured;
     }
 
     async function loadRoute() {
@@ -176,6 +180,8 @@
 
     async function saveRouteName() {
       if (!canEdit) return;
+      const ensured = await ensureAuthOrStop({ redirectToLogin: true, reason: 'saveRouteName' });
+      if (!ensured) return;
       const newName = routeNameInput.value.trim();
       if (!newName) {
         setStatus('ルート名を入力してください', 'error');
@@ -253,10 +259,14 @@
     async function deletePhoto(photoId) {
       setStatus('削除中…');
       try {
-        const { data: { user } } = await sb.auth.getUser();
+        const ensured = await ensureAuthOrStop({ redirectToLogin: true, reason: 'deletePhoto' });
+        if (!ensured?.user?.id) {
+          setStatus('ログインが必要です', 'error');
+          return;
+        }
         const { error } = await sb
           .from('route_spot_photos')
-          .update({ deleted_at: new Date().toISOString(), deleted_by: user?.id || null })
+          .update({ deleted_at: new Date().toISOString(), deleted_by: ensured.user.id })
           .eq('id', photoId);
         if (error) throw error;
         setStatus('削除しました', 'success');
@@ -276,7 +286,7 @@
       lnBack.href = `detail.html?id=${encodeURIComponent(routeId)}&kind=route&v=${V()}`;
       lnPhotoList.href = `route-photos.html?route_id=${encodeURIComponent(routeId)}&v=${V()}`;
 
-      const ensured = await ensureAuthOrStop();
+      const ensured = await ensureAuthOrStop({ redirectToLogin: false, reason: 'init' });
       if (!ensured) return;
 
       const route = await loadRoute();
@@ -299,6 +309,43 @@
       btnSave.addEventListener('click', saveRouteName);
       init();
     }, { once:true });
+
+    async function refreshAuthUI(trigger = 'manual') {
+      console.log('[detail-edit] refreshAuthUI', {
+        trigger,
+        visibility: document.visibilityState,
+        path: location.pathname
+      });
+      const timer = setTimeout(() => {
+        if (statusEl) setStatus('認証状態の確認がタイムアウトしました', 'error');
+      }, 3000);
+      const ensured = await AppCommon.ensureAuth({ supabase: sb, getAccountId, redirectToLogin: false });
+      clearTimeout(timer);
+      if (!ensured.ok) {
+        setStatus(AppCommon.formatErrorMessage('ログインが必要です', ensured.error), 'error');
+        setUiEnabled(false);
+        return;
+      }
+      ensuredAccountId = ensured.ensuredAccountId;
+      canEdit = resolveEditPermission();
+      if (!canEdit) {
+        setStatus('権限がありません', 'error');
+        setUiEnabled(false);
+      } else {
+        setStatus('編集できます');
+        setUiEnabled(true);
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        await refreshAuthUI('visibilitychange');
+      }
+    });
+
+    window.addEventListener('pageshow', async () => {
+      await refreshAuthUI('pageshow');
+    });
   </script>
 </body>
 </html>

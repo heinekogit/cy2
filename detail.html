@@ -145,10 +145,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="js/app-common.js"></script>
   <script>
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    const client = window.supabaseClient;
     window.client = client; // デバッグ用に公開
 
     const V = ()=> encodeURIComponent(window.APP_VERSION||'');
@@ -160,10 +162,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     let __currentRoute = null;
     let __photoPinLayer = null;
 
-    async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
-    async function getMyAccountId(){
-      return AuthCommon.getMyAccountId(client);
-    }
+    const getAccountId = () => AuthCommon.getMyAccountId(client);
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
     function normalizePoints(points){
@@ -698,12 +697,12 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     async function renderAuthBar(){
       const bar = $('#authBar');
       try{
-        const s = await getSession();
-        if(!s?.user){
+        const ensured = await AppCommon.ensureAuth({ supabase: client, getAccountId, redirectToLogin: false });
+        if(!ensured.ok){
           bar.innerHTML = `未ログインです。<a class="btn" href="login.html?v=${V()}">ログインへ</a>`;
           return;
         }
-        const email = s.user.email || '';
+        const email = ensured.user?.email || '';
         bar.innerHTML = `
           ログイン中: <strong>${email}</strong>
           <button class="btn" data-signout style="margin-left:8px">サインアウト</button>
@@ -755,7 +754,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         btn.style.display='inline-block';
         btn.onclick = async ()=>{
           try{
-            const acc = await getMyAccountId(); if(!acc){ alert('ログインが必要です'); return; }
+            const ensured = await AppCommon.ensureAuth({ supabase: client, getAccountId, redirectToLogin: true });
+            const acc = ensured.ok ? ensured.ensuredAccountId : null;
+            if(!acc){ alert('ログインが必要です'); return; }
             const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(run.ended_at||run.started_at||Date.now()));
             const payload = { name: `Run ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: run.id, polyline: run.polyline ?? null, geojson: run.geojson ?? null };
             const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
@@ -829,12 +830,19 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
         // 自分のものだけトグル表示（ここで失敗してもメタ表示は残す）
         try{
-          const acc = await getMyAccountId();
+          const ensured = await AppCommon.ensureAuth({ supabase: client, getAccountId, redirectToLogin: false });
+          const acc = ensured.ok ? ensured.ensuredAccountId : null;
           if(acc && String(acc) === String(routeRow.account_id)){
             toggleWrap.style.display='block';
             toggle.checked = routeRow.is_public === true;
             toggle.onchange = async ()=>{
               try{
+                const ensuredToggle = await AppCommon.ensureAuth({ supabase: client, getAccountId, redirectToLogin: true });
+                if (!ensuredToggle.ok) {
+                  alert('ログインが必要です');
+                  toggle.checked = !toggle.checked;
+                  return;
+                }
                 const { error:e3 } = await client.from('routes').update({ is_public: !!toggle.checked }).eq('id', routeRow.id);
                 if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; }
               }catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
@@ -855,7 +863,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     async function init(){
-      await renderAuthBar();
+      await refreshAuthUI('init');
       if(!id){
         alert('id が不正です');
         location.replace(`index.html?v=${V()}`);
@@ -863,7 +871,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }
       if(kind==='run') { await loadRun(); }
       else { await loadRoute(); }
-      client.auth.onAuthStateChange(async ()=>{ await renderAuthBar(); if(kind==='run') await loadRun(); else await loadRoute(); });
+      client.auth.onAuthStateChange(async ()=>{ await refreshAuthUI('auth'); if(kind==='run') await loadRun(); else await loadRoute(); });
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
@@ -873,6 +881,35 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 <script>
   AuthCommon.init(client, { redirectUrl: 'index.html' });
   window.getMyAccountId = () => AuthCommon.getMyAccountId(client);
+</script>
+
+<script>
+  async function refreshAuthUI(trigger = 'manual') {
+    const bar = document.getElementById('authBar');
+    console.log('[detail] refreshAuthUI', {
+      trigger,
+      visibility: document.visibilityState,
+      path: location.pathname
+    });
+    const timer = setTimeout(() => {
+      if (bar) bar.textContent = '認証状態の確認がタイムアウトしました';
+    }, 3000);
+    try {
+      await renderAuthBar();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      await refreshAuthUI('visibilitychange');
+    }
+  });
+
+  window.addEventListener('pageshow', async () => {
+    await refreshAuthUI('pageshow');
+  });
 </script>
 
 <script>

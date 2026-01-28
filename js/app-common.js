@@ -60,6 +60,33 @@
     ]);
   }
 
+  async function getSessionWithRefresh(supabase) {
+    let session = null;
+    let user = null;
+    let sessionError = null;
+    try {
+      const { data, error } = await withTimeout(supabase.auth.getSession(), 3000, 'getSession timeout');
+      session = data?.session || null;
+      user = session?.user || null;
+      sessionError = error || null;
+    } catch (e) {
+      sessionError = e;
+    }
+
+    if (!session) {
+      try {
+        const { data, error } = await withTimeout(supabase.auth.refreshSession(), 3000, 'refreshSession timeout');
+        session = data?.session || null;
+        user = session?.user || null;
+        if (error && !sessionError) sessionError = error;
+      } catch (e) {
+        if (!sessionError) sessionError = e;
+      }
+    }
+
+    return { session, user, sessionError };
+  }
+
   async function ensureAuth(opts = {}) {
     const {
       redirectToLogin = false,
@@ -77,17 +104,7 @@
       return { ok: false, user: null, session: null, ensuredAccountId: null, error: 'supabaseClient missing' };
     }
 
-    let session = null;
-    let user = null;
-    let sessionError = null;
-    try {
-      const { data, error } = await withTimeout(supabase.auth.getSession(), 3000, 'getSession timeout');
-      session = data?.session || null;
-      user = session?.user || null;
-      sessionError = error || null;
-    } catch (e) {
-      sessionError = e;
-    }
+    const { session, user, sessionError } = await getSessionWithRefresh(supabase);
 
     if (!user) {
       const err = sessionError || new Error('auth_required');

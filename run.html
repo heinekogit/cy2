@@ -1189,7 +1189,13 @@
         }
       }
 
-      async function renderAuthBar() {
+      let lastAuthOkAt = 0;
+      let lastAuthEmail = '';
+      let lastAuthAccountId = null;
+      let pendingAuthRetry = null;
+
+      async function renderAuthBar(opts = {}) {
+        const { softFail = false, reason = '' } = opts || {};
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
@@ -1199,6 +1205,9 @@
           }
           const email = ensured.user?.email || '';
           accountId = ensured.ensuredAccountId || null;
+          lastAuthOkAt = Date.now();
+          lastAuthEmail = email;
+          lastAuthAccountId = accountId;
 
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
@@ -1211,7 +1220,14 @@
           const isRecording = !!recording;
           if (startBtn) startBtn.disabled = isRecording || !accountId;
           if (stopBtn) stopBtn.disabled = !isRecording || !accountId;
+          return true;
         } catch (e) {
+          const withinSoftWindow = lastAuthOkAt && (Date.now() - lastAuthOkAt < 2 * 60 * 1000);
+          const hasPriorAuth = !!(lastAuthAccountId || accountId || lastAuthEmail);
+          if (softFail && withinSoftWindow && hasPriorAuth) {
+            console.warn('renderAuthBar soft-fail', reason, e);
+            return false;
+          }
           console.error('renderAuthBar error', e);
           authBar.innerHTML = `
         未ログインです。ログを保存するには <a class="btn ghost" href="${loginUrl}">ログイン</a> してください。
@@ -1219,6 +1235,7 @@
           accountId = null;
           if (startBtn) startBtn.disabled = true;
           if (stopBtn) stopBtn.disabled = true;
+          return false;
         }
       }
 
@@ -1232,8 +1249,33 @@
           const el = document.getElementById('authBar');
           if (el) el.textContent = '認証状態の確認がタイムアウトしました';
         }, 3000);
+        const soft = trigger === 'visibilitychange' || trigger === 'pageshow';
+        const tryRefreshSession = async () => {
+          if (!sb?.auth?.refreshSession) return;
+          try {
+            await withTimeout(sb.auth.refreshSession(), 3000, 'refreshSession timeout');
+          } catch (e) {
+            console.warn('refreshSession failed', e);
+          }
+        };
+        if (soft) {
+          await tryRefreshSession();
+        }
         try {
-          await withTimeout(renderAuthBar(), 2500, 'renderAuthBar timeout');
+          const ok = await withTimeout(renderAuthBar({ softFail: soft, reason: trigger }), 2500, 'renderAuthBar timeout');
+          if (!ok && soft) {
+            if (pendingAuthRetry) clearTimeout(pendingAuthRetry);
+            pendingAuthRetry = setTimeout(async () => {
+              try {
+                await tryRefreshSession();
+                await renderAuthBar({ softFail: false, reason: `${trigger}:retry` });
+              } catch (e) {
+                console.warn('auth retry failed', e);
+              } finally {
+                pendingAuthRetry = null;
+              }
+            }, 1500);
+          }
         } catch (e) {
           console.error('renderAuthBar failure', e);
           const el = document.getElementById('authBar');
@@ -1529,6 +1571,9 @@
           wakeLock = await navigator.wakeLock.request('screen');
           wakeLock?.addEventListener?.('release', () => {
             wakeLock = null;
+            if (document.visibilityState === 'visible' && recording) {
+              setTimeout(() => { requestWakeLock(); }, 300);
+            }
           });
         } catch (err) {
           console.warn('wakeLock request failed', err);

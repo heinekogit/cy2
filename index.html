@@ -327,24 +327,9 @@ async function getMyAccountId() {
       // ヘッダのリンクに現在のバージョンを付与
       try{
         const v = (window.APP_VERSION||'');
-        const btnDraw = document.getElementById('btnDrawRoute');
         const lnLogin = document.getElementById('lnLogin');
         const lnMy = document.getElementById('lnMyPage');
         const lnRun = document.getElementById('lnRun');
-        if (btnDraw) {
-          btnDraw.addEventListener('click', async (ev) => {
-            ev.preventDefault();
-            const session = await getSession();
-            if (session?.user) {
-              location.href = `${ROUTE_DRAW_PAGE}?v=${V()}`;
-              return;
-            }
-            const loginUrl = new URL('login.html', window.location.href);
-            loginUrl.searchParams.set('returnTo', ROUTE_DRAW_PAGE);
-            loginUrl.searchParams.set('v', window.APP_VERSION || '');
-            location.href = loginUrl.toString();
-          });
-        }
         if (lnLogin) lnLogin.href = 'login.html?v=' + encodeURIComponent(v);
         if (lnMy) lnMy.href = 'mypage.html?v=' + encodeURIComponent(v);
         if (lnRun) lnRun.href = 'run.html?v=' + encodeURIComponent(v);
@@ -401,11 +386,6 @@ async function getMyAccountId() {
       </header>
 
       <section class="actions">
-        <button id="btnDrawRoute" class="action-card" type="button">
-          ライド
-          <small>（モデルルートあり）</small>
-          <small>ルートを描く</small>
-        </button>
         <a id="lnRun" class="action-card" href="run.html">
           ライド
           <small>（モデルルートあり）</small>

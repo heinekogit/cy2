@@ -1999,11 +1999,10 @@
 
       await safeRender();
       if (!lastAuthOkAt) {
-        if (authBar) authBar.textContent = '未ログインです。ログインしてください。';
-        const loginUrl = new URL('login.html', window.location.href);
-        loginUrl.searchParams.set('returnTo', 'run.html');
-        loginUrl.searchParams.set('v', window.APP_VERSION || '');
-        setTimeout(() => { location.href = loginUrl.toString(); }, 300);
+        if (authBar) {
+          const loginUrl = `login.html?v=${V()}`;
+          authBar.innerHTML = `未ログインです。<a class="btn ghost" href="${loginUrl}">ログイン</a> してください。`;
+        }
         return;
       }
 

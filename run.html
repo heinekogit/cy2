@@ -1961,11 +1961,28 @@
       });
 
       backLogsBtn.addEventListener('click', () => {
+        if (!accountId) {
+          location.href = `index.html?v=${V()}`;
+          return;
+        }
         setTab('logs');
       });
 
-      tabLogs.addEventListener('click', () => setTab('logs'));
+      tabLogs.addEventListener('click', () => {
+        if (!accountId) {
+          location.href = `index.html?v=${V()}`;
+          return;
+        }
+        setTab('logs');
+      });
       tabRun.addEventListener('click', () => {
+        if (!accountId) {
+          const loginUrl = new URL('login.html', window.location.href);
+          loginUrl.searchParams.set('returnTo', 'run.html');
+          loginUrl.searchParams.set('v', window.APP_VERSION || '');
+          location.href = loginUrl.toString();
+          return;
+        }
         setTab('run');
         resetRunLayers();
       });
@@ -1981,6 +1998,14 @@
       };
 
       await safeRender();
+      if (!lastAuthOkAt) {
+        if (authBar) authBar.textContent = '未ログインです。ログインしてください。';
+        const loginUrl = new URL('login.html', window.location.href);
+        loginUrl.searchParams.set('returnTo', 'run.html');
+        loginUrl.searchParams.set('v', window.APP_VERSION || '');
+        setTimeout(() => { location.href = loginUrl.toString(); }, 300);
+        return;
+      }
 
       sb.auth.onAuthStateChange(async (_event, session) => {
         await safeRender();

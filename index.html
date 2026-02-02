@@ -330,9 +330,11 @@ async function getMyAccountId() {
         const lnLogin = document.getElementById('lnLogin');
         const lnMy = document.getElementById('lnMyPage');
         const lnRun = document.getElementById('lnRun');
+        const lnTrial = document.getElementById('lnTrial');
         if (lnLogin) lnLogin.href = 'login.html?v=' + encodeURIComponent(v);
         if (lnMy) lnMy.href = 'mypage.html?v=' + encodeURIComponent(v);
         if (lnRun) lnRun.href = 'run.html?v=' + encodeURIComponent(v);
+        if (lnTrial) lnTrial.href = 'trial-run.html?v=' + encodeURIComponent(v);
       }catch(e){ console.warn('set header links failed', e); }
       // フィルタ切替
       const mineOnly = $("#mineOnly");
@@ -390,6 +392,11 @@ async function getMyAccountId() {
           ライド
           <small>（モデルルートあり）</small>
           <small>実走する</small>
+        </a>
+        <a id="lnTrial" class="action-card" href="trial-run.html">
+          お試し実走
+          <small>保存できません</small>
+          <small>ログイン不要</small>
         </a>
       </section>
 

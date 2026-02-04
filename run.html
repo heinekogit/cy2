@@ -177,6 +177,18 @@
       color: var(--muted);
     }
 
+    .route-select {
+      margin: 10px 12px 0;
+      align-items: center;
+    }
+
+    .route-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: flex-end;
+    }
+
     #runSection {
       position: relative;
       display: none;
@@ -384,6 +396,21 @@
     </header>
 
     <div id="authBar" class="auth-card">認証状態を確認中…</div>
+    <div id="routeSelectCard" class="card route-select">
+      <div style="flex:1 1 auto;">
+        <div style="font-weight:600;">ルート設定</div>
+        <div id="routeState" class="meta">ルート未設定</div>
+        <div id="routeSelected" class="meta" style="margin-top:4px;" hidden>
+          選択中: <span id="routeSelectedName"></span>
+        </div>
+      </div>
+      <div class="route-actions">
+        <button id="btnRunNoRoute" class="btn ghost" type="button">ルートなしで実走（すぐ開始）</button>
+        <button id="btnSelectRoute" class="btn ghost" type="button">ルートを選択</button>
+        <button id="btnChangeRoute" class="btn ghost" type="button" style="display:none;">ルート変更</button>
+        <button id="btnClearRoute" class="btn ghost" type="button" style="display:none;">解除してルートなし</button>
+      </div>
+    </div>
 
     <main>
       <section id="logsSection" class="panel active" aria-label="logs">
@@ -438,6 +465,7 @@
   <script defer>
   // 走行中に紐づく routes.id（run ログと紐づけるためのID）
   let currentRouteId = null;
+  const SELECTED_PLAN_KEY = 'selected_plan_route_id';
   let accountId = null;
   let map = null;
   let photoPinLayer = null;
@@ -1097,6 +1125,13 @@
       const toastEl = document.getElementById('toast');
       const hintEl = document.getElementById('hint');
       const badgeEl = document.getElementById('courseBadge');
+      const routeState = document.getElementById('routeState');
+      const routeSelected = document.getElementById('routeSelected');
+      const routeSelectedName = document.getElementById('routeSelectedName');
+      const btnRunNoRoute = document.getElementById('btnRunNoRoute');
+      const btnSelectRoute = document.getElementById('btnSelectRoute');
+      const btnChangeRoute = document.getElementById('btnChangeRoute');
+      const btnClearRoute = document.getElementById('btnClearRoute');
       const lnHome = document.getElementById('lnHome');
       const lnMyPage = document.getElementById('lnMyPage');
       if (lnHome) lnHome.href = `index.html?v=${V()}`;
@@ -1120,6 +1155,58 @@
       if (startBtn) startBtn.disabled = true; // 認証状態が判明するまで一旦無効、renderAuthBarで制御
       if (stopBtn) stopBtn.disabled = true;
       setStartAuthUI(false);
+
+      let planRouteId = null;
+      let planRouteName = '';
+      const readSelectedPlanRouteId = () => {
+        const raw = localStorage.getItem(SELECTED_PLAN_KEY);
+        if (!raw) return null;
+        const num = Number(raw);
+        return Number.isFinite(num) ? num : null;
+      };
+      const writeSelectedPlanRouteId = (id) => {
+        if (id == null) {
+          localStorage.removeItem(SELECTED_PLAN_KEY);
+          return;
+        }
+        localStorage.setItem(SELECTED_PLAN_KEY, String(id));
+      };
+      const updateRouteSelectUI = () => {
+        const hasPlan = !!planRouteId;
+        if (routeState) routeState.textContent = hasPlan ? 'ルート選択済み' : 'ルート未設定';
+        if (routeSelected) routeSelected.hidden = !hasPlan;
+        if (routeSelectedName) {
+          routeSelectedName.textContent = hasPlan ? (planRouteName || `#${planRouteId}`) : '';
+        }
+        if (btnSelectRoute) btnSelectRoute.style.display = hasPlan ? 'none' : '';
+        if (btnChangeRoute) btnChangeRoute.style.display = hasPlan ? '' : 'none';
+        if (btnClearRoute) btnClearRoute.style.display = hasPlan ? '' : 'none';
+      };
+      const applyPlanRouteId = (id, name = '') => {
+        planRouteId = id || null;
+        planRouteName = name || '';
+        if (planRouteId) {
+          currentRouteId = planRouteId;
+          writeSelectedPlanRouteId(planRouteId);
+        } else {
+          currentRouteId = null;
+          writeSelectedPlanRouteId(null);
+        }
+        updateRouteSelectUI();
+        updatePhotoSummaryLink();
+      };
+
+      const routeParam = (() => {
+        try {
+          return new URL(location.href).searchParams.get('route') || '';
+        } catch (_) {
+          return '';
+        }
+      })();
+      if (routeParam && !localStorage.getItem(SELECTED_PLAN_KEY)) {
+        writeSelectedPlanRouteId(routeParam);
+      }
+      applyPlanRouteId(readSelectedPlanRouteId());
 
       let routePts = [];
       let routeLine;
@@ -1204,6 +1291,54 @@
         toastEl.style.display = 'block';
         setTimeout(() => { toastEl.style.display = 'none'; }, 2000);
       };
+
+      const goSelectRoute = () => {
+        const url = new URL('mypage.html', window.location.href);
+        url.searchParams.set('mode', 'selectForRun');
+        url.searchParams.set('v', window.APP_VERSION || '');
+        window.location.href = url.toString();
+      };
+
+      if (btnRunNoRoute) {
+        btnRunNoRoute.addEventListener('click', () => {
+          if (recording) {
+            showToast('記録中は変更できません');
+            return;
+          }
+          applyPlanRouteId(null);
+          setTab('run');
+          setTimeout(() => { startBtn?.click(); }, 100);
+        });
+      }
+      if (btnSelectRoute) {
+        btnSelectRoute.addEventListener('click', () => {
+          if (recording) {
+            showToast('記録中は変更できません');
+            return;
+          }
+          goSelectRoute();
+        });
+      }
+      if (btnChangeRoute) {
+        btnChangeRoute.addEventListener('click', () => {
+          if (recording) {
+            showToast('記録中は変更できません');
+            return;
+          }
+          goSelectRoute();
+        });
+      }
+      if (btnClearRoute) {
+        btnClearRoute.addEventListener('click', () => {
+          if (recording) {
+            showToast('記録中は変更できません');
+            return;
+          }
+          applyPlanRouteId(null);
+          plannedRouteLoaded = false;
+          loadPlannedRouteIfAny(true);
+        });
+      }
 
       if (startGuard) {
         startGuard.addEventListener('click', (ev) => {
@@ -1443,17 +1578,11 @@
       }
 
       let plannedRouteLoaded = false;
-      const initialRouteId = (() => {
-        const val = new URL(location.href).searchParams.get('route');
-        if (val == null) return null;
-        const num = Number(val);
-        return Number.isFinite(num) ? num : null;
-      })();
 
       async function loadPlannedRouteIfAny(force = false) {
         if (!map) return;
         try {
-          const rid = initialRouteId;
+          const rid = planRouteId;
           if (!rid) {
             planned = [];
             if (plannedLayer) {
@@ -1462,6 +1591,7 @@
             }
             plannedRouteLoaded = false;
             setBadge('', '');
+            updateRouteSelectUI();
             return;
           }
           if (plannedRouteLoaded && !force) return;
@@ -1471,6 +1601,9 @@
             .eq('id', rid)
             .maybeSingle();
           if (error || !route) return;
+
+          planRouteName = route?.name || '';
+          updateRouteSelectUI();
 
           const pts = extractLatLngsFromRoute(route);
           if (!pts.length) return;

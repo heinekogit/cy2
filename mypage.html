@@ -74,6 +74,16 @@
       }catch(e){ gate.textContent='認証状態の取得に失敗しました'; console.error(e); return false; }
     }
 
+    const SELECTED_PLAN_KEY = 'selected_plan_route_id';
+    const MODE = (() => {
+      try {
+        return new URL(window.location.href).searchParams.get('mode') || '';
+      } catch (_) {
+        return '';
+      }
+    })();
+    const IS_SELECT_FOR_RUN = MODE === 'selectForRun';
+
     async function loadMyRoutes(){
       const box = $('#list-routes'); if(!box) return;
       const acc = await getMyAccountId(); if(!acc){ box.textContent='未ログインのため表示できません。'; return; }
@@ -109,6 +119,11 @@
           el.addEventListener('click', ()=>{
             const id = el.closest('[data-id]')?.getAttribute('data-id');
             if (!id) return;
+            if (IS_SELECT_FOR_RUN) {
+              localStorage.setItem(SELECTED_PLAN_KEY, String(id));
+              location.href = `run.html?selected=1&v=${V()}`;
+              return;
+            }
             location.href = `detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`;
           });
         });

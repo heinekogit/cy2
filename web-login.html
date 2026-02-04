@@ -174,7 +174,7 @@
     }
 
     const buildReturnDestination = () => {
-      const fallback = `web-explore.html?v=${V()}`;
+      const fallback = `index.html?v=${V()}`;
       if (!RETURN_TO) return fallback;
       try {
         const url = new URL(RETURN_TO, window.location.href);

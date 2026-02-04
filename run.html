@@ -2200,15 +2200,12 @@
         }, { passive: true });
       }
 
-      if (initialRouteId) {
-        try {
-          document.querySelector('#tabRun')?.click();
-          await loadPlannedRouteIfAny(true);
-        } catch (e) {
-          console.warn('initial route load failed', e);
-        }
-      } else {
-        setTab('logs');
+      try {
+        setTab('run');
+        plannedRouteLoaded = false;
+        await loadPlannedRouteIfAny(true);
+      } catch (e) {
+        console.warn('initial route load failed', e);
       }
     }
     document.addEventListener('DOMContentLoaded', () => startApp('dcl'));

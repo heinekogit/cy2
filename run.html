@@ -177,16 +177,53 @@
       color: var(--muted);
     }
 
-    .route-select {
+    .route-select-panel {
       margin: 10px 12px 0;
-      align-items: center;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
     }
 
-    .route-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      align-items: flex-end;
+    .route-select-panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+    }
+
+    .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .choice-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 10px;
+      background: #f9fafb;
+      cursor: pointer;
+    }
+
+    .choice-card:hover {
+      background: #fff;
+      border-color: #cbd5f5;
+    }
+
+    .choice-card h4 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+    }
+
+    .choice-card p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    @media (max-width:600px) {
+      .choice-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     #runSection {
@@ -396,21 +433,23 @@
     </header>
 
     <div id="authBar" class="auth-card">認証状態を確認中…</div>
-    <div id="routeSelectCard" class="card route-select">
-      <div style="flex:1 1 auto;">
-        <div style="font-weight:600;">ルート設定</div>
-        <div id="routeState" class="meta">ルート未設定</div>
-        <div id="routeSelected" class="meta" style="margin-top:4px;" hidden>
-          選択中: <span id="routeSelectedName"></span>
+    <section id="routeSelectPanel" class="route-select-panel">
+      <h3>ルート設定</h3>
+      <div class="choice-grid">
+        <div id="cardRunNoRoute" class="choice-card" role="button" tabindex="0">
+          <h4>ルートなしで実走</h4>
+          <p>ログのみ記録</p>
+        </div>
+        <div id="cardSelectRoute" class="choice-card" role="button" tabindex="0">
+          <h4>ルートを選択</h4>
+          <p>マイページから選ぶ</p>
         </div>
       </div>
-      <div class="route-actions">
-        <button id="btnRunNoRoute" class="btn ghost" type="button">ルートなしで実走（すぐ開始）</button>
-        <button id="btnSelectRoute" class="btn ghost" type="button">ルートを選択</button>
-        <button id="btnChangeRoute" class="btn ghost" type="button" style="display:none;">ルート変更</button>
-        <button id="btnClearRoute" class="btn ghost" type="button" style="display:none;">解除してルートなし</button>
+      <div id="routeState" class="meta" style="margin-top:8px;">ルート未設定</div>
+      <div id="routeSelected" class="meta" style="margin-top:4px;" hidden>
+        選択中: <span id="routeSelectedName"></span>
       </div>
-    </div>
+    </section>
 
     <main>
       <section id="logsSection" class="panel active" aria-label="logs">
@@ -1128,10 +1167,8 @@
       const routeState = document.getElementById('routeState');
       const routeSelected = document.getElementById('routeSelected');
       const routeSelectedName = document.getElementById('routeSelectedName');
-      const btnRunNoRoute = document.getElementById('btnRunNoRoute');
-      const btnSelectRoute = document.getElementById('btnSelectRoute');
-      const btnChangeRoute = document.getElementById('btnChangeRoute');
-      const btnClearRoute = document.getElementById('btnClearRoute');
+      const cardRunNoRoute = document.getElementById('cardRunNoRoute');
+      const cardSelectRoute = document.getElementById('cardSelectRoute');
       const lnHome = document.getElementById('lnHome');
       const lnMyPage = document.getElementById('lnMyPage');
       if (lnHome) lnHome.href = `index.html?v=${V()}`;
@@ -1178,9 +1215,6 @@
         if (routeSelectedName) {
           routeSelectedName.textContent = hasPlan ? (planRouteName || `#${planRouteId}`) : '';
         }
-        if (btnSelectRoute) btnSelectRoute.style.display = hasPlan ? 'none' : '';
-        if (btnChangeRoute) btnChangeRoute.style.display = hasPlan ? '' : 'none';
-        if (btnClearRoute) btnClearRoute.style.display = hasPlan ? '' : 'none';
       };
       const applyPlanRouteId = (id, name = '') => {
         planRouteId = id || null;
@@ -1299,8 +1333,8 @@
         window.location.href = url.toString();
       };
 
-      if (btnRunNoRoute) {
-        btnRunNoRoute.addEventListener('click', () => {
+      if (cardRunNoRoute) {
+        const onRunNoRoute = () => {
           if (recording) {
             showToast('記録中は変更できません');
             return;
@@ -1308,35 +1342,23 @@
           applyPlanRouteId(null);
           setTab('run');
           setTimeout(() => { startBtn?.click(); }, 100);
+        };
+        cardRunNoRoute.addEventListener('click', onRunNoRoute);
+        cardRunNoRoute.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') onRunNoRoute();
         });
       }
-      if (btnSelectRoute) {
-        btnSelectRoute.addEventListener('click', () => {
+      if (cardSelectRoute) {
+        const onSelectRoute = () => {
           if (recording) {
             showToast('記録中は変更できません');
             return;
           }
           goSelectRoute();
-        });
-      }
-      if (btnChangeRoute) {
-        btnChangeRoute.addEventListener('click', () => {
-          if (recording) {
-            showToast('記録中は変更できません');
-            return;
-          }
-          goSelectRoute();
-        });
-      }
-      if (btnClearRoute) {
-        btnClearRoute.addEventListener('click', () => {
-          if (recording) {
-            showToast('記録中は変更できません');
-            return;
-          }
-          applyPlanRouteId(null);
-          plannedRouteLoaded = false;
-          loadPlannedRouteIfAny(true);
+        };
+        cardSelectRoute.addEventListener('click', onSelectRoute);
+        cardSelectRoute.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') onSelectRoute();
         });
       }
 

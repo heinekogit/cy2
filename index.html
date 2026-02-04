@@ -229,8 +229,15 @@ async function getMyAccountId() {
         const session = await getSession();
         const loginBtn = $("#lnLogin");
         const myBtn = $("#lnMyPage");
+        const lnRun = $("#lnRun");
+        const lnTrial = $("#lnTrial");
+        const showRide = (mode) => {
+          if (lnRun) lnRun.style.display = mode === 'run' ? '' : 'none';
+          if (lnTrial) lnTrial.style.display = mode === 'trial' ? '' : 'none';
+        };
         if (!session?.user) {
           bar.innerHTML = `アカウント <strong>未ログイン</strong>`;
+          showRide('trial');
           if (loginBtn) {
             loginBtn.textContent = 'ログイン';
             loginBtn.classList.add('btn-primary');
@@ -249,6 +256,7 @@ async function getMyAccountId() {
         } else {
           $("#filters")?.classList.remove("muted");
           $("#mineOnlyWrap")?.classList.remove("muted");
+          showRide('run');
           const mon = document.getElementById('mineOnly');
           if (mon) mon.removeAttribute('disabled');
           const email = session.user.email || "";
@@ -268,6 +276,10 @@ async function getMyAccountId() {
         console.error('renderAuthBar error', e);
         const bar = $("#authBar");
         if(bar) bar.textContent = '認証状態の取得に失敗しました';
+        const lnRun = $("#lnRun");
+        const lnTrial = $("#lnTrial");
+        if (lnRun) lnRun.style.display = 'none';
+        if (lnTrial) lnTrial.style.display = '';
       }
     }
 

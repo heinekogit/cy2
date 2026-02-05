@@ -43,6 +43,9 @@
     window.__auth_init = true;
 
     const target = opts.redirectUrl || 'index.html';
+    const shouldRedirectOnSignout = (typeof opts.shouldRedirectOnSignout === 'function')
+      ? opts.shouldRedirectOnSignout
+      : () => opts.shouldRedirectOnSignout !== false;
     let lastSignoutTouchAt = 0;
 
     const handleSignout = async (ev) => {
@@ -75,6 +78,7 @@
         clearAccountCache();
       }
       if (event === 'SIGNED_OUT') {
+        if (!shouldRedirectOnSignout()) return;
         const path = location.pathname || '';
         const isLoginPage = /(?:^|\/)(?:web-)?login\.html$/.test(path);
         const isIndexPage = /(?:^|\/)(?:web-)?index\.html$/.test(path);

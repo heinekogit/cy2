@@ -435,7 +435,7 @@
     <div id="authBar" class="auth-card">認証状態を確認中…</div>
     <section id="routeSelectPanel" class="route-select-panel">
       <h3>ルート設定</h3>
-      <div class="choice-grid">
+      <div id="routeChoiceGrid" class="choice-grid">
         <div id="cardRunNoRoute" class="choice-card" role="button" tabindex="0">
           <h4>ルートなしで実走</h4>
           <p>ログのみ記録</p>
@@ -502,6 +502,9 @@
   <!-- <script src="js/run-photo-summary.js" defer></script> -->
   <script src="js/auth-common.js" defer></script>
   <script defer>
+  if (typeof window.__runIsRecording !== 'function') {
+    window.__runIsRecording = () => false;
+  }
   // 走行中に紐づく routes.id（run ログと紐づけるためのID）
   let currentRouteId = null;
   const SELECTED_PLAN_KEY = 'selected_plan_route_id';
@@ -1073,7 +1076,10 @@
       // AuthCommon がまだ読み込まれていない場合でもクライアント生成は成功させる
       try {
         if (window.AuthCommon?.init) {
-          window.AuthCommon.init(window.supabaseClient, { redirectUrl: 'index.html' });
+          window.AuthCommon.init(window.supabaseClient, {
+            redirectUrl: 'index.html',
+            shouldRedirectOnSignout: () => !(window.__runIsRecording && window.__runIsRecording())
+          });
         } else {
           console.warn('AuthCommon not ready yet');
         }
@@ -1135,7 +1141,10 @@
       ensureAuth = (opts = {}) => AppCommon.ensureAuth({ supabase: sb, getAccountId, ...opts });
       if (window.AuthCommon?.init) {
         try {
-          window.AuthCommon.init(sb, { redirectUrl: 'index.html' });
+          window.AuthCommon.init(sb, {
+            redirectUrl: 'index.html',
+            shouldRedirectOnSignout: () => !(window.__runIsRecording && window.__runIsRecording())
+          });
         } catch (e) {
           console.warn('AuthCommon init (startApp) failed', e);
         }
@@ -1167,6 +1176,7 @@
       const routeState = document.getElementById('routeState');
       const routeSelected = document.getElementById('routeSelected');
       const routeSelectedName = document.getElementById('routeSelectedName');
+      const routeChoiceGrid = document.getElementById('routeChoiceGrid');
       const cardRunNoRoute = document.getElementById('cardRunNoRoute');
       const cardSelectRoute = document.getElementById('cardSelectRoute');
       const lnHome = document.getElementById('lnHome');
@@ -1195,6 +1205,11 @@
 
       let planRouteId = null;
       let planRouteName = '';
+      let routeChoiceHidden = false;
+      const setRouteChoiceHidden = (hidden) => {
+        routeChoiceHidden = !!hidden;
+        if (routeChoiceGrid) routeChoiceGrid.style.display = routeChoiceHidden ? 'none' : '';
+      };
       const readSelectedPlanRouteId = () => {
         const raw = localStorage.getItem(SELECTED_PLAN_KEY);
         if (!raw) return null;
@@ -1215,6 +1230,7 @@
         if (routeSelectedName) {
           routeSelectedName.textContent = hasPlan ? (planRouteName || `#${planRouteId}`) : '';
         }
+        if (hasPlan) setRouteChoiceHidden(true);
       };
       const applyPlanRouteId = (id, name = '') => {
         planRouteId = id || null;
@@ -1246,6 +1262,7 @@
       let routeLine;
       let editMode = false;
       let recording = false;
+      window.__runIsRecording = () => recording;
       let follow = false;
       let dot = null;
       let accCircle = null;
@@ -1340,6 +1357,7 @@
             return;
           }
           applyPlanRouteId(null);
+          setRouteChoiceHidden(true);
           setTab('run');
           setTimeout(() => { startBtn?.click(); }, 100);
         };
@@ -1354,6 +1372,7 @@
             showToast('記録中は変更できません');
             return;
           }
+          setRouteChoiceHidden(true);
           goSelectRoute();
         };
         cardSelectRoute.addEventListener('click', onSelectRoute);
@@ -1438,6 +1457,11 @@
           const hasPriorAuth = !!(lastAuthAccountId || accountId || lastAuthEmail);
           if (softFail && withinSoftWindow && hasPriorAuth) {
             console.warn('renderAuthBar soft-fail', reason, e);
+            return false;
+          }
+          if (recording && hasPriorAuth) {
+            console.warn('renderAuthBar skipped during recording', reason, e);
+            if (authBar) authBar.textContent = '認証確認中（記録は継続）';
             return false;
           }
           console.error('renderAuthBar error', e);

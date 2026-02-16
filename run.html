@@ -555,6 +555,50 @@
       ]);
     }
 
+    async function refreshSessionSafely(reason, opts = {}) {
+      const { forceRefresh = true, timeoutMs = 3500, toastOnFailure = true } = opts || {};
+      if (!sb || !AppCommon?.ensureFreshSession) {
+        const err = new Error('supabase client/auth helper not ready');
+        console.error(`[auth] ${reason} skipped`, err);
+        if (toastOnFailure) showToast('認証確認の準備ができていません。少し待って再実行してください。');
+        return { ok: false, error: err };
+      }
+      const refreshed = await AppCommon.ensureFreshSession(sb, { forceRefresh, timeoutMs, reason });
+      if (!refreshed.ok) {
+        console.warn(`[auth] session refresh failed (${reason})`, refreshed.error);
+        if (toastOnFailure) showToast('ログイン状態の更新に失敗しました。通信状態を確認して再実行してください。');
+      }
+      return refreshed;
+    }
+
+    async function ensureAuthForWrite(actionLabel) {
+      const refreshed = await refreshSessionSafely(`${actionLabel}:before-write`, { forceRefresh: true, timeoutMs: 4000, toastOnFailure: true });
+      if (!refreshed.ok) return { ok: false, ensured: null, error: refreshed.error };
+      const ensured = await ensureAuth({ redirectToLogin: false });
+      if (!ensured.ok) {
+        console.warn(`[auth] ensureAuth failed before ${actionLabel}`, ensured.error);
+        showToast('ログイン状態を確認できませんでした。再度お試しください。');
+        return { ok: false, ensured, error: ensured.error };
+      }
+      accountId = ensured.ensuredAccountId || accountId || null;
+      return { ok: true, ensured, error: null };
+    }
+
+    async function recoverAuthForWriteError(actionLabel, error, status) {
+      if (!AppCommon?.isAuthError || !AppCommon.isAuthError(error, status)) return false;
+      console.warn(`[auth] 401/auth error on ${actionLabel}, try refresh first`, { status, error });
+      showToast('認証を再確認しています…');
+      const refreshed = await refreshSessionSafely(`${actionLabel}:after-auth-error`, { forceRefresh: true, timeoutMs: 4500, toastOnFailure: true });
+      if (!refreshed.ok) return false;
+      const ensured = await ensureAuth({ redirectToLogin: false });
+      if (!ensured.ok) {
+        showToast('ログイン状態を更新できませんでした。再ログイン後に再試行してください。');
+        return false;
+      }
+      accountId = ensured.ensuredAccountId || accountId || null;
+      return true;
+    }
+
     function setLinkEnabled(a, enabled) {
       if (!a) return;
       a.setAttribute('aria-disabled', enabled ? 'false' : 'true');
@@ -607,13 +651,13 @@
     async function startNewRoute() {
       if (currentRouteId !== null) return { ok: true, routeId: currentRouteId };
 
-      const ensured = await ensureAuth({ redirectToLogin: true });
-      if (!ensured.ok) {
-        console.error('ensureAuth failed', ensured.error);
-        alert(AppCommon.formatErrorMessage('ログインが必要です', ensured.error));
-        return { ok: false, error: ensured.error };
+      const authReady = await ensureAuthForWrite('start-route');
+      if (!authReady.ok) {
+        console.error('ensureAuthForWrite failed', authReady.error);
+        alert(AppCommon.formatErrorMessage('ログイン状態の確認に失敗しました', authReady.error));
+        return { ok: false, error: authReady.error };
       }
-      accountId = ensured.ensuredAccountId;
+      const ensured = authReady.ensured;
 
       let payload;
       try {
@@ -633,11 +677,19 @@
       }
 
       try {
-        const { data, error, status } = await sb
+        let { data, error, status } = await sb
           .from('routes')
           .insert(payload)
           .select('id')
           .single();
+
+        if ((error || !data) && await recoverAuthForWriteError('start-route', error, status)) {
+          ({ data, error, status } = await sb
+            .from('routes')
+            .insert(payload)
+            .select('id')
+            .single());
+        }
 
         if (error) {
           console.error('routes insert error:', { status, error, payload });
@@ -935,6 +987,11 @@
         let { error: insertError } = await sb
           .from('route_spot_photos')
           .insert(workingPayload);
+        if (insertError && await recoverAuthForWriteError('photo-db-insert', insertError, insertError?.status)) {
+          ({ error: insertError } = await sb
+            .from('route_spot_photos')
+            .insert(workingPayload));
+        }
         if (!insertError) break;
         if (!isMissingColumnError(insertError)) throw insertError;
         const missingCol = extractMissingColumn(insertError);
@@ -971,12 +1028,13 @@
         try {
           // ① ログイン中ユーザー取得
           // ③ 認証確認（キャッシュ経由）
-          const ensured = await ensureAuth({ redirectToLogin: true });
-          if (!ensured.ok) {
-            console.error('ensureAuth (upload) error', ensured.error);
-            statusEl.textContent = AppCommon.formatErrorMessage('ログインが必要です', ensured.error);
+          const authReady = await ensureAuthForWrite('photo-upload');
+          if (!authReady.ok) {
+            console.error('ensureAuthForWrite (upload) error', authReady.error);
+            statusEl.textContent = AppCommon.formatErrorMessage('ログイン状態の確認に失敗', authReady.error);
             return;
           }
+          const ensured = authReady.ensured;
           const user = ensured.user;
           const ensuredAccountId = ensured.ensuredAccountId || null;
           if (ensuredAccountId) accountId = ensuredAccountId;
@@ -1487,12 +1545,14 @@
           if (el) el.textContent = '認証状態の確認がタイムアウトしました';
         }, 3000);
         const soft = trigger === 'visibilitychange' || trigger === 'pageshow';
-        const tryRefreshSession = async () => {
-          if (!sb?.auth?.refreshSession) return;
-          try {
-            await withTimeout(sb.auth.refreshSession(), 3000, 'refreshSession timeout');
-          } catch (e) {
-            console.warn('refreshSession failed', e);
+        const tryRefreshSession = async (source = trigger) => {
+          const refreshed = await refreshSessionSafely(`${source}:refreshAuthUI`, {
+            forceRefresh: true,
+            timeoutMs: 3000,
+            toastOnFailure: false
+          });
+          if (!refreshed.ok) {
+            console.warn('refreshSession failed', refreshed.error);
           }
         };
         if (soft) {
@@ -1504,7 +1564,7 @@
             if (pendingAuthRetry) clearTimeout(pendingAuthRetry);
             pendingAuthRetry = setTimeout(async () => {
               try {
-                await tryRefreshSession();
+                await tryRefreshSession(`${trigger}:retry`);
                 await renderAuthBar({ softFail: false, reason: `${trigger}:retry` });
               } catch (e) {
                 console.warn('auth retry failed', e);
@@ -2029,12 +2089,13 @@
       stopBtn.addEventListener('click', async () => {
         if (!recording) { showToast('記録は開始されていません'); return; }
 
-        const ensured = await ensureAuth({ redirectToLogin: true });
-        if (!ensured.ok) {
-          alert('アカウント情報を確認できないため、保存できません。ログインしてください。');
+        const authReady = await ensureAuthForWrite('save-run');
+        if (!authReady.ok) {
+          alert('ログイン状態を確認できないため、保存できませんでした。通信状態を確認して再試行してください。');
           return;
         }
-        accountId = ensured.ensuredAccountId;
+        const ensured = authReady.ensured;
+        accountId = ensured.ensuredAccountId || accountId;
 
         recording = false;
         clearWatchIfAny();
@@ -2090,14 +2151,25 @@
         let redirected = false;
         try {
           console.log('RUN INSERT payload', payload);
-          const { data: newRow, error, status } = await sb
+          let { data: newRow, error, status } = await sb
             .from('runs')
             .insert([payload])
             .select('id')
             .maybeSingle();
 
+          if ((error || !newRow) && await recoverAuthForWriteError('save-run', error, status)) {
+            ({ data: newRow, error, status } = await sb
+              .from('runs')
+              .insert([payload])
+              .select('id')
+              .maybeSingle());
+          }
+
           if (error || !newRow) {
             console.error('RUN INSERT ERROR', { status, error, payload });
+            if (AppCommon?.isAuthError?.(error, status)) {
+              showToast('ログイン状態の更新に失敗しました。再ログイン後に再保存してください。');
+            }
             alert(`保存に失敗: ${status || ''} ${error?.message || ''}`);
             return;
           }
@@ -2166,8 +2238,8 @@
         resetRunLayers();
       });
 
-      const safeRender = async () => {
-        await refreshAuthUI('safeRender');
+      const safeRender = async (trigger = 'safeRender') => {
+        await refreshAuthUI(trigger);
         try {
           await renderLogs();
         } catch (e) {
@@ -2176,7 +2248,7 @@
         }
       };
 
-      await safeRender();
+      await safeRender('initial');
       if (!lastAuthOkAt) {
         if (authBar) {
           const loginUrl = `login.html?v=${V()}`;
@@ -2194,7 +2266,7 @@
       });
       window.addEventListener('pageshow', async () => {
         try {
-          await safeRender();
+          await safeRender('pageshow');
           if (map) {
             plannedRouteLoaded = false;
             await loadPlannedRouteIfAny(true);

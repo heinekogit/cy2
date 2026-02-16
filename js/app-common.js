@@ -60,6 +60,75 @@
     ]);
   }
 
+  function isAuthError(err, status) {
+    if (Number(status) === 401) return true;
+    if (!err) return false;
+    const code = String(err.code || '').toLowerCase();
+    const msg = String(err.message || err).toLowerCase();
+    if (code === '401' || code === 'pgrst301' || code === 'auth_required') return true;
+    if (msg.includes('jwt') && msg.includes('expired')) return true;
+    if (msg.includes('not authenticated')) return true;
+    if (msg.includes('invalid token')) return true;
+    if (msg.includes('refresh token')) return true;
+    if (msg.includes('401')) return true;
+    return false;
+  }
+
+  async function ensureFreshSession(supabase, opts = {}) {
+    const {
+      timeoutMs = 3000,
+      forceRefresh = false,
+      reason = 'manual'
+    } = opts || {};
+
+    if (!supabase?.auth) {
+      const error = new Error('supabase auth missing');
+      error.code = 'auth_client_missing';
+      return { ok: false, session: null, user: null, refreshed: false, error };
+    }
+
+    let session = null;
+    let user = null;
+    let error = null;
+    let refreshed = false;
+    try {
+      const { data, error: getErr } = await withTimeout(supabase.auth.getSession(), timeoutMs, 'getSession timeout');
+      session = data?.session || null;
+      user = session?.user || null;
+      if (getErr) error = getErr;
+    } catch (e) {
+      error = e;
+    }
+
+    const exp = Number(session?.expires_at || 0);
+    const nearExpiry = !!exp && ((exp * 1000) - Date.now() < 60 * 1000);
+    if (forceRefresh || !session || nearExpiry) {
+      try {
+        const { data, error: refreshErr } = await withTimeout(
+          supabase.auth.refreshSession(),
+          timeoutMs,
+          'refreshSession timeout'
+        );
+        refreshed = true;
+        if (refreshErr) {
+          error = refreshErr;
+        } else {
+          session = data?.session || session;
+          user = session?.user || user;
+          error = null;
+        }
+      } catch (e) {
+        error = e;
+      }
+    }
+
+    if (!user && !error) {
+      error = new Error(`auth_required (${reason})`);
+      error.code = 'auth_required';
+    }
+    return { ok: !!user, session, user, refreshed, error };
+  }
+
   async function getSessionWithRefresh(supabase) {
     let session = null;
     let user = null;
@@ -174,6 +243,8 @@
   global.AppCommon = {
     buildRoutePayload,
     ensureAuth,
+    ensureFreshSession,
+    isAuthError,
     createEnsureAuth,
     logSupabaseError,
     formatErrorMessage,

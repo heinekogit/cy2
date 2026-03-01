@@ -1417,7 +1417,8 @@
           applyPlanRouteId(null);
           setRouteChoiceHidden(true);
           setTab('run');
-          setTimeout(() => { startBtn?.click(); }, 100);
+          resetRunLayers();
+          showToast('ルートなしを選択しました。▶ 記録開始を押してください');
         };
         cardRunNoRoute.addEventListener('click', onRunNoRoute);
         cardRunNoRoute.addEventListener('keydown', (ev) => {
@@ -1444,6 +1445,11 @@
           if (accountId) return;
           ev.preventDefault();
           ev.stopPropagation();
+          if (lastAuthOkAt) {
+            showToast('ログイン確認済みです。アカウント情報を再取得しています');
+            refreshAuthUI('start-guard').catch((e) => console.warn('start-guard refresh failed', e));
+            return;
+          }
           showToast('実走ログを保存するにはログインが必要です');
           setTimeout(goLogin, 400);
         });

@@ -3,6 +3,7 @@
 ;(function (global) {
   const RouteOrigins = ['from_log', 'drawn', 'from_run'];
   const RouteTypes = ['from_run', 'manual', 'planned'];
+  const AUTH_TIMEOUT_MS = 8000;
 
   function assertAllowed(value, allowed, label) {
     if (!allowed.includes(value)) {
@@ -60,6 +61,13 @@
     ]);
   }
 
+  function isTimeoutError(err) {
+    if (!err) return false;
+    const code = String(err.code || '').toLowerCase();
+    const msg = String(err.message || err).toLowerCase();
+    return code === 'timeout' || msg.includes('timeout');
+  }
+
   function isAuthError(err, status) {
     if (Number(status) === 401) return true;
     if (!err) return false;
@@ -76,7 +84,7 @@
 
   async function ensureFreshSession(supabase, opts = {}) {
     const {
-      timeoutMs = 3000,
+      timeoutMs = AUTH_TIMEOUT_MS,
       forceRefresh = false,
       reason = 'manual'
     } = opts || {};
@@ -134,7 +142,7 @@
     let user = null;
     let sessionError = null;
     try {
-      const { data, error } = await withTimeout(supabase.auth.getSession(), 3000, 'getSession timeout');
+      const { data, error } = await withTimeout(supabase.auth.getSession(), AUTH_TIMEOUT_MS, 'getSession timeout');
       session = data?.session || null;
       user = session?.user || null;
       sessionError = error || null;
@@ -144,7 +152,7 @@
 
     if (!session) {
       try {
-        const { data, error } = await withTimeout(supabase.auth.refreshSession(), 3000, 'refreshSession timeout');
+        const { data, error } = await withTimeout(supabase.auth.refreshSession(), AUTH_TIMEOUT_MS, 'refreshSession timeout');
         session = data?.session || null;
         user = session?.user || null;
         if (error && !sessionError) sessionError = error;
@@ -250,6 +258,7 @@
     formatErrorMessage,
     alertError,
     toastError,
+    isTimeoutError,
     RouteOrigins,
     RouteTypes
   };

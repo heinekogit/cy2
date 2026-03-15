@@ -541,14 +541,15 @@
     if (msg.includes('could not find') && msg.includes('column')) return true;
     return /column .* does not exist/i.test(msg);
   };
-  const fmtSbError = (err) => {
-    if (!err) return '不明なエラー';
-    const code = err.code ? `[${err.code}] ` : '';
-    return `${code}${err.message || err.toString?.() || err}`;
-  };
-  function withTimeout(promise, ms, label = 'timeout') {
-    return Promise.race([
-      promise,
+    const fmtSbError = (err) => {
+      if (!err) return '不明なエラー';
+      const code = err.code ? `[${err.code}] ` : '';
+      return `${code}${err.message || err.toString?.() || err}`;
+    };
+    const isTimeoutError = (err) => !!(AppCommon?.isTimeoutError ? AppCommon.isTimeoutError(err) : String(err?.message || err || '').toLowerCase().includes('timeout'));
+    function withTimeout(promise, ms, label = 'timeout') {
+      return Promise.race([
+        promise,
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms)
         )
@@ -556,7 +557,7 @@
     }
 
     async function refreshSessionSafely(reason, opts = {}) {
-      const { forceRefresh = true, timeoutMs = 3500, toastOnFailure = true } = opts || {};
+      const { forceRefresh = false, timeoutMs = 8000, toastOnFailure = true } = opts || {};
       if (!sb || !AppCommon?.ensureFreshSession) {
         const err = new Error('supabase client/auth helper not ready');
         console.error(`[auth] ${reason} skipped`, err);
@@ -572,10 +573,30 @@
     }
 
     async function ensureAuthForWrite(actionLabel) {
-      const refreshed = await refreshSessionSafely(`${actionLabel}:before-write`, { forceRefresh: true, timeoutMs: 4000, toastOnFailure: true });
-      if (!refreshed.ok) return { ok: false, ensured: null, error: refreshed.error };
+      const refreshed = await refreshSessionSafely(`${actionLabel}:before-write`, { forceRefresh: false, timeoutMs: 8000, toastOnFailure: true });
+      if (!refreshed.ok) {
+        if (isTimeoutError(refreshed.error) && (accountId || lastAuthAccountId)) {
+          console.warn(`[auth] transient auth timeout before ${actionLabel}; continue with cached account`, refreshed.error);
+        } else {
+          return { ok: false, ensured: null, error: refreshed.error };
+        }
+      }
       const ensured = await ensureAuth({ redirectToLogin: false });
       if (!ensured.ok) {
+        if (isTimeoutError(ensured.error) && (accountId || lastAuthAccountId)) {
+          const fallbackAccountId = accountId || lastAuthAccountId;
+          return {
+            ok: true,
+            ensured: {
+              ok: true,
+              user: ensured.user || (lastAuthEmail ? { email: lastAuthEmail } : null),
+              session: ensured.session || null,
+              ensuredAccountId: fallbackAccountId,
+              error: ensured.error || null
+            },
+            error: null
+          };
+        }
         console.warn(`[auth] ensureAuth failed before ${actionLabel}`, ensured.error);
         showToast('ログイン状態を確認できませんでした。再度お試しください。');
         return { ok: false, ensured, error: ensured.error };
@@ -588,7 +609,7 @@
       if (!AppCommon?.isAuthError || !AppCommon.isAuthError(error, status)) return false;
       console.warn(`[auth] 401/auth error on ${actionLabel}, try refresh first`, { status, error });
       showToast('認証を再確認しています…');
-      const refreshed = await refreshSessionSafely(`${actionLabel}:after-auth-error`, { forceRefresh: true, timeoutMs: 4500, toastOnFailure: true });
+      const refreshed = await refreshSessionSafely(`${actionLabel}:after-auth-error`, { forceRefresh: true, timeoutMs: 8000, toastOnFailure: true });
       if (!refreshed.ok) return false;
       const ensured = await ensureAuth({ redirectToLogin: false });
       if (!ensured.ok) {
@@ -1493,7 +1514,7 @@
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
-          const ensured = await withTimeout(ensureAuth({ redirectToLogin: false }), 2500, 'ensureAuth timeout');
+          const ensured = await withTimeout(ensureAuth({ redirectToLogin: false }), 8000, 'ensureAuth timeout');
           if (!ensured.ok) {
             throw ensured.error || new Error('NOT_AUTHENTICATED');
           }
@@ -1519,8 +1540,18 @@
         } catch (e) {
           const withinSoftWindow = lastAuthOkAt && (Date.now() - lastAuthOkAt < 2 * 60 * 1000);
           const hasPriorAuth = !!(lastAuthAccountId || accountId || lastAuthEmail);
+          const timeoutOnly = isTimeoutError(e);
           if (softFail && withinSoftWindow && hasPriorAuth) {
             console.warn('renderAuthBar soft-fail', reason, e);
+            return false;
+          }
+          if (timeoutOnly && hasPriorAuth) {
+            console.warn('renderAuthBar preserved prior auth state after timeout', reason, e);
+            if (authBar) authBar.textContent = '認証確認中（前回のログイン状態を維持）';
+            accountId = accountId || lastAuthAccountId || null;
+            if (startBtn) startBtn.disabled = !!recording || !accountId;
+            if (stopBtn) stopBtn.disabled = !recording || !accountId;
+            setStartAuthUI(!!accountId);
             return false;
           }
           if (recording && hasPriorAuth) {
@@ -1549,12 +1580,12 @@
         const timer = setTimeout(() => {
           const el = document.getElementById('authBar');
           if (el) el.textContent = '認証状態の確認がタイムアウトしました';
-        }, 3000);
+        }, 8000);
         const soft = trigger === 'visibilitychange' || trigger === 'pageshow';
         const tryRefreshSession = async (source = trigger) => {
           const refreshed = await refreshSessionSafely(`${source}:refreshAuthUI`, {
             forceRefresh: true,
-            timeoutMs: 3000,
+            timeoutMs: 8000,
             toastOnFailure: false
           });
           if (!refreshed.ok) {
@@ -1565,7 +1596,7 @@
           await tryRefreshSession();
         }
         try {
-          const ok = await withTimeout(renderAuthBar({ softFail: soft, reason: trigger }), 2500, 'renderAuthBar timeout');
+          const ok = await withTimeout(renderAuthBar({ softFail: soft, reason: trigger }), 8500, 'renderAuthBar timeout');
           if (!ok && soft) {
             if (pendingAuthRetry) clearTimeout(pendingAuthRetry);
             pendingAuthRetry = setTimeout(async () => {

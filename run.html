@@ -1541,13 +1541,27 @@
           const withinSoftWindow = lastAuthOkAt && (Date.now() - lastAuthOkAt < 2 * 60 * 1000);
           const hasPriorAuth = !!(lastAuthAccountId || accountId || lastAuthEmail);
           const timeoutOnly = isTimeoutError(e);
+          const authErrorOnly = !!(AppCommon?.isAuthError && AppCommon.isAuthError(e));
           if (softFail && withinSoftWindow && hasPriorAuth) {
             console.warn('renderAuthBar soft-fail', reason, e);
+            accountId = accountId || lastAuthAccountId || null;
+            if (startBtn) startBtn.disabled = !!recording || !accountId;
+            if (stopBtn) stopBtn.disabled = !recording || !accountId;
+            setStartAuthUI(!!accountId);
             return false;
           }
           if (timeoutOnly && hasPriorAuth) {
             console.warn('renderAuthBar preserved prior auth state after timeout', reason, e);
             if (authBar) authBar.textContent = '認証確認中（前回のログイン状態を維持）';
+            accountId = accountId || lastAuthAccountId || null;
+            if (startBtn) startBtn.disabled = !!recording || !accountId;
+            if (stopBtn) stopBtn.disabled = !recording || !accountId;
+            setStartAuthUI(!!accountId);
+            return false;
+          }
+          if (softFail && authErrorOnly && hasPriorAuth) {
+            console.warn('renderAuthBar preserved prior auth state after transient auth error', reason, e);
+            if (authBar) authBar.textContent = '認証再接続中（前回のログイン状態を維持）';
             accountId = accountId || lastAuthAccountId || null;
             if (startBtn) startBtn.disabled = !!recording || !accountId;
             if (stopBtn) stopBtn.disabled = !recording || !accountId;

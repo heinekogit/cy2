@@ -47,6 +47,7 @@
       ? opts.shouldRedirectOnSignout
       : () => opts.shouldRedirectOnSignout !== false;
     let lastSignoutTouchAt = 0;
+    let pendingSignedOutCheck = null;
 
     const handleSignout = async (ev) => {
       const el = ev.target.closest('[data-signout]');
@@ -70,30 +71,76 @@
       return;
     }
 
-    client.auth.onAuthStateChange((event, session) => {
+    client.auth.onAuthStateChange(async (event, session) => {
       if (session?.user?.id) {
+        if (pendingSignedOutCheck) {
+          clearTimeout(pendingSignedOutCheck);
+          pendingSignedOutCheck = null;
+        }
         cachedUserId = session.user.id;
         safeStorage.set(LS_USER_ID, cachedUserId);
-      } else if (event === 'SIGNED_OUT') {
-        clearAccountCache();
+        return;
       }
+
       if (event === 'SIGNED_OUT') {
-        if (!shouldRedirectOnSignout()) return;
-        const path = location.pathname || '';
-        const isLoginPage = /(?:^|\/)(?:web-)?login\.html$/.test(path);
-        const isIndexPage = /(?:^|\/)(?:web-)?index\.html$/.test(path);
-        if (!isLoginPage && !isIndexPage) {
-          const dest = withV(target);
-          let samePage = false;
+        if (pendingSignedOutCheck) clearTimeout(pendingSignedOutCheck);
+        pendingSignedOutCheck = setTimeout(async () => {
+          pendingSignedOutCheck = null;
+          let recovered = false;
           try {
-            const currentUrl = new URL(location.href);
-            const destUrl = new URL(dest, location.href);
-            samePage = currentUrl.origin === destUrl.origin && currentUrl.pathname === destUrl.pathname;
-          } catch (_) {}
-          if (!samePage) {
-            location.replace(dest);
+            const sessionRes = await Promise.race([
+              client.auth.getSession(),
+              new Promise((resolve) => setTimeout(() => resolve({ data: { session: null } }), 1500))
+            ]);
+            const currentSession = sessionRes?.data?.session || null;
+            if (currentSession?.user?.id) {
+              cachedUserId = currentSession.user.id;
+              safeStorage.set(LS_USER_ID, cachedUserId);
+              recovered = true;
+            } else {
+              const refreshRes = await Promise.race([
+                client.auth.refreshSession(),
+                new Promise((resolve) => setTimeout(() => resolve({ data: { session: null } }), 2500))
+              ]);
+              const refreshedSession = refreshRes?.data?.session || null;
+              if (refreshedSession?.user?.id) {
+                cachedUserId = refreshedSession.user.id;
+                safeStorage.set(LS_USER_ID, cachedUserId);
+                recovered = true;
+              }
+            }
+          } catch (e) {
+            console.warn('SIGNED_OUT verification failed', e);
           }
-        }
+
+          if (recovered) {
+            console.info('SIGNED_OUT ignored after session recovery');
+            return;
+          }
+
+          clearAccountCache();
+          if (!shouldRedirectOnSignout()) return;
+          const path = location.pathname || '';
+          const isLoginPage = /(?:^|\/)(?:web-)?login\.html$/.test(path);
+          const isIndexPage = /(?:^|\/)(?:web-)?index\.html$/.test(path);
+          if (!isLoginPage && !isIndexPage) {
+            const dest = withV(target);
+            let samePage = false;
+            try {
+              const currentUrl = new URL(location.href);
+              const destUrl = new URL(dest, location.href);
+              samePage = currentUrl.origin === destUrl.origin && currentUrl.pathname === destUrl.pathname;
+            } catch (_) {}
+            if (!samePage) {
+              location.replace(dest);
+            }
+          }
+        }, 1200);
+        return;
+      }
+
+      if (!session?.user?.id) {
+        clearAccountCache();
       }
     });
   };

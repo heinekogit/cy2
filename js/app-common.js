@@ -141,6 +141,7 @@
     let session = null;
     let user = null;
     let sessionError = null;
+    let refreshed = false;
     try {
       const { data, error } = await withTimeout(supabase.auth.getSession(), AUTH_TIMEOUT_MS, 'getSession timeout');
       session = data?.session || null;
@@ -150,18 +151,25 @@
       sessionError = e;
     }
 
-    if (!session) {
+    const exp = Number(session?.expires_at || 0);
+    const nearExpiry = !!exp && ((exp * 1000) - Date.now() < 60 * 1000);
+    if (!session || nearExpiry) {
       try {
         const { data, error } = await withTimeout(supabase.auth.refreshSession(), AUTH_TIMEOUT_MS, 'refreshSession timeout');
+        refreshed = true;
         session = data?.session || null;
         user = session?.user || null;
-        if (error && !sessionError) sessionError = error;
+        if (error) {
+          sessionError = error;
+        } else {
+          sessionError = null;
+        }
       } catch (e) {
-        if (!sessionError) sessionError = e;
+        sessionError = e;
       }
     }
 
-    return { session, user, sessionError };
+    return { session, user, sessionError, refreshed };
   }
 
   async function ensureAuth(opts = {}) {
@@ -181,10 +189,14 @@
       return { ok: false, user: null, session: null, ensuredAccountId: null, error: 'supabaseClient missing' };
     }
 
-    const { session, user, sessionError } = await getSessionWithRefresh(supabase);
+    const { session, user, error: authError } = await ensureFreshSession(supabase, {
+      forceRefresh: false,
+      timeoutMs: AUTH_TIMEOUT_MS,
+      reason: 'ensureAuth'
+    });
 
     if (!user) {
-      const err = sessionError || new Error('auth_required');
+      const err = authError || new Error('auth_required');
       err.code = err.code || 'auth_required';
       if (redirectToLogin) {
         const redirect = (global.location?.pathname || '') + (global.location?.search || '');

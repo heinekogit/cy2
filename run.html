@@ -547,6 +547,24 @@
       return `${code}${err.message || err.toString?.() || err}`;
     };
     const isTimeoutError = (err) => !!(AppCommon?.isTimeoutError ? AppCommon.isTimeoutError(err) : String(err?.message || err || '').toLowerCase().includes('timeout'));
+    const isTransientNetworkError = (err) => {
+      const code = String(err?.code || '').toLowerCase();
+      const msg = String(err?.message || err || '').toLowerCase();
+      return code === 'network_error'
+        || code === 'failed_to_fetch'
+        || code === 'aborterror'
+        || msg.includes('failed to fetch')
+        || msg.includes('networkerror')
+        || msg.includes('network request failed')
+        || msg.includes('load failed')
+        || msg.includes('the network connection was lost')
+        || msg.includes('network connection was lost')
+        || msg.includes('fetch');
+    };
+    const canFallbackToCachedWriteAuth = (err) => {
+      if (!(accountId || lastAuthAccountId)) return false;
+      return isTimeoutError(err) || isTransientNetworkError(err);
+    };
     function withTimeout(promise, ms, label = 'timeout') {
       return Promise.race([
         promise,
@@ -575,15 +593,15 @@
     async function ensureAuthForWrite(actionLabel) {
       const refreshed = await refreshSessionSafely(`${actionLabel}:before-write`, { forceRefresh: false, timeoutMs: 8000, toastOnFailure: true });
       if (!refreshed.ok) {
-        if (isTimeoutError(refreshed.error) && (accountId || lastAuthAccountId)) {
-          console.warn(`[auth] transient auth timeout before ${actionLabel}; continue with cached account`, refreshed.error);
+        if (canFallbackToCachedWriteAuth(refreshed.error)) {
+          console.warn(`[auth] transient auth preflight failure before ${actionLabel}; continue with cached account`, refreshed.error);
         } else {
           return { ok: false, ensured: null, error: refreshed.error };
         }
       }
       const ensured = await ensureAuth({ redirectToLogin: false });
       if (!ensured.ok) {
-        if (isTimeoutError(ensured.error) && (accountId || lastAuthAccountId)) {
+        if (canFallbackToCachedWriteAuth(ensured.error)) {
           const fallbackAccountId = accountId || lastAuthAccountId;
           return {
             ok: true,

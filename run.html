@@ -546,24 +546,50 @@
       const code = err.code ? `[${err.code}] ` : '';
       return `${code}${err.message || err.toString?.() || err}`;
     };
-    const isTimeoutError = (err) => !!(AppCommon?.isTimeoutError ? AppCommon.isTimeoutError(err) : String(err?.message || err || '').toLowerCase().includes('timeout'));
-    const isTransientNetworkError = (err) => {
-      const code = String(err?.code || '').toLowerCase();
-      const msg = String(err?.message || err || '').toLowerCase();
-      return code === 'network_error'
-        || code === 'failed_to_fetch'
-        || code === 'aborterror'
-        || msg.includes('failed to fetch')
-        || msg.includes('networkerror')
-        || msg.includes('network request failed')
-        || msg.includes('load failed')
-        || msg.includes('the network connection was lost')
-        || msg.includes('network connection was lost')
-        || msg.includes('fetch');
+    const WRITE_AUTH_FAILURE_TOAST = 'セッション再接続に失敗しました。再ログイン後に再試行してください。';
+    const authMetaExpiresAt = (meta) => {
+      const exp = Number(meta?.sessionExpiresAt || 0);
+      if (!exp) return null;
+      try {
+        return new Date(exp * 1000).toISOString();
+      } catch (_) {
+        return null;
+      }
     };
-    const canFallbackToCachedWriteAuth = (err) => {
-      if (!(accountId || lastAuthAccountId)) return false;
-      return isTimeoutError(err) || isTransientNetworkError(err);
+    const serializeAuthError = (err) => {
+      if (AppCommon?.serializeError) return AppCommon.serializeError(err);
+      if (!err) return null;
+      return {
+        code: err.code || null,
+        message: err.message || String(err),
+        name: err.name || null,
+        status: err.status || null
+      };
+    };
+    const logWriteAuth = (actionLabel, stage, payload = {}) => {
+      console.info('[write-auth]', {
+        actionLabel,
+        stage,
+        ...payload
+      });
+    };
+    const summarizeEnsureAuth = (res) => ({
+      ok: !!res?.ok,
+      ensuredAccountId: res?.ensuredAccountId || null,
+      userId: res?.user?.id || null,
+      refreshAttempted: !!res?.authMeta?.refreshAttempted,
+      refreshed: !!res?.authMeta?.refreshed,
+      sessionExpiresAt: authMetaExpiresAt(res?.authMeta),
+      error: serializeAuthError(res?.error || res?.authMeta?.authError || null)
+    });
+    const getStrictAuthError = (res) => {
+      const metaErr = res?.authMeta?.authError || null;
+      if (!res?.ok) return res?.error || metaErr || null;
+      if (!metaErr) return null;
+      const err = new Error(metaErr.message || 'session confirmation failed');
+      err.code = metaErr.code || 'session_confirmation_failed';
+      if (metaErr.status != null) err.status = metaErr.status;
+      return err;
     };
     function withTimeout(promise, ms, label = 'timeout') {
       return Promise.race([
@@ -574,67 +600,81 @@
       ]);
     }
 
-    async function refreshSessionSafely(reason, opts = {}) {
-      const { forceRefresh = false, timeoutMs = 8000, toastOnFailure = true } = opts || {};
-      if (!sb || !AppCommon?.ensureFreshSession) {
-        const err = new Error('supabase client/auth helper not ready');
-        console.error(`[auth] ${reason} skipped`, err);
-        if (toastOnFailure) showToast('認証確認の準備ができていません。少し待って再実行してください。');
-        return { ok: false, error: err };
-      }
-      const refreshed = await AppCommon.ensureFreshSession(sb, { forceRefresh, timeoutMs, reason });
-      if (!refreshed.ok) {
-        console.warn(`[auth] session refresh failed (${reason})`, refreshed.error);
-        if (toastOnFailure) showToast('ログイン状態の更新に失敗しました。通信状態を確認して再実行してください。');
-      }
-      return refreshed;
-    }
-
     async function ensureAuthForWrite(actionLabel) {
-      const refreshed = await refreshSessionSafely(`${actionLabel}:before-write`, { forceRefresh: false, timeoutMs: 8000, toastOnFailure: true });
-      if (!refreshed.ok) {
-        if (canFallbackToCachedWriteAuth(refreshed.error)) {
-          console.warn(`[auth] transient auth preflight failure before ${actionLabel}; continue with cached account`, refreshed.error);
-        } else {
-          return { ok: false, ensured: null, error: refreshed.error };
-        }
+      logWriteAuth(actionLabel, 'preflight:start', {
+        visibility: document.visibilityState,
+        path: location.pathname
+      });
+      const ensured = await ensureAuth({
+        redirectToLogin: false,
+        forceRefresh: true,
+        timeoutMs: 10000,
+        reason: `write:${actionLabel}:preflight`,
+        requireAccountId: true
+      });
+      logWriteAuth(actionLabel, 'preflight:result', summarizeEnsureAuth(ensured));
+      const strictError = getStrictAuthError(ensured);
+      if (strictError) {
+        logWriteAuth(actionLabel, 'preflight:reject', {
+          reason: 'strict-auth-failed',
+          error: serializeAuthError(strictError)
+        });
+        console.warn(`[auth] strict write preflight failed before ${actionLabel}`, strictError);
+        showToast(WRITE_AUTH_FAILURE_TOAST);
+        refreshAuthUI(`${actionLabel}:write-denied`, { preservePrevious: false, forceRefresh: false }).catch((e) => {
+          console.warn('write-denied refreshAuthUI failed', e);
+        });
+        return { ok: false, ensured, error: strictError };
       }
-      const ensured = await ensureAuth({ redirectToLogin: false });
-      if (!ensured.ok) {
-        if (canFallbackToCachedWriteAuth(ensured.error)) {
-          const fallbackAccountId = accountId || lastAuthAccountId;
-          return {
-            ok: true,
-            ensured: {
-              ok: true,
-              user: ensured.user || (lastAuthEmail ? { email: lastAuthEmail } : null),
-              session: ensured.session || null,
-              ensuredAccountId: fallbackAccountId,
-              error: ensured.error || null
-            },
-            error: null
-          };
-        }
-        console.warn(`[auth] ensureAuth failed before ${actionLabel}`, ensured.error);
-        showToast('ログイン状態を確認できませんでした。再度お試しください。');
-        return { ok: false, ensured, error: ensured.error };
-      }
-      accountId = ensured.ensuredAccountId || accountId || null;
+      logWriteAuth(actionLabel, 'preflight:allow', {
+        reason: 'fresh-session-and-account-confirmed',
+        ensuredAccountId: ensured.ensuredAccountId || null
+      });
+      accountId = ensured.ensuredAccountId || null;
+      lastAuthOkAt = Date.now();
+      lastAuthEmail = ensured.user?.email || lastAuthEmail || '';
+      lastAuthAccountId = accountId;
       return { ok: true, ensured, error: null };
     }
 
     async function recoverAuthForWriteError(actionLabel, error, status) {
-      if (!AppCommon?.isAuthError || !AppCommon.isAuthError(error, status)) return false;
-      console.warn(`[auth] 401/auth error on ${actionLabel}, try refresh first`, { status, error });
-      showToast('認証を再確認しています…');
-      const refreshed = await refreshSessionSafely(`${actionLabel}:after-auth-error`, { forceRefresh: true, timeoutMs: 8000, toastOnFailure: true });
-      if (!refreshed.ok) return false;
-      const ensured = await ensureAuth({ redirectToLogin: false });
-      if (!ensured.ok) {
-        showToast('ログイン状態を更新できませんでした。再ログイン後に再試行してください。');
+      const authError = !!(AppCommon?.isAuthError && AppCommon.isAuthError(error, status));
+      logWriteAuth(actionLabel, 'write-error', {
+        status: Number(status) || null,
+        retryEligible: authError,
+        error: serializeAuthError(error)
+      });
+      if (!authError) return false;
+      console.warn(`[auth] 401/auth error on ${actionLabel}, retry with strict refresh`, { status, error });
+      showToast('認証を再接続しています…');
+      const ensured = await ensureAuth({
+        redirectToLogin: false,
+        forceRefresh: true,
+        timeoutMs: 10000,
+        reason: `write:${actionLabel}:retry`,
+        requireAccountId: true
+      });
+      logWriteAuth(actionLabel, 'retry:result', summarizeEnsureAuth(ensured));
+      const strictError = getStrictAuthError(ensured);
+      if (strictError) {
+        logWriteAuth(actionLabel, 'retry:reject', {
+          reason: 'reauth-failed',
+          error: serializeAuthError(strictError)
+        });
+        showToast(WRITE_AUTH_FAILURE_TOAST);
+        refreshAuthUI(`${actionLabel}:retry-failed`, { preservePrevious: false, forceRefresh: false }).catch((e) => {
+          console.warn('retry-failed refreshAuthUI failed', e);
+        });
         return false;
       }
-      accountId = ensured.ensuredAccountId || accountId || null;
+      logWriteAuth(actionLabel, 'retry:allow', {
+        reason: 'reauth-succeeded',
+        ensuredAccountId: ensured.ensuredAccountId || null
+      });
+      accountId = ensured.ensuredAccountId || null;
+      lastAuthOkAt = Date.now();
+      lastAuthEmail = ensured.user?.email || lastAuthEmail || '';
+      lastAuthAccountId = accountId;
       return true;
     }
 
@@ -693,7 +733,7 @@
       const authReady = await ensureAuthForWrite('start-route');
       if (!authReady.ok) {
         console.error('ensureAuthForWrite failed', authReady.error);
-        alert(AppCommon.formatErrorMessage('ログイン状態の確認に失敗しました', authReady.error));
+        alert(`${WRITE_AUTH_FAILURE_TOAST}\n${authReady.error?.message || ''}`);
         return { ok: false, error: authReady.error };
       }
       const ensured = authReady.ensured;
@@ -731,6 +771,11 @@
         }
 
         if (error) {
+          logWriteAuth('start-route', 'write:reject', {
+            reason: 'insert-failed',
+            status: Number(status) || null,
+            error: serializeAuthError(error)
+          });
           console.error('routes insert error:', { status, error, payload });
           const msg = error?.message || '不明なエラー';
           const alertMsg = `ルートの開始に失敗しました。\n(${msg})\n送信キー:${Object.keys(payload).join(',')}\nv:${window.APP_VERSION}`;
@@ -740,6 +785,7 @@
         }
 
         currentRouteId = data.id;
+        logWriteAuth('start-route', 'write:success', { routeId: currentRouteId });
         showToast(`記録開始 #${currentRouteId}`);
         console.log('新しい route_id:', currentRouteId);
         loadRoutePhotos();
@@ -747,6 +793,10 @@
         updatePhotoSummaryLink();
         return { ok: true, routeId: currentRouteId };
       } catch (e) {
+        logWriteAuth('start-route', 'write:exception', {
+          reason: 'exception',
+          error: serializeAuthError(e)
+        });
         console.error('routes insert exception', e);
         const msg = e?.message || e;
         showToast('ルート開始で例外: ' + msg);
@@ -1031,7 +1081,13 @@
             .from('route_spot_photos')
             .insert(workingPayload));
         }
-        if (!insertError) break;
+        if (!insertError) {
+          logWriteAuth('photo-db-insert', 'write:success', {
+            attempt: attempt + 1,
+            routeId
+          });
+          break;
+        }
         if (!isMissingColumnError(insertError)) throw insertError;
         const missingCol = extractMissingColumn(insertError);
         if (missingCol && Object.prototype.hasOwnProperty.call(workingPayload, missingCol)) {
@@ -1070,7 +1126,7 @@
           const authReady = await ensureAuthForWrite('photo-upload');
           if (!authReady.ok) {
             console.error('ensureAuthForWrite (upload) error', authReady.error);
-            statusEl.textContent = AppCommon.formatErrorMessage('ログイン状態の確認に失敗', authReady.error);
+            statusEl.textContent = `${WRITE_AUTH_FAILURE_TOAST} ${authReady.error?.message || ''}`.trim();
             return;
           }
           const ensured = authReady.ensured;
@@ -1525,22 +1581,34 @@
       let lastAuthOkAt = 0;
       let lastAuthEmail = '';
       let lastAuthAccountId = null;
-      let pendingAuthRetry = null;
+      let authUiVerified = false;
+      let authRefreshInFlight = null;
+
+      function syncWriteControls() {
+        const canStart = !recording && authUiVerified && !!accountId;
+        if (startBtn) startBtn.disabled = !canStart;
+        if (stopBtn) stopBtn.disabled = !recording;
+        setStartAuthUI(authUiVerified && !!accountId);
+      }
 
       async function renderAuthBar(opts = {}) {
-        const { softFail = false, reason = '' } = opts || {};
+        const { preservePrevious = false, reason = '', authResult = null } = opts || {};
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
-          const ensured = await withTimeout(ensureAuth({ redirectToLogin: false }), 8000, 'ensureAuth timeout');
-          if (!ensured.ok) {
-            throw ensured.error || new Error('NOT_AUTHENTICATED');
-          }
+          const ensured = authResult || await withTimeout(ensureAuth({
+            redirectToLogin: false,
+            forceRefresh: false,
+            timeoutMs: 8000,
+            reason: `auth-bar:${reason || 'render'}`
+          }), 8000, 'ensureAuth timeout');
+          if (!ensured.ok) throw ensured.error || new Error('NOT_AUTHENTICATED');
           const email = ensured.user?.email || '';
           accountId = ensured.ensuredAccountId || null;
           lastAuthOkAt = Date.now();
           lastAuthEmail = email;
           lastAuthAccountId = accountId;
+          authUiVerified = !!accountId;
 
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
@@ -1550,112 +1618,86 @@
         </div>
         ${accountId ? '' : '<div class="meta" style="margin-top:6px;">※アカウント情報の取得が遅れています（ログ表示/保存が制限される場合があります）</div>'}
       `;
-          const isRecording = !!recording;
-          if (startBtn) startBtn.disabled = isRecording || !accountId;
-          if (stopBtn) stopBtn.disabled = !isRecording || !accountId;
-          setStartAuthUI(!!accountId);
-          return true;
+          syncWriteControls();
+          return { verified: authUiVerified, ensured };
         } catch (e) {
-          const withinSoftWindow = lastAuthOkAt && (Date.now() - lastAuthOkAt < 2 * 60 * 1000);
-          const hasPriorAuth = !!(lastAuthAccountId || accountId || lastAuthEmail);
-          const timeoutOnly = isTimeoutError(e);
-          const authErrorOnly = !!(AppCommon?.isAuthError && AppCommon.isAuthError(e));
-          if (softFail && withinSoftWindow && hasPriorAuth) {
-            console.warn('renderAuthBar soft-fail', reason, e);
-            accountId = accountId || lastAuthAccountId || null;
-            if (startBtn) startBtn.disabled = !!recording || !accountId;
-            if (stopBtn) stopBtn.disabled = !recording || !accountId;
-            setStartAuthUI(!!accountId);
-            return false;
-          }
-          if (timeoutOnly && hasPriorAuth) {
-            console.warn('renderAuthBar preserved prior auth state after timeout', reason, e);
-            if (authBar) authBar.textContent = '認証確認中（前回のログイン状態を維持）';
-            accountId = accountId || lastAuthAccountId || null;
-            if (startBtn) startBtn.disabled = !!recording || !accountId;
-            if (stopBtn) stopBtn.disabled = !recording || !accountId;
-            setStartAuthUI(!!accountId);
-            return false;
-          }
-          if (softFail && authErrorOnly && hasPriorAuth) {
-            console.warn('renderAuthBar preserved prior auth state after transient auth error', reason, e);
-            if (authBar) authBar.textContent = '認証再接続中（前回のログイン状態を維持）';
-            accountId = accountId || lastAuthAccountId || null;
-            if (startBtn) startBtn.disabled = !!recording || !accountId;
-            if (stopBtn) stopBtn.disabled = !recording || !accountId;
-            setStartAuthUI(!!accountId);
-            return false;
-          }
-          if (recording && hasPriorAuth) {
-            console.warn('renderAuthBar skipped during recording', reason, e);
-            if (authBar) authBar.textContent = '認証確認中（記録は継続）';
-            return false;
+          const hasPriorAuth = !!(lastAuthAccountId || lastAuthEmail);
+          authUiVerified = false;
+          accountId = null;
+          syncWriteControls();
+          if (preservePrevious && hasPriorAuth) {
+            console.warn('renderAuthBar preserve previous view', reason, e);
+            authBar.innerHTML = `
+        認証再接続中: <strong>${escapeHtml(lastAuthEmail || '前回ログイン')}</strong>
+        <div class="meta" style="margin-top:6px;">保存前にセッションを再確認します。現在は新規保存できません。</div>
+      `;
+            return { verified: false, preserved: true, error: e };
           }
           console.error('renderAuthBar error', e);
           authBar.innerHTML = `
         未ログインです。ログを保存するには <a class="btn ghost" href="${loginUrl}">ログイン</a> してください。
       `;
-          accountId = null;
-          if (startBtn) startBtn.disabled = true;
-          if (stopBtn) stopBtn.disabled = true;
-          setStartAuthUI(false);
-          return false;
+          return { verified: false, error: e };
         }
       }
 
-      async function refreshAuthUI(trigger = 'manual') {
-        console.log('[run] refreshAuthUI', {
-          trigger,
-          visibility: document.visibilityState,
-          path: location.pathname
-        });
-        const timer = setTimeout(() => {
-          const el = document.getElementById('authBar');
-          if (el) el.textContent = '認証状態の確認がタイムアウトしました';
-        }, 8000);
-        const soft = trigger === 'visibilitychange' || trigger === 'pageshow';
-        const tryRefreshSession = async (source = trigger) => {
-          const refreshed = await refreshSessionSafely(`${source}:refreshAuthUI`, {
-            forceRefresh: true,
-            timeoutMs: 8000,
-            toastOnFailure: false
+      async function refreshAuthUI(trigger = 'manual', opts = {}) {
+        const {
+          preservePrevious = trigger === 'visibilitychange' || trigger === 'pageshow',
+          forceRefresh = trigger === 'visibilitychange' || trigger === 'pageshow' || trigger === 'initial',
+          toastOnFailure = false
+        } = opts || {};
+        if (authRefreshInFlight) return authRefreshInFlight;
+        authRefreshInFlight = (async () => {
+          console.log('[run] refreshAuthUI', {
+            trigger,
+            preservePrevious,
+            forceRefresh,
+            visibility: document.visibilityState,
+            path: location.pathname
           });
-          if (!refreshed.ok) {
-            console.warn('refreshSession failed', refreshed.error);
+          const timer = setTimeout(() => {
+            const el = document.getElementById('authBar');
+            if (el) el.textContent = '認証状態の確認がタイムアウトしました';
+          }, 8000);
+          try {
+            const ensured = await ensureAuth({
+              redirectToLogin: false,
+              forceRefresh,
+              timeoutMs: 8000,
+              reason: `ui:${trigger}`
+            });
+            const strictError = forceRefresh ? getStrictAuthError(ensured) : null;
+            const uiAuthResult = strictError ? { ...ensured, ok: false, error: strictError } : ensured;
+            logWriteAuth('ui-auth', `refresh:${trigger}`, summarizeEnsureAuth(uiAuthResult));
+            const result = await renderAuthBar({
+              preservePrevious,
+              reason: trigger,
+              authResult: uiAuthResult
+            });
+            if (!result?.verified && toastOnFailure) {
+              showToast(WRITE_AUTH_FAILURE_TOAST);
+            }
+            return result;
+          } catch (e) {
+            console.error('renderAuthBar failure', e);
+            const el = document.getElementById('authBar');
+            if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
+            if (toastOnFailure) showToast(WRITE_AUTH_FAILURE_TOAST);
+            return { verified: false, error: e };
+          } finally {
+            clearTimeout(timer);
+            authRefreshInFlight = null;
           }
-        };
-        if (soft) {
-          await tryRefreshSession();
-        }
-        try {
-          const ok = await withTimeout(renderAuthBar({ softFail: soft, reason: trigger }), 8500, 'renderAuthBar timeout');
-          if (!ok && soft) {
-            if (pendingAuthRetry) clearTimeout(pendingAuthRetry);
-            pendingAuthRetry = setTimeout(async () => {
-              try {
-                await tryRefreshSession(`${trigger}:retry`);
-                await renderAuthBar({ softFail: false, reason: `${trigger}:retry` });
-              } catch (e) {
-                console.warn('auth retry failed', e);
-              } finally {
-                pendingAuthRetry = null;
-              }
-            }, 1500);
-          }
-        } catch (e) {
-          console.error('renderAuthBar failure', e);
-          const el = document.getElementById('authBar');
-          if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
-        } finally {
-          clearTimeout(timer);
-        }
+        })();
+        return authRefreshInFlight;
       }
 
       // 念のため、初回描画が動かなかった場合に再試行する保険
       setTimeout(() => {
         try {
           if (authBar?.textContent?.includes('認証状態を確認中')) {
-            renderAuthBar();
+            refreshAuthUI('boot-retry', { preservePrevious: false, forceRefresh: true });
           }
         } catch (e) {
           console.warn('authBar retry failed', e);
@@ -1665,12 +1707,9 @@
       async function renderLogs() {
         logsList.textContent = '読み込み中…';
         try {
-          if (!accountId) {
-            await renderAuthBar();
-            if (!accountId) {
-              logsList.innerHTML = '<div class="meta">未ログインです。保存したログを表示するにはログインしてください。</div>';
-              return;
-            }
+          if (!authUiVerified || !accountId) {
+            logsList.innerHTML = '<div class="meta">認証再接続中です。ログ表示には認証確認の完了が必要です。</div>';
+            return;
           }
 
           const { data: runs, error } = await sb
@@ -2160,7 +2199,7 @@
 
         const authReady = await ensureAuthForWrite('save-run');
         if (!authReady.ok) {
-          alert('ログイン状態を確認できないため、保存できませんでした。通信状態を確認して再試行してください。');
+          alert(`${WRITE_AUTH_FAILURE_TOAST}\n${authReady.error?.message || ''}`);
           return;
         }
         const ensured = authReady.ensured;
@@ -2235,6 +2274,11 @@
           }
 
           if (error || !newRow) {
+            logWriteAuth('save-run', 'write:reject', {
+              reason: 'insert-failed',
+              status: Number(status) || null,
+              error: serializeAuthError(error)
+            });
             console.error('RUN INSERT ERROR', { status, error, payload });
             if (AppCommon?.isAuthError?.(error, status)) {
               showToast('ログイン状態の更新に失敗しました。再ログイン後に再保存してください。');
@@ -2243,10 +2287,15 @@
             return;
           }
 
+          logWriteAuth('save-run', 'write:success', { runId: newRow.id });
           location.href = `detail.html?id=${encodeURIComponent(newRow.id)}&kind=run&v=${V()}`;
           redirected = true;
           return;
         } catch (e) {
+          logWriteAuth('save-run', 'write:exception', {
+            reason: 'exception',
+            error: serializeAuthError(e)
+          });
           console.error('RUN SAVE EXCEPTION', e);
           alert('保存に失敗: ' + (e?.message || '不明なエラー'));
         } finally {
@@ -2308,9 +2357,13 @@
       });
 
       const safeRender = async (trigger = 'safeRender') => {
-        await refreshAuthUI(trigger);
+        const authState = await refreshAuthUI(trigger);
         try {
-          await renderLogs();
+          if (authState?.verified) {
+            await renderLogs();
+          } else if (logsList) {
+            logsList.innerHTML = '<div class="meta">認証状態を確認中です。保存前には再認証が必要になる場合があります。</div>';
+          }
         } catch (e) {
           console.error('renderLogs failure', e);
           if (logsList) logsList.textContent = 'ログの読み込みに失敗しました';
@@ -2323,7 +2376,6 @@
           const loginUrl = `login.html?v=${V()}`;
           authBar.innerHTML = `未ログインです。<a class="btn ghost" href="${loginUrl}">ログイン</a> してください。`;
         }
-        return;
       }
 
       sb.auth.onAuthStateChange(async (_event, session) => {
@@ -2347,8 +2399,7 @@
       document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState !== 'visible') return;
         try {
-          await refreshAuthUI('visibilitychange');
-          await renderLogs();
+          await safeRender('visibilitychange');
         } catch (e) {
           console.warn('visibility refresh error', e);
         }

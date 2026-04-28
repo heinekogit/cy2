@@ -82,6 +82,16 @@
     return false;
   }
 
+  function serializeError(err) {
+    if (!err) return null;
+    return {
+      code: err.code || null,
+      message: err.message || String(err),
+      name: err.name || null,
+      status: err.status || null
+    };
+  }
+
   async function ensureFreshSession(supabase, opts = {}) {
     const {
       timeoutMs = AUTH_TIMEOUT_MS,
@@ -99,6 +109,7 @@
     let user = null;
     let error = null;
     let refreshed = false;
+    let refreshAttempted = false;
     try {
       const { data, error: getErr } = await withTimeout(supabase.auth.getSession(), timeoutMs, 'getSession timeout');
       session = data?.session || null;
@@ -111,6 +122,7 @@
     const exp = Number(session?.expires_at || 0);
     const nearExpiry = !!exp && ((exp * 1000) - Date.now() < 60 * 1000);
     if (forceRefresh || !session || nearExpiry) {
+      refreshAttempted = true;
       try {
         const { data, error: refreshErr } = await withTimeout(
           supabase.auth.refreshSession(),
@@ -134,7 +146,15 @@
       error = new Error(`auth_required (${reason})`);
       error.code = 'auth_required';
     }
-    return { ok: !!user, session, user, refreshed, error };
+    return {
+      ok: !!user,
+      session,
+      user,
+      refreshed,
+      refreshAttempted,
+      sessionExpiresAt: exp || null,
+      error
+    };
   }
 
   async function getSessionWithRefresh(supabase) {
@@ -176,7 +196,11 @@
     const {
       redirectToLogin = false,
       supabase = global.supabaseClient,
-      getAccountId
+      getAccountId,
+      forceRefresh = false,
+      timeoutMs = AUTH_TIMEOUT_MS,
+      reason = 'ensureAuth',
+      requireAccountId = false
     } = opts || {};
 
     console.log('[ensureAuth] start', {
@@ -189,11 +213,12 @@
       return { ok: false, user: null, session: null, ensuredAccountId: null, error: 'supabaseClient missing' };
     }
 
-    const { session, user, error: authError } = await ensureFreshSession(supabase, {
-      forceRefresh: false,
-      timeoutMs: AUTH_TIMEOUT_MS,
-      reason: 'ensureAuth'
+    const fresh = await ensureFreshSession(supabase, {
+      forceRefresh,
+      timeoutMs,
+      reason
     });
+    const { session, user, error: authError } = fresh;
 
     if (!user) {
       const err = authError || new Error('auth_required');
@@ -204,10 +229,25 @@
       }
       console.log('[ensureAuth] end (no user)', {
         hasUser: false,
+        reason,
         visibility: global.document?.visibilityState,
         path: global.location?.pathname
       });
-      return { ok: false, user: null, session, ensuredAccountId: null, error: err };
+      return {
+        ok: false,
+        user: null,
+        session,
+        ensuredAccountId: null,
+        error: err,
+        authMeta: {
+          reason,
+          forceRefresh,
+          refreshed: fresh.refreshed,
+          refreshAttempted: fresh.refreshAttempted,
+          sessionExpiresAt: fresh.sessionExpiresAt,
+          authError: serializeError(err)
+        }
+      };
     }
 
     let ensuredAccountId = null;
@@ -232,15 +272,50 @@
       }
     }
 
+    if (requireAccountId && !ensuredAccountId) {
+      const err = new Error(`account_required (${reason})`);
+      err.code = 'account_required';
+      return {
+        ok: false,
+        user,
+        session,
+        ensuredAccountId: null,
+        error: err,
+        authMeta: {
+          reason,
+          forceRefresh,
+          refreshed: fresh.refreshed,
+          refreshAttempted: fresh.refreshAttempted,
+          sessionExpiresAt: fresh.sessionExpiresAt,
+          authError: serializeError(err)
+        }
+      };
+    }
+
     console.log('[ensureAuth] end', {
       hasUser: !!user,
       userId: user?.id || null,
       ensuredAccountId,
+      reason,
       visibility: global.document?.visibilityState,
       path: global.location?.pathname
     });
 
-    return { ok: true, user, session, ensuredAccountId, error: null };
+    return {
+      ok: true,
+      user,
+      session,
+      ensuredAccountId,
+      error: null,
+      authMeta: {
+        reason,
+        forceRefresh,
+        refreshed: fresh.refreshed,
+        refreshAttempted: fresh.refreshAttempted,
+        sessionExpiresAt: fresh.sessionExpiresAt,
+        authError: serializeError(fresh.error)
+      }
+    };
   }
 
   function createEnsureAuth({ supabase, getAccountId }) {
@@ -271,6 +346,7 @@
     alertError,
     toastError,
     isTimeoutError,
+    serializeError,
     RouteOrigins,
     RouteTypes
   };

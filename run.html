@@ -412,6 +412,60 @@
       opacity: 0.55;
       cursor: not-allowed;
     }
+
+    .debug-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 2100;
+      background: rgba(17, 24, 39, 0.92);
+      color: #fff;
+      padding: 12px;
+      box-sizing: border-box;
+      display: none;
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    .debug-sheet.visible {
+      display: block;
+    }
+
+    .debug-sheet__title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .debug-sheet__meta {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #d1d5db;
+      margin-bottom: 8px;
+    }
+
+    .debug-sheet__text {
+      width: 100%;
+      min-height: 180px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      padding: 10px;
+      box-sizing: border-box;
+      font-size: 12px;
+      line-height: 1.4;
+      resize: vertical;
+    }
+
+    .debug-sheet__actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js?v=runfix" data-supabase-lib="1"
     defer onload="window.__supabaseLoaded = true; window.dispatchEvent(new Event('supabase-script-loaded'));"
@@ -485,6 +539,16 @@
       </section>
     </main>
 
+    <section id="debugSheet" class="debug-sheet" aria-live="polite">
+      <div class="debug-sheet__title">診断レポート</div>
+      <div class="debug-sheet__meta">エラー時に自動生成されます。この内容をそのままこのスレへ貼ってください。</div>
+      <textarea id="debugReportText" class="debug-sheet__text" readonly></textarea>
+      <div class="debug-sheet__actions">
+        <button id="copyDebugReportBtn" class="btn ghost" type="button">レポートをコピー</button>
+        <button id="closeDebugSheetBtn" class="btn ghost" type="button">閉じる</button>
+      </div>
+    </section>
+
     <div id="photoSummary" class="card"
       style="margin:12px 12px 0; display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.08);"
       hidden>
@@ -547,6 +611,8 @@
       return `${code}${err.message || err.toString?.() || err}`;
     };
     const WRITE_AUTH_FAILURE_TOAST = 'セッション再接続に失敗しました。再ログイン後に再試行してください。';
+    const RUN_DEBUG_STORAGE_KEY = 'run.debug.report.v1';
+    const RUN_DEBUG_MAX_LOGS = 300;
     const authMetaExpiresAt = (meta) => {
       const exp = Number(meta?.sessionExpiresAt || 0);
       if (!exp) return null;
@@ -572,6 +638,62 @@
         stage,
         ...payload
       });
+    };
+    const getRunDebugState = () => ({
+      recording: !!window.__runIsRecording?.(),
+      accountId: accountId || null,
+      visibility: document.visibilityState,
+      path: location.pathname,
+      authBarText: document.getElementById('authBar')?.textContent?.trim() || '',
+      ts: new Date().toISOString()
+    });
+    let runDebugCaptureStartedAt = null;
+    let runDebugLastIssue = null;
+    let openDebugReport = null;
+    const buildRunDebugEntries = () => {
+      const rows = Array.isArray(window.__runDebugLog) ? window.__runDebugLog.slice() : [];
+      if (!runDebugCaptureStartedAt) return rows;
+      return rows.filter((row) => String(row?.ts || '') >= runDebugCaptureStartedAt);
+    };
+    const buildRunDebugReport = () => {
+      const rows = buildRunDebugEntries();
+      return JSON.stringify({
+        appVersion: window.APP_VERSION || '',
+        startedAt: runDebugCaptureStartedAt,
+        issue: runDebugLastIssue,
+        entries: rows
+      }, null, 2);
+    };
+    const persistRunDebugReport = () => {
+      try {
+        localStorage.setItem(RUN_DEBUG_STORAGE_KEY, buildRunDebugReport());
+      } catch (_) {}
+    };
+    const pushRunDebugEvent = (label, payload = {}) => {
+      const entry = {
+        label,
+        ...getRunDebugState(),
+        ...payload
+      };
+      window.__runDebugLog = window.__runDebugLog || [];
+      window.__runDebugLog.push(entry);
+      if (window.__runDebugLog.length > RUN_DEBUG_MAX_LOGS) window.__runDebugLog.shift();
+      persistRunDebugReport();
+      console.log('[run-debug]', entry);
+      return entry;
+    };
+    window.dumpRunDebugLog = () => {
+      const rows = Array.isArray(window.__runDebugLog) ? window.__runDebugLog.slice() : [];
+      console.table(rows);
+      return rows;
+    };
+    const markRunDebugIssue = (kind, payload = {}) => {
+      runDebugLastIssue = {
+        kind,
+        ts: new Date().toISOString(),
+        ...payload
+      };
+      persistRunDebugReport();
     };
     const summarizeEnsureAuth = (res) => ({
       ok: !!res?.ok,
@@ -620,6 +742,13 @@
           reason: 'strict-auth-failed',
           error: serializeAuthError(strictError)
         });
+        if (typeof openDebugReport === 'function') {
+          openDebugReport('write-preflight-reject', {
+            actionLabel,
+            error: serializeAuthError(strictError),
+            ensured: summarizeEnsureAuth(ensured)
+          });
+        }
         console.warn(`[auth] strict write preflight failed before ${actionLabel}`, strictError);
         showToast(WRITE_AUTH_FAILURE_TOAST);
         refreshAuthUI(`${actionLabel}:write-denied`, { preservePrevious: false, forceRefresh: false }).catch((e) => {
@@ -662,6 +791,13 @@
           reason: 'reauth-failed',
           error: serializeAuthError(strictError)
         });
+        if (typeof openDebugReport === 'function') {
+          openDebugReport('write-retry-reject', {
+            actionLabel,
+            error: serializeAuthError(strictError),
+            ensured: summarizeEnsureAuth(ensured)
+          });
+        }
         showToast(WRITE_AUTH_FAILURE_TOAST);
         refreshAuthUI(`${actionLabel}:retry-failed`, { preservePrevious: false, forceRefresh: false }).catch((e) => {
           console.warn('retry-failed refreshAuthUI failed', e);
@@ -1264,9 +1400,12 @@
   <script defer>
     // Supabase 初期化。以前は client を window.supabase に上書きしていたためライブラリが参照できず止まっていた。
     let __runBooted = false;
+    let __runBootPromise = null;
 
     async function startApp(trigger = 'dcl') {
       if (__runBooted) return;
+      if (__runBootPromise) return __runBootPromise;
+      __runBootPromise = (async () => {
       // ★起動マーカー：これが画面に出ないなら、DOMContentLoadedまで到達していない
       const authBar = document.getElementById('authBar');
       if (authBar) authBar.textContent = 'JS起動…（DOMContentLoaded到達）';
@@ -1327,6 +1466,10 @@
       const toastEl = document.getElementById('toast');
       const hintEl = document.getElementById('hint');
       const badgeEl = document.getElementById('courseBadge');
+      const debugSheet = document.getElementById('debugSheet');
+      const debugReportText = document.getElementById('debugReportText');
+      const copyDebugReportBtn = document.getElementById('copyDebugReportBtn');
+      const closeDebugSheetBtn = document.getElementById('closeDebugSheetBtn');
       const routeState = document.getElementById('routeState');
       const routeSelected = document.getElementById('routeSelected');
       const routeSelectedName = document.getElementById('routeSelectedName');
@@ -1344,6 +1487,46 @@
           startBtn.setAttribute('aria-disabled', hasAuth ? 'false' : 'true');
         }
         if (startNote) startNote.hidden = !!hasAuth;
+      };
+      const updateDebugSheet = () => {
+        if (debugReportText) debugReportText.value = buildRunDebugReport();
+      };
+      const showDebugSheet = () => {
+        updateDebugSheet();
+        if (debugSheet) debugSheet.classList.add('visible');
+        if (debugReportText) {
+          debugReportText.focus();
+          debugReportText.select();
+        }
+      };
+      const closeDebugSheet = () => {
+        if (debugSheet) debugSheet.classList.remove('visible');
+      };
+      if (copyDebugReportBtn && !copyDebugReportBtn.dataset.bound) {
+        copyDebugReportBtn.dataset.bound = '1';
+        copyDebugReportBtn.addEventListener('click', async () => {
+          updateDebugSheet();
+          const text = debugReportText?.value || buildRunDebugReport();
+          try {
+            await navigator.clipboard.writeText(text);
+            showToast('診断レポートをコピーしました');
+          } catch (_) {
+            if (debugReportText) {
+              debugReportText.focus();
+              debugReportText.select();
+            }
+            showToast('テキストを選択したのでコピーしてください');
+          }
+        });
+      }
+      if (closeDebugSheetBtn && !closeDebugSheetBtn.dataset.bound) {
+        closeDebugSheetBtn.dataset.bound = '1';
+        closeDebugSheetBtn.addEventListener('click', closeDebugSheet);
+      }
+      openDebugReport = (kind, payload = {}) => {
+        markRunDebugIssue(kind, payload);
+        pushRunDebugEvent('debug-report:open', { kind, payload });
+        showDebugSheet();
       };
 
       const goLogin = () => {
@@ -1592,6 +1775,13 @@
         if (startBtn) startBtn.disabled = !canStart;
         if (stopBtn) stopBtn.disabled = !recording;
         setStartAuthUI(authUiVerified && !!getKnownAccountId());
+        pushRunDebugEvent('syncWriteControls', {
+          canStart,
+          authUiVerified,
+          knownAccountId: getKnownAccountId(),
+          startDisabled: !!startBtn?.disabled,
+          stopDisabled: !!stopBtn?.disabled
+        });
       }
 
       async function renderAuthBar(opts = {}) {
@@ -1599,6 +1789,11 @@
         const loginUrl = `login.html?v=${V()}`;
         const myPageUrl = `mypage.html?v=${V()}`;
         try {
+          pushRunDebugEvent('renderAuthBar:start', {
+            reason,
+            preservePrevious,
+            hasAuthResult: !!authResult
+          });
           const ensured = authResult || await withTimeout(ensureAuth({
             redirectToLogin: false,
             forceRefresh: false,
@@ -1616,6 +1811,12 @@
           lastAuthUserId = userId;
           if (resolvedAccountId) lastAuthAccountId = resolvedAccountId;
           authUiVerified = true;
+          pushRunDebugEvent('renderAuthBar:success', {
+            reason,
+            ensured: summarizeEnsureAuth(ensured),
+            resolvedAccountId,
+            sameUser
+          });
 
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
@@ -1631,6 +1832,20 @@
           const hasPriorAuth = !!(lastAuthAccountId || lastAuthEmail);
           const preserveCachedAuth = preservePrevious && hasPriorAuth && !isAuthRequiredError(e);
           authUiVerified = preserveCachedAuth;
+          pushRunDebugEvent('renderAuthBar:error', {
+            reason,
+            preservePrevious,
+            hasPriorAuth,
+            preserveCachedAuth,
+            error: serializeAuthError(e)
+          });
+          if (!preserveCachedAuth && typeof openDebugReport === 'function') {
+            openDebugReport('render-auth-bar-error', {
+              reason,
+              preservePrevious,
+              error: serializeAuthError(e)
+            });
+          }
           if (preserveCachedAuth) {
             if (!accountId && lastAuthAccountId) accountId = lastAuthAccountId;
           } else {
@@ -1670,9 +1885,19 @@
             visibility: document.visibilityState,
             path: location.pathname
           });
+          pushRunDebugEvent('refreshAuthUI:start', {
+            trigger,
+            preservePrevious,
+            forceRefresh,
+            toastOnFailure
+          });
           const timer = setTimeout(() => {
             const el = document.getElementById('authBar');
             if (el) el.textContent = '認証状態の確認がタイムアウトしました';
+            pushRunDebugEvent('refreshAuthUI:timer-fired', {
+              trigger,
+              timeoutMs: 8000
+            });
           }, 8000);
           try {
             const ensured = await ensureAuth({
@@ -1682,10 +1907,19 @@
               reason: `ui:${trigger}`
             });
             logWriteAuth('ui-auth', `refresh:${trigger}`, summarizeEnsureAuth(ensured));
+            pushRunDebugEvent('refreshAuthUI:ensured', {
+              trigger,
+              ensured: summarizeEnsureAuth(ensured)
+            });
             const result = await renderAuthBar({
               preservePrevious,
               reason: trigger,
               authResult: ensured
+            });
+            pushRunDebugEvent('refreshAuthUI:result', {
+              trigger,
+              verified: !!result?.verified,
+              preserved: !!result?.preserved
             });
             if (!result?.verified && toastOnFailure) {
               showToast(WRITE_AUTH_FAILURE_TOAST);
@@ -1693,12 +1927,25 @@
             return result;
           } catch (e) {
             console.error('renderAuthBar failure', e);
+            pushRunDebugEvent('refreshAuthUI:catch', {
+              trigger,
+              error: serializeAuthError(e)
+            });
+            if (typeof openDebugReport === 'function') {
+              openDebugReport('refresh-auth-ui-catch', {
+                trigger,
+                error: serializeAuthError(e)
+              });
+            }
             const el = document.getElementById('authBar');
             if (el) el.textContent = `認証状態の取得に失敗/タイムアウト：${e?.message || e}`;
             if (toastOnFailure) showToast(WRITE_AUTH_FAILURE_TOAST);
             return { verified: false, error: e };
           } finally {
             clearTimeout(timer);
+            pushRunDebugEvent('refreshAuthUI:finally', {
+              trigger
+            });
             authRefreshInFlight = null;
           }
         })();
@@ -2123,6 +2370,13 @@
       };
 
       startBtn.addEventListener('click', async () => {
+        runDebugCaptureStartedAt = new Date().toISOString();
+        runDebugLastIssue = null;
+        window.__runDebugLog = [];
+        persistRunDebugReport();
+        pushRunDebugEvent('startBtn:click', {
+          hasGeolocation: 'geolocation' in navigator
+        });
         if (!('geolocation' in navigator)) {
           alert('この端末では位置情報が使えません');
           return;
@@ -2136,25 +2390,52 @@
         let routeResult = { ok: false, error: null };
         try {
           if (startBtn) startBtn.disabled = true;
+          pushRunDebugEvent('startBtn:route-start', {
+            startDisabled: !!startBtn?.disabled
+          });
           routeResult = await startNewRoute();
         } catch (e) {
           console.error('startNewRoute exception', e);
+          pushRunDebugEvent('startBtn:route-exception', {
+            error: serializeAuthError(e)
+          });
+          openDebugReport('start-route-exception', {
+            error: serializeAuthError(e)
+          });
           showToast('ルート開始に失敗しました');
           routeResult = { ok: false, error: e };
         }
 
         if (!routeResult?.ok || !routeResult.routeId) {
+          const routeError = serializeAuthError(routeResult?.error);
+          pushRunDebugEvent('startBtn:route-failed', {
+            routeResultOk: !!routeResult?.ok,
+            routeId: routeResult?.routeId || null,
+            error: routeError
+          });
+          openDebugReport('start-route-failed', {
+            routeId: routeResult?.routeId || null,
+            error: routeError
+          });
           const msg = routeResult?.error?.message || routeResult?.error || 'ルート開始に失敗しました';
           showToast(String(msg));
           syncWriteControls();
           return;
         }
+        pushRunDebugEvent('startBtn:route-created', {
+          routeId: routeResult.routeId
+        });
 
         setBadge('', '現在地を取得中…');
         showToast(`ルート作成OK (#${routeResult.routeId}) / 位置取得を開始します`);
         let started = false;
 
         const geoSuccess = (pos) => {
+          pushRunDebugEvent('startBtn:geo-success', {
+            lat: Number(pos?.coords?.latitude || 0),
+            lng: Number(pos?.coords?.longitude || 0),
+            accuracy: Number(pos?.coords?.accuracy || 0)
+          });
           started = true;
           try {
             onPos(pos);
@@ -2186,6 +2467,13 @@
 
         const geoError = (err) => {
           console.warn('geolocation first fix error', err);
+          const geoErr = serializeAuthError(err);
+          pushRunDebugEvent('startBtn:geo-error', {
+            error: geoErr
+          });
+          openDebugReport('geo-first-fix-error', {
+            error: geoErr
+          });
           clearWatchIfAny();
           recording = false;
           const detail = err?.message ? `\n(${err.message})` : '';
@@ -2198,6 +2486,14 @@
 
         setTimeout(() => {
           if (recording || started) return;
+          pushRunDebugEvent('startBtn:geo-timeout', {
+            started,
+            recording
+          });
+          openDebugReport('geo-first-fix-timeout', {
+            started,
+            recording
+          });
           syncWriteControls();
           showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
         }, 8000);
@@ -2387,12 +2683,43 @@
         }
       }
 
-      sb.auth.onAuthStateChange(async (_event, session) => {
-        await safeRender();
-        if (session?.user) {
-          plannedRouteLoaded = false;
-          await loadPlannedRouteIfAny(true);
+      let authEventRefreshQueued = false;
+      const queueAuthStateRefresh = (event, session) => {
+        pushRunDebugEvent('auth:event', {
+          event,
+          hasUser: !!session?.user,
+          sessionUserId: session?.user?.id || null
+        });
+        if (event === 'TOKEN_REFRESHED') {
+          console.log('[run] auth event ignored', { event });
+          return;
         }
+        if (authEventRefreshQueued) {
+          console.log('[run] auth event coalesced', { event });
+          return;
+        }
+        authEventRefreshQueued = true;
+        setTimeout(async () => {
+          try {
+            console.log('[run] auth event refresh', {
+              event,
+              hasUser: !!session?.user,
+              visibility: document.visibilityState
+            });
+            await safeRender(`auth:${String(event || 'unknown').toLowerCase()}`);
+            if (session?.user) {
+              plannedRouteLoaded = false;
+              await loadPlannedRouteIfAny(true);
+            }
+          } catch (e) {
+            console.warn('auth state refresh error', e);
+          } finally {
+            authEventRefreshQueued = false;
+          }
+        }, 0);
+      };
+      sb.auth.onAuthStateChange((event, session) => {
+        queueAuthStateRefresh(event, session);
       });
       window.addEventListener('pageshow', async () => {
         try {
@@ -2432,6 +2759,10 @@
       } catch (e) {
         console.warn('initial route load failed', e);
       }
+    })().finally(() => {
+      if (!__runBooted) __runBootPromise = null;
+    });
+      return __runBootPromise;
     }
     document.addEventListener('DOMContentLoaded', () => startApp('dcl'));
     setTimeout(() => startApp('fallback'), 4000);

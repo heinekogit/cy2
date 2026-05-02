@@ -585,11 +585,12 @@
     const getStrictAuthError = (res) => {
       const metaErr = res?.authMeta?.authError || null;
       if (!res?.ok) return res?.error || metaErr || null;
-      if (!metaErr) return null;
-      const err = new Error(metaErr.message || 'session confirmation failed');
-      err.code = metaErr.code || 'session_confirmation_failed';
-      if (metaErr.status != null) err.status = metaErr.status;
-      return err;
+      return null;
+    };
+    const isAuthRequiredError = (err) => {
+      const code = String(err?.code || '').toLowerCase();
+      const msg = String(err?.message || err || '').toLowerCase();
+      return code === 'auth_required' || msg.includes('auth_required') || msg.includes('not authenticated');
     };
     function withTimeout(promise, ms, label = 'timeout') {
       return Promise.race([
@@ -1581,14 +1582,16 @@
       let lastAuthOkAt = 0;
       let lastAuthEmail = '';
       let lastAuthAccountId = null;
+      let lastAuthUserId = null;
       let authUiVerified = false;
       let authRefreshInFlight = null;
+      const getKnownAccountId = () => accountId || lastAuthAccountId || null;
 
       function syncWriteControls() {
-        const canStart = !recording && authUiVerified && !!accountId;
+        const canStart = !recording && authUiVerified && !!getKnownAccountId();
         if (startBtn) startBtn.disabled = !canStart;
         if (stopBtn) stopBtn.disabled = !recording;
-        setStartAuthUI(authUiVerified && !!accountId);
+        setStartAuthUI(authUiVerified && !!getKnownAccountId());
       }
 
       async function renderAuthBar(opts = {}) {
@@ -1604,11 +1607,15 @@
           }), 8000, 'ensureAuth timeout');
           if (!ensured.ok) throw ensured.error || new Error('NOT_AUTHENTICATED');
           const email = ensured.user?.email || '';
-          accountId = ensured.ensuredAccountId || null;
+          const userId = ensured.user?.id || null;
+          const sameUser = !!(userId && lastAuthUserId && userId === lastAuthUserId);
+          const resolvedAccountId = ensured.ensuredAccountId || (sameUser ? getKnownAccountId() : null);
+          accountId = resolvedAccountId;
           lastAuthOkAt = Date.now();
           lastAuthEmail = email;
-          lastAuthAccountId = accountId;
-          authUiVerified = !!accountId;
+          lastAuthUserId = userId;
+          if (resolvedAccountId) lastAuthAccountId = resolvedAccountId;
+          authUiVerified = true;
 
           authBar.innerHTML = `
         ログイン中: <strong>${escapeHtml(email)}</strong>
@@ -1616,22 +1623,29 @@
           <a class="btn ghost" href="${myPageUrl}">マイページへ</a>
           <button class="btn ghost" data-signout type="button">サインアウト</button>
         </div>
-        ${accountId ? '' : '<div class="meta" style="margin-top:6px;">※アカウント情報の取得が遅れています（ログ表示/保存が制限される場合があります）</div>'}
+        ${ensured.ensuredAccountId ? '' : '<div class="meta" style="margin-top:6px;">※アカウント情報の取得が遅れています（ログ表示/保存が制限される場合があります）</div>'}
       `;
           syncWriteControls();
-          return { verified: authUiVerified, ensured };
+          return { verified: !!getKnownAccountId(), ensured };
         } catch (e) {
           const hasPriorAuth = !!(lastAuthAccountId || lastAuthEmail);
-          authUiVerified = false;
-          accountId = null;
+          const preserveCachedAuth = preservePrevious && hasPriorAuth && !isAuthRequiredError(e);
+          authUiVerified = preserveCachedAuth;
+          if (preserveCachedAuth) {
+            if (!accountId && lastAuthAccountId) accountId = lastAuthAccountId;
+          } else {
+            accountId = null;
+            lastAuthAccountId = null;
+            lastAuthUserId = null;
+          }
           syncWriteControls();
-          if (preservePrevious && hasPriorAuth) {
+          if (preserveCachedAuth) {
             console.warn('renderAuthBar preserve previous view', reason, e);
             authBar.innerHTML = `
         認証再接続中: <strong>${escapeHtml(lastAuthEmail || '前回ログイン')}</strong>
-        <div class="meta" style="margin-top:6px;">保存前にセッションを再確認します。現在は新規保存できません。</div>
+        <div class="meta" style="margin-top:6px;">保存前にセッションを再確認します。一時的な再確認失敗のため表示を維持しています。</div>
       `;
-            return { verified: false, preserved: true, error: e };
+            return { verified: !!getKnownAccountId(), preserved: true, error: e };
           }
           console.error('renderAuthBar error', e);
           authBar.innerHTML = `
@@ -1667,13 +1681,11 @@
               timeoutMs: 8000,
               reason: `ui:${trigger}`
             });
-            const strictError = forceRefresh ? getStrictAuthError(ensured) : null;
-            const uiAuthResult = strictError ? { ...ensured, ok: false, error: strictError } : ensured;
-            logWriteAuth('ui-auth', `refresh:${trigger}`, summarizeEnsureAuth(uiAuthResult));
+            logWriteAuth('ui-auth', `refresh:${trigger}`, summarizeEnsureAuth(ensured));
             const result = await renderAuthBar({
               preservePrevious,
               reason: trigger,
-              authResult: uiAuthResult
+              authResult: ensured
             });
             if (!result?.verified && toastOnFailure) {
               showToast(WRITE_AUTH_FAILURE_TOAST);
@@ -2106,8 +2118,7 @@
         recording = false;
         showRecUI && showRecUI(false);
         setBadge('off', '位置情報エラー');
-        if (stopBtn) stopBtn.disabled = true;
-        if (startBtn) startBtn.disabled = false;
+        syncWriteControls();
         releaseWakeLock();
       };
 
@@ -2135,7 +2146,7 @@
         if (!routeResult?.ok || !routeResult.routeId) {
           const msg = routeResult?.error?.message || routeResult?.error || 'ルート開始に失敗しました';
           showToast(String(msg));
-          if (startBtn && !recording) startBtn.disabled = false;
+          syncWriteControls();
           return;
         }
 
@@ -2180,15 +2191,14 @@
           const detail = err?.message ? `\n(${err.message})` : '';
           alert(`位置情報が特定できません。位置情報の利用を許可しているか確認してください。${detail}`);
           setBadge('off', '位置取得失敗');
-          if (startBtn) startBtn.disabled = false;
-          if (stopBtn) stopBtn.disabled = true;
+          syncWriteControls();
         };
 
         navigator.geolocation.getCurrentPosition(geoSuccess, geoError, GEO_OPTIONS);
 
         setTimeout(() => {
           if (recording || started) return;
-          if (startBtn) startBtn.disabled = false;
+          syncWriteControls();
           showToast('位置取得が開始できませんでした（許可や通信状態を確認してください）');
         }, 8000);
       });
@@ -2208,8 +2218,7 @@
         recording = false;
         clearWatchIfAny();
         releaseWakeLock();
-        if (stopBtn) stopBtn.disabled = true;
-        if (startBtn) startBtn.disabled = false;
+        syncWriteControls();
 
         const count = traced.length;
         const ok = confirm(`記録を停止します。ログを保存しますか？（ポイント数: ${count}）`);

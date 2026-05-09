@@ -279,6 +279,25 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return s == null ? '-' : Math.round(Number(s) / 60) + ' 分';
     }
 
+    function normalizeDistanceMeters(value, points){
+      if (Number.isFinite(Number(value))) return Number(value);
+      if (Array.isArray(points) && points.length >= 2) return Math.round(totalDistanceMeters(points));
+      return null;
+    }
+
+    function durationFromTimestamps(startedAt, endedAt){
+      if (!startedAt || !endedAt) return null;
+      const startedMs = new Date(startedAt).getTime();
+      const endedMs = new Date(endedAt).getTime();
+      if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs <= startedMs) return null;
+      return Math.round((endedMs - startedMs) / 1000);
+    }
+
+    function normalizeDurationSeconds(value, startedAt, endedAt){
+      if (Number.isFinite(Number(value))) return Number(value);
+      return durationFromTimestamps(startedAt, endedAt);
+    }
+
     function renderDetailMeta(kindLabel, idValue, title, when, distanceText, durationText, extraHtml){
       const box = $('#meta');
       if (!box) return;
@@ -354,6 +373,22 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         return best.diffMs <= withinMs ? best.item : null;
       }catch(e){
         console.warn('resolveRunForRoute failed', e);
+        return null;
+      }
+    }
+
+    async function loadRunSummary(runId){
+      if (!runId) return null;
+      try{
+        const { data, error } = await client
+          .from('runs')
+          .select('id,created_at,started_at,ended_at,polyline,geojson,distance_m,duration_s')
+          .eq('id', runId)
+          .maybeSingle();
+        if (error || !data) return null;
+        return data;
+      }catch(e){
+        console.warn('loadRunSummary failed', e);
         return null;
       }
     }
@@ -708,7 +743,6 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         const extra = run.started_at
           ? `<div class="muted">開始: ${new Date(run.started_at).toLocaleString()}</div>`
           : '';
-        renderDetailMeta('ログ', run.id, title, when, fmtKmText(run.distance_m), fmtMinText(run.duration_s), extra);
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();
@@ -722,6 +756,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         const runPoints = extractLatLngsFromRoute(run);
+        const distanceM = normalizeDistanceMeters(run.distance_m, runPoints);
+        const durationS = normalizeDurationSeconds(run.duration_s, run.started_at, run.ended_at);
+        renderDetailMeta('ログ', run.id, title, when, fmtKmText(distanceM), fmtMinText(durationS), extra);
         let runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
         if ((!runLayer || (runLayer.getBounds && !runLayer.getBounds().isValid())) && runPoints.length >= 2) {
           runLayer = L.polyline(runPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
@@ -779,7 +816,6 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             `<div class="muted">元ログ: <a class="btn" href="web-detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">Run #${routeRow.source_run_id}</a></div>`
           );
         }
-        renderDetailMeta('ルート', routeRow.id, title, when, fmtKmText(routeRow.distance_m), fmtMinText(routeRow.duration_s), extraParts.join(''));
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();
@@ -795,14 +831,26 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         let routePoints = extractLatLngsFromRoute(routeRow);
         console.log('[detail] routePoints=', routePoints.length);
         let lineSource = routeRow;
+        let sourceRun = null;
+        if (routeRow.source_run_id) {
+          sourceRun = await loadRunSummary(routeRow.source_run_id);
+        }
         if (routePoints.length < 2 && routeRow.route_type === 'from_run') {
           const fallbackRun = await resolveRunForRoute(routeRow);
           if (fallbackRun) {
             lineSource = fallbackRun;
+            if (!sourceRun) sourceRun = fallbackRun;
             routePoints = extractLatLngsFromRoute(fallbackRun);
             console.log('[detail] routePoints (fallback run)=', routePoints.length);
           }
         }
+        const distanceM = normalizeDistanceMeters(routeRow.distance_m, routePoints);
+        const durationS = normalizeDurationSeconds(
+          routeRow.duration_s ?? sourceRun?.duration_s,
+          sourceRun?.started_at,
+          sourceRun?.ended_at
+        );
+        renderDetailMeta('ルート', routeRow.id, title, when, fmtKmText(distanceM), fmtMinText(durationS), extraParts.join(''));
         let routeLayer = drawLineOnMap(__map, lineSource.polyline, lineSource.geojson, COLORS.routePlanned);
         if ((!routeLayer || (routeLayer.getBounds && !routeLayer.getBounds().isValid())) && routePoints.length >= 2) {
           routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);

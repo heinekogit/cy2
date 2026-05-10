@@ -429,35 +429,67 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return res;
     };
 
-    async function fetchElevations(points) {
-      try {
-        const samples = samplePoints(points, 200);
-        if (!samples.length) return null;
-        const qs = samples.map((p) => `${p.lat},${p.lng}`).join('|');
-        const url = `https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(qs)}`;
-        const res = await fetch(url, { mode: 'cors' });
-        if (!res.ok) return null;
-        const json = await res.json();
-        const list = json?.results?.map((r) => r.elevation).filter((v) => Number.isFinite(v));
-        if (!list || list.length < 2) return null;
-        if (points.length <= list.length) return list.slice(0, points.length);
-        const expanded = new Array(points.length);
-        const step = (points.length - 1) / (list.length - 1);
-        for (let i = 0; i < points.length; i++) {
-          const pos = i / step;
-          const k = Math.floor(pos);
-          if (k >= list.length - 1) {
-            expanded[i] = list[list.length - 1];
-            continue;
-          }
-          const t = pos - k;
-          expanded[i] = list[k] * (1 - t) + list[k + 1] * t;
+    async function fetchElevationsOpenElevation(points) {
+      const samples = samplePoints(points, 200);
+      if (!samples.length) return null;
+      const qs = samples.map((p) => `${p.lat},${p.lng}`).join('|');
+      const url = `https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(qs)}`;
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const list = json?.results?.map((r) => r.elevation).filter((v) => Number.isFinite(v));
+      if (!list || list.length < 2) return null;
+      return { list, sampledCount: samples.length };
+    }
+
+    async function fetchElevationsOpenTopoData(points) {
+      const samples = samplePoints(points, 100);
+      if (!samples.length) return null;
+      const qs = samples.map((p) => `${p.lat},${p.lng}`).join('|');
+      const url = `https://api.opentopodata.org/v1/srtm90m?locations=${encodeURIComponent(qs)}&interpolation=cubic`;
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) return null;
+      const json = await res.json();
+      if (json?.status !== 'OK') return null;
+      const list = json?.results?.map((r) => r.elevation).filter((v) => Number.isFinite(v));
+      if (!list || list.length < 2) return null;
+      return { list, sampledCount: samples.length };
+    }
+
+    function expandElevationSamples(points, list, sampledCount) {
+      if (!Array.isArray(list) || list.length < 2) return null;
+      if (points.length <= list.length) return list.slice(0, points.length);
+      const expanded = new Array(points.length);
+      const step = (points.length - 1) / Math.max(1, sampledCount - 1);
+      for (let i = 0; i < points.length; i++) {
+        const pos = i / step;
+        const k = Math.floor(pos);
+        if (k >= list.length - 1) {
+          expanded[i] = list[list.length - 1];
+          continue;
         }
-        return expanded;
-      } catch (err) {
-        console.warn('fetchElevations failed', err);
-        return null;
+        const t = pos - k;
+        expanded[i] = list[k] * (1 - t) + list[k + 1] * t;
       }
+      return expanded;
+    }
+
+    async function fetchElevations(points) {
+      const providers = [
+        ['open-elevation', fetchElevationsOpenElevation],
+        ['opentopodata', fetchElevationsOpenTopoData]
+      ];
+      for (const [name, provider] of providers) {
+        try {
+          const result = await provider(points);
+          if (!result?.list?.length) continue;
+          const expanded = expandElevationSamples(points, result.list, result.sampledCount);
+          if (expanded && expanded.length >= 2) return expanded;
+        } catch (err) {
+          console.warn(`fetchElevations failed via ${name}`, err);
+        }
+      }
+      return null;
     }
 
     const sumGainLoss = (elevs, threshold = 2) => {

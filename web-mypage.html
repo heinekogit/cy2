@@ -53,8 +53,11 @@
     function visToBool(r){ return r?.is_public===true || r?.visibility==='public'; }
     const fmtKm = (m)=> m==null?'-':(Number(m)/1000).toFixed(2)+' km';
     const fmtMin = (s)=> s==null?'-':Math.round(Number(s)/60)+' 分';
-    function routeTypeLabel(routeType){
+    function routeTypeLabel(routeType, origin, sourceRunId){
+      if (routeType === 'from_run' && sourceRunId) return '実走履歴';
+      if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
       if (routeType === 'from_run') return '実走履歴';
+      if (routeType === 'manual') return '描画ルート';
       return routeType || '';
     }
 
@@ -85,7 +88,7 @@
       try{
         const { data, error } = await client
           .from('routes')
-          .select('id,name,created_at,is_public,route_type,source_run_id,account_id')
+          .select('id,name,created_at,is_public,route_type,source_run_id,origin,account_id')
           .eq('account_id', acc)
           .order('created_at', { ascending:false });
         if(error) throw error;
@@ -93,7 +96,7 @@
         box.innerHTML = routes.map(r=>{
           const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
           const badge = r.is_public ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
-          const typeLabel = routeTypeLabel(r.route_type);
+          const typeLabel = routeTypeLabel(r.route_type, r.origin, r.source_run_id);
           const from = typeLabel ? `<span class="muted" style="font-size:12px;">${typeLabel}${r.source_run_id?(' #'+r.source_run_id):''}</span>` : '';
           const title = r.name || '(無題ルート)';
           // 編集ボタンは当面用途がないため display:none で残す

@@ -970,18 +970,7 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
-      let routeTypeValue = state.currentRoute?.route_type || null;
-      if (!routeTypeValue) {
-        try {
-          const { data, error } = await sb.from('routes').select('route_type').eq('is_public', true).limit(1);
-          if (!error && Array.isArray(data) && data.length && data[0]?.route_type) {
-            routeTypeValue = data[0].route_type;
-          }
-        } catch (e) {
-          console.warn('get default route_type failed', e);
-        }
-      }
-      if (!routeTypeValue) routeTypeValue = 'from_run';
+      let routeTypeValue = state.currentRoute?.route_type || 'manual';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();

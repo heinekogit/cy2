@@ -282,6 +282,14 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return s == null ? '-' : Math.round(Number(s) / 60) + ' 分';
     }
 
+    function routeTypeLabel(routeType, origin, sourceRunId){
+      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
+      if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
+      if (routeType === 'from_run') return 'ログ由来';
+      if (routeType === 'manual') return '描画ルート';
+      return routeType || '-';
+    }
+
     function renderDetailMeta(kindLabel, idValue, title, when, distanceText, durationText, extraHtml){
       const box = $('#meta');
       if (!box) return;
@@ -783,7 +791,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         __currentRoute = routeRow;
         const when = routeRow.created_at ? new Date(routeRow.created_at).toLocaleString() : '-';
         const title = routeRow.name || 'ルート';
-        const typeLabel = routeRow.route_type === 'from_run' ? 'ログ由来' : (routeRow.route_type || '-');
+        const typeLabel = routeTypeLabel(routeRow.route_type, routeRow.origin, routeRow.source_run_id);
         const pubLabel = routeRow.is_public ? '公開' : '非公開';
         const owner = routeRow.account_id || '-';
         const extraParts = [];

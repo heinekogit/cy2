@@ -280,8 +280,13 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     function normalizeDistanceMeters(value, points){
-      if (Number.isFinite(Number(value))) return Number(value);
-      if (Array.isArray(points) && points.length >= 2) return Math.round(totalDistanceMeters(points));
+      const num = Number(value);
+      if (Number.isFinite(num) && num > 0) return num;
+      if (Array.isArray(points) && points.length >= 2) {
+        const derived = Math.round(totalDistanceMeters(points));
+        if (derived > 0) return derived;
+      }
+      if (Number.isFinite(num) && num === 0) return 0;
       return null;
     }
 

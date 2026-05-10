@@ -1,4 +1,4 @@
 // Shared application version for cache-busting and display
 // Update this value on deploys.
-window.__APP_VERSION__ = '20260510-01';
+window.__APP_VERSION__ = '20260510-02';
 window.APP_VERSION = window.__APP_VERSION__;

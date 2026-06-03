@@ -97,6 +97,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 </style>
 
 <script src="js/version.js"></script>
+<script src="js/route-segments.js"></script>
 
 <script>
   const COLORS = {
@@ -166,6 +167,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
     function normalizePoints(points){
+      if (window.RouteSegments?.normalizeTrackPoints) {
+        const normalized = window.RouteSegments.normalizeTrackPoints(points);
+        if (normalized.length) return normalized;
+      }
       if (!Array.isArray(points)) return [];
       const out = [];
       for (const p of points) {
@@ -174,14 +179,20 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           const a = Number(p[0]);
           const b = Number(p[1]);
           if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-          if (Math.abs(a) > 90 && Math.abs(b) <= 90) out.push({ lat: b, lng: a });
-          else out.push({ lat: a, lng: b });
+          const ts = window.RouteSegments?.normalizeTimestamp?.(p[2]);
+          if (Math.abs(a) > 90 && Math.abs(b) <= 90) out.push(ts == null ? { lat: b, lng: a } : { lat: b, lng: a, ts });
+          else out.push(ts == null ? { lat: a, lng: b } : { lat: a, lng: b, ts });
           continue;
         }
         const lat = Number(p.lat ?? p.latitude);
         const lng = Number(p.lng ?? p.lon ?? p.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        out.push({ lat, lng });
+        const point = { lat, lng };
+        const ts = window.RouteSegments?.normalizeTimestamp?.(p.ts ?? p.timestamp);
+        const acc = Number(p.acc ?? p.accuracy);
+        if (ts != null) point.ts = ts;
+        if (Number.isFinite(acc)) point.acc = acc;
+        out.push(point);
       }
       return out;
     }
@@ -204,6 +215,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
           if (pts.length) return pts;
         }
         if (route?.geojson){
+          const tracked = window.RouteSegments?.extractTrackPointsFromGeojson?.(route.geojson) || [];
+          if (tracked.length) return tracked;
           const g = parseGeojsonMaybeTwice(route.geojson);
           if (!g) return [];
           const out = [];
@@ -233,6 +246,23 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         if (pts.length) return pts;
       }
       return [];
+    }
+    function drawSegmentedTrackOnMap(map, points, color){
+      const segments = window.RouteSegments?.splitRouteSegments?.(points, {
+        maxGapMs: window.RouteSegments?.MAX_GAP_MS,
+        maxJumpDistanceM: window.RouteSegments?.MAX_JUMP_DISTANCE_M
+      }) || [];
+      if (!segments.length) return null;
+      const group = L.featureGroup(
+        segments.map((segment) => L.polyline(segment.map((p) => [p.lat, p.lng]), { color, weight: 5 }))
+      ).addTo(map);
+      try{
+        const bounds = group.getBounds?.();
+        if (bounds && bounds.isValid && bounds.isValid()) {
+          map.fitBounds(bounds, { padding:[20,20], maxZoom:16 });
+        }
+      }catch(_){}
+      return group;
     }
     function distancePointToSegmentMeters(p, a, b){
       const latFactor = 111320;
@@ -744,7 +774,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
         const runPoints = extractLatLngsFromRoute(run);
-        let runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
+        let runLayer = drawSegmentedTrackOnMap(__map, runPoints, COLORS.runRecorded);
+        if (!runLayer) {
+          runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
+        }
         if ((!runLayer || (runLayer.getBounds && !runLayer.getBounds().isValid())) && runPoints.length >= 2) {
           runLayer = L.polyline(runPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
         }
@@ -827,7 +860,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             console.log('[detail] routePoints (fallback run)=', routePoints.length);
           }
         }
-        let routeLayer = drawLineOnMap(__map, lineSource.polyline, lineSource.geojson, COLORS.routePlanned);
+        let routeLayer = drawSegmentedTrackOnMap(__map, routePoints, COLORS.routePlanned);
+        if (!routeLayer) {
+          routeLayer = drawLineOnMap(__map, lineSource.polyline, lineSource.geojson, COLORS.routePlanned);
+        }
         if ((!routeLayer || (routeLayer.getBounds && !routeLayer.getBounds().isValid())) && routePoints.length >= 2) {
           routeLayer = L.polyline(routePoints, { color: COLORS.routePlanned, weight:5 }).addTo(__map);
         }
@@ -1145,9 +1181,15 @@ let _track = [];             // 全点（保存用）
 let _meters = 0;
 let _okLayer = null;         // 緑（オンルート）
 let _offLayer = null;        // 赤（逸脱）
+let _okSegments = [];
+let _offSegments = [];
 let _lastP = null;
+let _lastLivePoint = null;
+let _lastLiveBucket = null;
 let _planned = [];           // 予定ルートの座標配列（kind=route 時のみセット）
 const OFF_THRESHOLD_M = 30;  // 逸脱判定の閾値（お好みで 20〜50m）
+const MAX_GAP_MS = window.RouteSegments?.MAX_GAP_MS ?? (5 * 60 * 1000);
+const MAX_JUMP_DISTANCE_M = window.RouteSegments?.MAX_JUMP_DISTANCE_M ?? 500;
 
 function fmtMinSec(sec){ const m = Math.floor(sec/60), s = sec%60|0; return `${m}:${String(s).padStart(2,'0')}`; }
 function fmtKm(m){ return (m/1000).toFixed(2); }
@@ -1167,7 +1209,8 @@ async function startRunRecording(){
   if (!acc) { alert('ログインが必要です'); return; }
   if (!navigator.geolocation) { alert('この端末は位置情報に対応していません'); return; }
 
-  _track = []; _meters = 0; _lastP = null; _recStartMs = Date.now();
+  _track = []; _meters = 0; _lastP = null; _lastLivePoint = null; _lastLiveBucket = null; _recStartMs = Date.now();
+  _okSegments = []; _offSegments = [];
   document.getElementById('recTime').textContent = '0:00';
   document.getElementById('recDist').textContent = '0.00 km';
   showRecUI(true);
@@ -1200,8 +1243,8 @@ async function startRunRecording(){
   try{
     if (_okLayer){ _okLayer.remove(); _okLayer = null; }
     if (_offLayer){ _offLayer.remove(); _offLayer = null; }
-    _okLayer  = L.polyline([], { color: COLORS.liveOnRoute,  weight:5 }).addTo(__map);
-    _offLayer = L.polyline([], { color: COLORS.liveOffRoute, weight:5 }).addTo(__map);
+    _okLayer  = L.layerGroup().addTo(__map);
+    _offLayer = L.layerGroup().addTo(__map);
   }catch(e){ console.warn(e); }
 
   _timerId = setInterval(()=>{
@@ -1250,16 +1293,35 @@ function onPos(pos){
 // 予定ルートへの距離で緑/赤に振り分け
 function pushToLiveLayer(p){
   try{
+    let isOn = true;
     if (_planned && _planned.length >= 2){
       const dist = distancePointToPolylineMeters(p, _planned);
-      if (dist <= OFF_THRESHOLD_M){
-        _okLayer?.addLatLng?.([p.lat, p.lng]);
-      } else {
-        _offLayer?.addLatLng?.([p.lat, p.lng]);
-      }
-    } else {
-      _okLayer?.addLatLng?.([p.lat, p.lng]);
+      isOn = dist <= OFF_THRESHOLD_M;
     }
+
+    const bucket = isOn ? 'ok' : 'off';
+    const shouldBreak =
+      !_lastLivePoint
+      || _lastLiveBucket !== bucket
+      || !!window.RouteSegments?.shouldSplitSegment?.(_lastLivePoint, p, {
+        maxGapMs: MAX_GAP_MS,
+        maxJumpDistanceM: MAX_JUMP_DISTANCE_M
+      });
+    const targetLayer = isOn ? _okLayer : _offLayer;
+    const targetSegments = isOn ? _okSegments : _offSegments;
+    const color = isOn ? COLORS.liveOnRoute : COLORS.liveOffRoute;
+
+    if (shouldBreak || !targetSegments.length){
+      const polyline = L.polyline([[p.lat, p.lng]], { color, weight:5 }).addTo(targetLayer);
+      targetSegments.push({ points:[p], polyline });
+    } else {
+      const currentSegment = targetSegments[targetSegments.length - 1];
+      currentSegment.points.push(p);
+      currentSegment.polyline.addLatLng([p.lat, p.lng]);
+    }
+
+    _lastLivePoint = p;
+    _lastLiveBucket = bucket;
   }catch(e){ console.warn(e); }
 }
 
@@ -1282,8 +1344,9 @@ async function stopRunRecordingAndSave(){
     const distance_m = Math.round(_meters);
 
     // GeoJSON LineString（[lng,lat]）
-    const coords = _track.map(p => [p.lng, p.lat]);
-    const gj = { type:'LineString', coordinates: coords };
+    const gj = window.RouteSegments?.buildTrackGeojson
+      ? window.RouteSegments.buildTrackGeojson(_track)
+      : { type:'LineString', coordinates: _track.map(p => [p.lng, p.lat]) };
 
     // レコード作成
     const payload = {

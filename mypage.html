@@ -16,10 +16,12 @@
     .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; }
     .badge.pub { background:#d1fae5; color:#065f46; border-color:#a7f3d0; }
     .badge.prv { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
-    .tabs { display:flex; gap:8px; margin:8px 0; }
-    .tab { padding:6px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#fff; cursor:pointer; }
-    .tab.active { background:#111827; color:#fff; border-color:#111827; }
-    .panel { display:none; }
+    .tabs { display:flex; align-items:flex-end; gap:0; margin:16px 0 0; padding:0 8px; border-bottom:1px solid #dbe2ea; }
+    .tab { position:relative; margin-bottom:-1px; padding:12px 18px 11px; border:1px solid transparent; border-bottom:none; border-radius:14px 14px 0 0; background:linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%); color:#64748b; font-weight:600; cursor:pointer; transition:background .18s ease, color .18s ease, border-color .18s ease; }
+    .tab:hover { color:#0f172a; background:linear-gradient(180deg, #fbfdff 0%, #f3f6fa 100%); }
+    .tab.active { background:#fff; color:#111827; border-color:#dbe2ea; box-shadow:0 -1px 0 #fff inset; }
+    .tab.active::after { content:""; position:absolute; left:14px; right:14px; bottom:0; height:3px; border-radius:999px 999px 0 0; background:#111827; }
+    .panel { display:none; padding:14px 0 0; }
     .panel.active { display:block; }
   </style>
 
@@ -177,7 +179,15 @@
       // タブ
       const tabRoutes = $('#tab-routes'); const tabRuns = $('#tab-runs');
       const panelRoutes = $('#panel-routes'); const panelRuns = $('#panel-runs');
-      const activate = (which)=>{ const r=which==='routes'; tabRoutes.classList.toggle('active',r); tabRuns.classList.toggle('active',!r); panelRoutes.classList.toggle('active',r); panelRuns.classList.toggle('active',!r); };
+      const activate = (which)=>{
+        const r=which==='routes';
+        tabRoutes.classList.toggle('active',r);
+        tabRuns.classList.toggle('active',!r);
+        tabRoutes.setAttribute('aria-selected', r ? 'true' : 'false');
+        tabRuns.setAttribute('aria-selected', r ? 'false' : 'true');
+        panelRoutes.classList.toggle('active',r);
+        panelRuns.classList.toggle('active',!r);
+      };
       tabRoutes.onclick = ()=>{ activate('routes'); loadMyRoutes(); };
       tabRuns.onclick = ()=>{ activate('runs'); loadMyRuns(); };
 
@@ -230,14 +240,14 @@
 
   <div id="gate" class="card"></div>
 
-  <div class="tabs">
-    <button id="tab-routes" class="tab active">ルート</button>
-    <button id="tab-runs" class="tab">ログ</button>
+  <div class="tabs" role="tablist" aria-label="マイページ切り替え">
+    <button id="tab-routes" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-routes">ルート</button>
+    <button id="tab-runs" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-runs">ログ</button>
   </div>
-  <section id="panel-routes" class="panel active">
+  <section id="panel-routes" class="panel active" role="tabpanel" aria-labelledby="tab-routes">
     <div id="list-routes" class="muted">読み込み中…</div>
   </section>
-  <section id="panel-runs" class="panel">
+  <section id="panel-runs" class="panel" role="tabpanel" aria-labelledby="tab-runs">
     <div id="list-runs" class="muted">読み込み中…</div>
   </section>
 

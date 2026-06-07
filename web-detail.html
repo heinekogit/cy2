@@ -9,6 +9,7 @@
   <style>
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 920px; margin: 20px auto; padding: 0 12px; color:#111827; }
     .btn { padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
+    .btn.danger { border-color:#fecaca; color:#b91c1c; background:#fff1f2; }
     .card { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin:10px 0; background:#fff; }
     #map { height: 40vh; border:1px solid #e5e7eb; border-radius:10px; }
     .muted{ color:#6b7280; }
@@ -160,6 +161,33 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     async function getSession(){ const { data:{ session } } = await client.auth.getSession(); return session; }
     async function getMyAccountId(){
       return AuthCommon.getMyAccountId(client);
+    }
+
+    async function deleteOwnedDetailRow(table, rowId, acc){
+      const { error } = await client
+        .from(table)
+        .delete()
+        .eq('id', rowId)
+        .eq('account_id', acc);
+      if (error) throw error;
+    }
+
+    function hideDeleteButton(){
+      const btn = $('#btnDelete');
+      if (!btn) return;
+      btn.style.display = 'none';
+      btn.onclick = null;
+      btn.disabled = false;
+      btn.textContent = '削除';
+    }
+
+    function setDeleteButton(handler){
+      const btn = $('#btnDelete');
+      if (!btn) return;
+      btn.style.display = 'inline-block';
+      btn.disabled = false;
+      btn.textContent = '削除';
+      btn.onclick = handler;
     }
 
     function decodePolyline(str){ try{ let idx=0, lat=0, lng=0, arr=[]; while(idx<str.length){ let b,shift=0,result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlat=(result&1)?~(result>>1):(result>>1); shift=0; result=0; do{ b=str.charCodeAt(idx++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20); let dlng=(result&1)?~(result>>1):(result>>1); lat+=dlat; lng+=dlng; arr.push([lat/1e5,lng/1e5]); } return arr; }catch(e){ console.error('decodePolyline', e); return []; } }
@@ -813,6 +841,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       try{
         const { data: run, error } = await client.from('runs').select('id,name,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
         if(error || !run){ box.textContent='読み込み失敗'; console.error(error); return; }
+        hideDeleteButton();
         const when = run.ended_at ? new Date(run.ended_at).toLocaleString() : (run.started_at ? new Date(run.started_at).toLocaleString() : '-');
         const title = run.name || '実走ログ';
         const extra = run.started_at
@@ -867,6 +896,30 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             location.href = `web-detail.html?id=${encodeURIComponent(newRow.id)}&kind=route&v=${V()}`;
           }catch(e){ console.error(e); alert('作成に失敗'); }
         };
+        try{
+          const acc = await getMyAccountId();
+          if (acc && String(acc) === String(run.account_id)) {
+            setDeleteButton(async ()=>{
+              if (!confirm('このログを削除しますか？')) return;
+              const deleteBtn = $('#btnDelete');
+              if (!deleteBtn) return;
+              deleteBtn.disabled = true;
+              deleteBtn.textContent = '削除中…';
+              try{
+                await deleteOwnedDetailRow('runs', run.id, acc);
+                alert('ログを削除しました');
+                location.replace(`web-mypage.html?v=${V()}&tab=runs`);
+              }catch(e){
+                console.error('delete run failed', e);
+                alert('ログの削除に失敗しました: ' + fmtSbError(e));
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '削除';
+              }
+            });
+          }
+        }catch(ownerErr){
+          console.warn('run delete button skipped', ownerErr);
+        }
       }catch(e){ box.textContent='読み込み失敗'; console.error(e); }
     }
 
@@ -880,6 +933,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         routeRow = data;
         if(error || !routeRow){ box.textContent='読み込み失敗'; console.error(error); return; }
         __currentRoute = routeRow;
+        hideDeleteButton();
         const when = routeRow.created_at ? new Date(routeRow.created_at).toLocaleString() : '-';
         const title = routeRow.name || 'ルート';
         const typeLabel = routeTypeLabel(routeRow.route_type, routeRow.origin, routeRow.source_run_id);
@@ -953,6 +1007,23 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
                 if(e3){ console.error(e3); alert('更新失敗'); toggle.checked = !toggle.checked; }
               }catch(e){ console.error(e); alert('更新失敗'); toggle.checked = !toggle.checked; }
             };
+            setDeleteButton(async ()=>{
+              if (!confirm('このルートを削除しますか？')) return;
+              const deleteBtn = $('#btnDelete');
+              if (!deleteBtn) return;
+              deleteBtn.disabled = true;
+              deleteBtn.textContent = '削除中…';
+              try{
+                await deleteOwnedDetailRow('routes', routeRow.id, acc);
+                alert('ルートを削除しました');
+                location.replace(`web-mypage.html?v=${V()}&tab=routes`);
+              }catch(e){
+                console.error('delete route failed', e);
+                alert('ルートの削除に失敗しました: ' + fmtSbError(e));
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '削除';
+              }
+            });
           } else {
             toggleWrap.style.display='none';
           }
@@ -1127,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     <div style="margin:8px 0;">
       <button id="btnToRoute" class="btn" style="display:none;">このログをルート化する</button>
       <a class="btn" id="btnRunThis" href="#" style="margin-left:6px;">このルートで実走する</a>
+      <button id="btnDelete" class="btn danger" type="button" style="display:none; margin-left:6px;">削除</button>
       <script>
         (function(){
           const q = new URL(location.href).searchParams;

@@ -49,8 +49,39 @@
       text-decoration: none;
     }
 
+    .btn.danger {
+      border-color: #fecaca;
+      color: #b91c1c;
+      background: #fff1f2;
+    }
+
+    .btn.danger:hover {
+      background: #ffe4e6;
+    }
+
     .muted {
       color: #6b7280;
+    }
+
+    .status {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    .status.error {
+      border-color: #fecaca;
+      background: #fff1f2;
+      color: #b91c1c;
+    }
+
+    .status.success {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+      color: #166534;
     }
 
     .card {
@@ -169,12 +200,48 @@
     function visToBool(r) { return r?.is_public === true || r?.visibility === 'public'; }
     const fmtKm = (m) => m == null ? '-' : (Number(m) / 1000).toFixed(2) + ' km';
     const fmtMin = (s) => s == null ? '-' : Math.round(Number(s) / 60) + ' 分';
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     function routeTypeLabel(routeType, origin, sourceRunId) {
       if (routeType === 'from_run' && sourceRunId) return '実走履歴';
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
       if (routeType === 'from_run') return '実走履歴';
       if (routeType === 'manual') return '描画ルート';
       return routeType || '';
+    }
+
+    function setPageStatus(message, kind) {
+      const box = $('#page-status');
+      if (!box) return;
+      if (!message) {
+        box.hidden = true;
+        box.textContent = '';
+        box.className = 'status';
+        return;
+      }
+      box.hidden = false;
+      box.textContent = message;
+      box.className = 'status' + (kind ? ` ${kind}` : '');
+    }
+
+    async function deleteOwnedRow(table, id, acc) {
+      const { error } = await client
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .eq('account_id', acc);
+      if (error) throw error;
+    }
+
+    async function deleteMyRoute(routeId) {
+      const acc = await getMyAccountId();
+      if (!acc) throw new Error('未ログインのため削除できません。');
+      await deleteOwnedRow('routes', routeId, acc);
+    }
+
+    async function deleteMyRun(runId) {
+      const acc = await getMyAccountId();
+      if (!acc) throw new Error('未ログインのため削除できません。');
+      await deleteOwnedRow('runs', runId, acc);
     }
 
     async function renderGate() {
@@ -213,8 +280,8 @@
           const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
           const badge = r.is_public ? '<span class="badge pub">公開</span>' : '<span class="badge prv">非公開</span>';
           const typeLabel = routeTypeLabel(r.route_type, r.origin, r.source_run_id);
-          const from = typeLabel ? `<span class="muted" style="font-size:12px;">${typeLabel}${r.source_run_id ? (' #' + r.source_run_id) : ''}</span>` : '';
-          const title = r.name || '(無題ルート)';
+          const from = typeLabel ? `<span class="muted" style="font-size:12px;">${escapeHtml(typeLabel)}${r.source_run_id ? (' #' + escapeHtml(r.source_run_id)) : ''}</span>` : '';
+          const title = escapeHtml(r.name || '(無題ルート)');
           // 編集ボタンは当面用途がないため display:none で残す
           return `
             <div class="card" data-id="${r.id}" style="width:100%;gap:12px;align-items:flex-start;">
@@ -225,6 +292,7 @@
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
                 ${badge}
+                <button class="btn danger" type="button" data-delete-route="${r.id}">削除</button>
                 <a class="btn" href="route-edit.html?id=${encodeURIComponent(r.id)}" style="display:none;" aria-hidden="true">編集</a>
               </div>
             </div>`;
@@ -234,6 +302,29 @@
             const id = el.closest('[data-id]')?.getAttribute('data-id');
             if (!id) return;
             location.href = `web-detail.html?id=${encodeURIComponent(id)}&kind=route&v=${V()}`;
+          });
+        });
+        document.querySelectorAll('#list-routes [data-delete-route]').forEach(btn => {
+          btn.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const routeId = btn.getAttribute('data-delete-route');
+            if (!routeId) return;
+            if (!confirm('このルートを削除しますか？')) return;
+            const previous = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '削除中…';
+            setPageStatus('');
+            try {
+              await deleteMyRoute(routeId);
+              setPageStatus('ルートを削除しました。', 'success');
+              await loadMyRoutes();
+            } catch (e) {
+              setPageStatus('ルートの削除に失敗しました: ' + (e?.message || e), 'error');
+              console.error('delete route error', e);
+            } finally {
+              btn.disabled = false;
+              btn.textContent = previous;
+            }
           });
         });
       } catch (e) {
@@ -264,10 +355,49 @@
         const runs = data || []; if (!runs.length) { box.textContent = 'あなたのログはまだありません。'; return; }
         box.innerHTML = runs.map(r => {
           const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
-          const title = r.name ? r.name : when;
-          return `<button class=\"card\" style=\"width:100%;text-align:left;\" data-id=\"${r.id}\"><div><div style=\"font-weight:600;\">${title}</div><div class=\"muted\" style=\"font-size:12px;\">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div></div><div>詳細</div></button>`;
+          const title = escapeHtml(r.name ? r.name : when);
+          return `
+            <div class="card" style="width:100%;gap:12px;" data-id="${r.id}">
+              <div style="flex:1 1 auto;cursor:pointer;" data-detail>
+                <div style="font-weight:600;">${title}</div>
+                <div class="muted" style="font-size:12px;">${fmtKm(r.distance_m)}・${fmtMin(r.duration_s)}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button class="btn" type="button" data-detail>詳細</button>
+                <button class="btn danger" type="button" data-delete-run="${r.id}">削除</button>
+              </div>
+            </div>`;
         }).join('');
-        document.querySelectorAll('#list-runs [data-id]').forEach(el => { el.addEventListener('click', () => { const id = el.getAttribute('data-id'); location.href = `web-detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`; }); });
+        document.querySelectorAll('#list-runs [data-detail]').forEach(el => {
+          el.addEventListener('click', () => {
+            const id = el.closest('[data-id]')?.getAttribute('data-id');
+            if (!id) return;
+            location.href = `web-detail.html?id=${encodeURIComponent(id)}&kind=run&v=${V()}`;
+          });
+        });
+        document.querySelectorAll('#list-runs [data-delete-run]').forEach(btn => {
+          btn.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const runId = btn.getAttribute('data-delete-run');
+            if (!runId) return;
+            if (!confirm('このログを削除しますか？')) return;
+            const previous = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '削除中…';
+            setPageStatus('');
+            try {
+              await deleteMyRun(runId);
+              setPageStatus('ログを削除しました。', 'success');
+              await loadMyRuns();
+            } catch (e) {
+              setPageStatus('ログの削除に失敗しました: ' + (e?.message || e), 'error');
+              console.error('delete run error', e);
+            } finally {
+              btn.disabled = false;
+              btn.textContent = previous;
+            }
+          });
+        });
       } catch (e) {
         const message = e && e.message ? e.message : String(e || '');
         const code = e && e.code ? String(e.code) : '';
@@ -347,6 +477,7 @@
   </header>
 
   <div id="gate" class="card"></div>
+  <div id="page-status" class="status" hidden></div>
 
   <div class="tabs" role="tablist" aria-label="マイページ切り替え">
     <button id="tab-routes" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-routes">ルート</button>

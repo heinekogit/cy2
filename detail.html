@@ -313,8 +313,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     function routeTypeLabel(routeType, origin, sourceRunId){
-      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
+      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
       if (routeType === 'from_run') return 'ログ由来';
       if (routeType === 'manual') return '描画ルート';
       return routeType || '-';
@@ -465,7 +465,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }
     }
 
-    const sumGainLoss = (elevs, threshold = 2) => {
+    const ELEVATION_CHANGE_THRESHOLD_M = 0.5;
+
+    const sumGainLoss = (elevs, threshold = ELEVATION_CHANGE_THRESHOLD_M) => {
       let up = 0;
       let down = 0;
       for (let i = 1; i < elevs.length; i++) {
@@ -577,12 +579,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         return;
       }
       const elevs = smoothElevations(rawElevs, rawElevs.length < 7 ? 3 : 5); // 軽い移動平均でギザギザを抑える
-      const minElev = Math.min(...elevs);
 
       const totalDist = totalDistanceMeters(points);
-      const { up, down } = sumGainLoss(elevs, 2);
-      const netGain = elevs[elevs.length - 1] - elevs[0];
-      const avgGrade = totalDist > 0 ? ((netGain / totalDist) * 100) : 0;
+      const { up, down } = sumGainLoss(elevs);
+      const avgGrade = totalDist > 0 ? ((up / totalDist) * 100) : 0;
       statsEl.textContent = `総上昇 ${up} m ／ 総下降 ${down} m ／ 平均勾配 ${avgGrade.toFixed(1)} %`;
       drawElevationProfile(chartEl, elevs, points, { marginRatio: 0.15 });
     }

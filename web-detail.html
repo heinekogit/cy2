@@ -16,6 +16,8 @@
     .elev-card { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
     #elevChart { width:100%; height:140px; display:block; margin-top:8px; }
     .detail-meta-title { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+    .detail-edit-link { text-decoration:none; font-size:16px; line-height:1; }
+    .detail-edit-link:visited { color:inherit; }
     .detail-kind { font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid #e5e7eb; background:#f9fafb; }
     .detail-meta-lines { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
     .photo-box { margin-top:12px; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; background:#fff; display:none; }
@@ -362,8 +364,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     function routeTypeLabel(routeType, origin, sourceRunId){
-      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
+      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
       if (routeType === 'from_run') return 'ログ由来';
       if (routeType === 'manual') return '描画ルート';
       return routeType || '-';
@@ -373,10 +375,14 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const box = $('#meta');
       if (!box) return;
       const extra = extraHtml || '';
+      const editLink = (kindLabel === 'ルート' && idValue)
+        ? `<a class="detail-edit-link" href="detail-edit.html?id=${encodeURIComponent(idValue)}&v=${V()}" aria-label="編集">✏️</a>`
+        : '';
       box.innerHTML = `
         <div class="detail-meta-title">
           <span class="detail-kind">${kindLabel}</span>
           <div style="font-weight:600;">${title}</div>
+          ${editLink}
           <span class="muted">#${idValue}</span>
         </div>
         <div class="detail-meta-lines">
@@ -558,7 +564,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       return null;
     }
 
-    const sumGainLoss = (elevs, threshold = 2) => {
+    const ELEVATION_CHANGE_THRESHOLD_M = 0.5;
+
+    const sumGainLoss = (elevs, threshold = ELEVATION_CHANGE_THRESHOLD_M) => {
       let up = 0;
       let down = 0;
       for (let i = 1; i < elevs.length; i++) {
@@ -670,12 +678,10 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         return;
       }
       const elevs = smoothElevations(rawElevs, rawElevs.length < 7 ? 3 : 5); // 軽い移動平均でギザギザを抑える
-      const minElev = Math.min(...elevs);
 
       const totalDist = totalDistanceMeters(points);
-      const { up, down } = sumGainLoss(elevs, 2);
-      const netGain = elevs[elevs.length - 1] - elevs[0];
-      const avgGrade = totalDist > 0 ? ((netGain / totalDist) * 100) : 0;
+      const { up, down } = sumGainLoss(elevs);
+      const avgGrade = totalDist > 0 ? ((up / totalDist) * 100) : 0;
       statsEl.textContent = `総上昇 ${up} m ／ 総下降 ${down} m ／ 平均勾配 ${avgGrade.toFixed(1)} %`;
       drawElevationProfile(chartEl, elevs, points, { marginRatio: 0.15 });
     }

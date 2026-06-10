@@ -1978,38 +1978,38 @@
             return;
           }
 
-          const { data: runs, error } = await sb
+          const { data: rideLogs, error } = await sb
             .from('runs')
             .select('id, name, created_at, started_at, ended_at, distance_m, duration_s')
             .eq('account_id', accountId)
             .order('created_at', { ascending: false });
 
           if (error) throw error;
-          if (!runs || runs.length === 0) {
+          if (!rideLogs || rideLogs.length === 0) {
             logsList.innerHTML = '<div class="meta">保存された実走ログはまだありません。記録開始ボタンから実走を記録してください。</div>';
             return;
           }
 
           logsList.innerHTML = '';
-          for (const r of runs) {
-            const when = r.ended_at
-              ? new Date(r.ended_at).toLocaleString()
-              : (r.started_at
-                ? new Date(r.started_at).toLocaleString()
-                : (r.created_at ? new Date(r.created_at).toLocaleString() : '-'));
-            const title = r.name || when;
-            const km = (r.distance_m != null) ? `${(Number(r.distance_m) / 1000).toFixed(2)} km` : '-';
-            const durMin = (r.duration_s != null) ? Math.round(Number(r.duration_s) / 60) + ' 分' : '-';
+          for (const rideLog of rideLogs) {
+            const when = rideLog.ended_at
+              ? new Date(rideLog.ended_at).toLocaleString()
+              : (rideLog.started_at
+                ? new Date(rideLog.started_at).toLocaleString()
+                : (rideLog.created_at ? new Date(rideLog.created_at).toLocaleString() : '-'));
+            const title = rideLog.name || when;
+            const km = (rideLog.distance_m != null) ? `${(Number(rideLog.distance_m) / 1000).toFixed(2)} km` : '-';
+            const durMin = (rideLog.duration_s != null) ? Math.round(Number(rideLog.duration_s) / 60) + ' 分' : '-';
             const card = document.createElement('div');
             card.className = 'card';
             card.innerHTML = `
               <div style="flex:1 1 auto;">
-                <div style="font-weight:600;">${escapeHtml(title)} <span class="meta">#${r.id}</span></div>
+                <div style="font-weight:600;">${escapeHtml(title)} <span class="meta">#${rideLog.id}</span></div>
                 <div class="meta">${when}</div>
                 <div class="meta">${km} / ${durMin}</div>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <a class="btn ghost" href="detail.html?id=${encodeURIComponent(r.id)}&kind=run&v=${V()}">詳細</a>
+                <a class="btn ghost" href="detail.html?id=${encodeURIComponent(rideLog.id)}&kind=run&v=${V()}">詳細</a>
               </div>
             `;
             logsList.appendChild(card);

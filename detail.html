@@ -314,8 +314,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
 
     function routeTypeLabel(routeType, origin, sourceRunId){
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
-      if (routeType === 'from_run' && sourceRunId) return 'ログ由来';
-      if (routeType === 'from_run') return 'ログ由来';
+      if (routeType === 'from_run' && sourceRunId) return '実走ログ由来';
+      if (routeType === 'from_run') return '実走ログ由来';
       if (routeType === 'manual') return '描画ルート';
       return routeType || '-';
     }
@@ -750,17 +750,17 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       }catch(e){ bar.textContent='認証状態の取得に失敗しました'; console.error(e); }
     }
 
-    async function loadRun(){
+    async function loadRideLog(){
       const box = $('#meta'); const btn = $('#btnToRoute');
       try{
-        const { data: run, error } = await client.from('runs').select('id,name,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
-        if(error || !run){ box.textContent='読み込み失敗'; console.error(error); return; }
-        const when = run.ended_at ? new Date(run.ended_at).toLocaleString() : (run.started_at ? new Date(run.started_at).toLocaleString() : '-');
-        const title = run.name || '実走ログ';
-        const extra = run.started_at
-          ? `<div class="muted">開始: ${new Date(run.started_at).toLocaleString()}</div>`
+        const { data: rideLog, error } = await client.from('runs').select('id,name,started_at,ended_at,distance_m,duration_s,polyline,geojson,account_id').eq('id', id).maybeSingle();
+        if(error || !rideLog){ box.textContent='読み込み失敗'; console.error(error); return; }
+        const when = rideLog.ended_at ? new Date(rideLog.ended_at).toLocaleString() : (rideLog.started_at ? new Date(rideLog.started_at).toLocaleString() : '-');
+        const title = rideLog.name || '実走ログ';
+        const extra = rideLog.started_at
+          ? `<div class="muted">開始: ${new Date(rideLog.started_at).toLocaleString()}</div>`
           : '';
-        renderDetailMeta('ログ', run.id, title, when, fmtKmText(run.distance_m), fmtMinText(run.duration_s), extra);
+        renderDetailMeta('実走ログ', rideLog.id, title, when, fmtKmText(rideLog.distance_m), fmtMinText(rideLog.duration_s), extra);
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();
@@ -773,23 +773,23 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         }
         __map = L.map('map').setView([35.68,139.76], 12);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(__map);
-        const runPoints = extractLatLngsFromRoute(run);
-        let runLayer = drawSegmentedTrackOnMap(__map, runPoints, COLORS.runRecorded);
+        const rideLogPoints = extractLatLngsFromRoute(rideLog);
+        let runLayer = drawSegmentedTrackOnMap(__map, rideLogPoints, COLORS.runRecorded);
         if (!runLayer) {
-          runLayer = drawLineOnMap(__map, run.polyline, run.geojson, COLORS.runRecorded);
+          runLayer = drawLineOnMap(__map, rideLog.polyline, rideLog.geojson, COLORS.runRecorded);
         }
-        if ((!runLayer || (runLayer.getBounds && !runLayer.getBounds().isValid())) && runPoints.length >= 2) {
-          runLayer = L.polyline(runPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
+        if ((!runLayer || (runLayer.getBounds && !runLayer.getBounds().isValid())) && rideLogPoints.length >= 2) {
+          runLayer = L.polyline(rideLogPoints, { color: COLORS.runRecorded, weight:5 }).addTo(__map);
         }
-        if (runPoints.length >= 1) fitMapToPoints(runPoints);
-        await renderElevationPanel(runPoints);
-        let photoRouteId = await resolvePhotoRouteIdForRun(run.id);
+        if (rideLogPoints.length >= 1) fitMapToPoints(rideLogPoints);
+        await renderElevationPanel(rideLogPoints);
+        let photoRouteId = await resolvePhotoRouteIdForRun(rideLog.id);
         if (!photoRouteId) {
-          const fallbackRoute = await resolveRouteForRun(run);
+          const fallbackRoute = await resolveRouteForRun(rideLog);
           photoRouteId = fallbackRoute?.id || null;
         }
         const photoPoints = await loadRoutePhotos(photoRouteId);
-        if (runPoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
+        if (rideLogPoints.length < 2 && photoPoints.length >= 1) fitMapToPoints(photoPoints);
 
         // ルート化ボタン
         btn.style.display='inline-block';
@@ -798,8 +798,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             const ensured = await AppCommon.ensureAuth({ supabase: client, getAccountId, redirectToLogin: true });
             const acc = ensured.ok ? ensured.ensuredAccountId : null;
             if(!acc){ alert('ログインが必要です'); return; }
-            const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(run.ended_at||run.started_at||Date.now()));
-            const payload = { name: `Run ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: run.id, polyline: run.polyline ?? null, geojson: run.geojson ?? null };
+            const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(rideLog.ended_at||rideLog.started_at||Date.now()));
+            const payload = { name: `実走ログ ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: rideLog.id, polyline: rideLog.polyline ?? null, geojson: rideLog.geojson ?? null };
             const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
             if(e2 || !newRow){
               console.error('ROUTE FROM RUN INSERT ERROR', e2, payload);
@@ -833,7 +833,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         extraParts.push(`<div class="muted">Owner Account: ${owner}</div>`);
         if (routeRow.source_run_id) {
           extraParts.push(
-            `<div class="muted">元ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">Run #${routeRow.source_run_id}</a></div>`
+            `<div class="muted">元実走ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">実走ログ #${routeRow.source_run_id}</a></div>`
           );
         }
         renderDetailMeta('ルート', routeRow.id, title, when, fmtKmText(routeRow.distance_m), fmtMinText(routeRow.duration_s), extraParts.join(''));
@@ -913,9 +913,9 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         location.replace(`index.html?v=${V()}`);
         return;
       }
-      if(kind==='run') { await loadRun(); }
+      if(kind==='run') { await loadRideLog(); }
       else { await loadRoute(); }
-      client.auth.onAuthStateChange(async ()=>{ await refreshAuthUI('auth'); if(kind==='run') await loadRun(); else await loadRoute(); });
+      client.auth.onAuthStateChange(async ()=>{ await refreshAuthUI('auth'); if(kind==='run') await loadRideLog(); else await loadRoute(); });
     }
     document.addEventListener('DOMContentLoaded', init, { once:true });
   </script>
@@ -1092,7 +1092,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <label><input type="checkbox" id="visToggle" /> 公開する</label>
     </div>
     <div style="margin:8px 0;">
-      <button id="btnToRoute" class="btn" style="display:none;">このログをルート化する</button>
+      <button id="btnToRoute" class="btn" style="display:none;">この実走ログをルート化する</button>
       <a class="btn" id="btnRunThis" href="#" style="margin-left:6px;">このルートで実走する</a>
       <script>
         (function(){

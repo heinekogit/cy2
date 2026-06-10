@@ -386,21 +386,21 @@
             const runId = btn.getAttribute('data-delete-run');
             if (!runId) return;
             if (!confirm('この実走ログを削除しますか？')) return;
-              const previous = btn.textContent;
-              btn.disabled = true;
-              btn.textContent = '削除中…';
-              setPageStatus('');
-              try {
-                await deleteMyRun(runId);
-                setPageStatus('実走ログを削除しました。', 'success');
-                await loadMyRideLogs();
-              } catch (e) {
-                setPageStatus('実走ログの削除に失敗しました: ' + (e?.message || e), 'error');
-                console.error('delete run error', e);
-              } finally {
-                btn.disabled = false;
-                btn.textContent = previous;
-              }
+            const previous = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '削除中…';
+            setPageStatus('');
+            try {
+              await deleteMyRun(runId);
+              setPageStatus('実走ログを削除しました。', 'success');
+              await loadMyRideLogs();
+            } catch (e) {
+              setPageStatus('実走ログの削除に失敗しました: ' + (e?.message || e), 'error');
+              console.error('delete run error', e);
+            } finally {
+              btn.disabled = false;
+              btn.textContent = previous;
+            }
           });
         });
       } catch (e) {
@@ -473,7 +473,7 @@
 
 <body>
   <header>
-    <div style="font-weight:700;">My Page</div>
+    <div style="font-weight:700;">Cycling-Book My Page</div>
     <div>
       <a id="lnRouteEdit" class="btn" href="route-edit.html">ルートを作成する</a>
       <a id="lnRun" class="btn" href="run.html">実走を始める</a>
@@ -485,8 +485,10 @@
   <div id="page-status" class="status" hidden></div>
 
   <div class="tabs" role="tablist" aria-label="マイページ切り替え">
-    <button id="tab-routes" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-routes">ルート</button>
-    <button id="tab-runs" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-runs">ログ</button>
+    <button id="tab-routes" class="tab active" type="button" role="tab" aria-selected="true"
+      aria-controls="panel-routes">ルート</button>
+    <button id="tab-runs" class="tab" type="button" role="tab" aria-selected="false"
+      aria-controls="panel-runs">ライドログ</button>
   </div>
   <section id="panel-routes" class="panel active" role="tabpanel" aria-labelledby="tab-routes">
     <div id="list-routes" class="muted">読み込み中…</div>

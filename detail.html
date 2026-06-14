@@ -324,7 +324,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
       const box = $('#meta');
       if (!box) return;
       const extra = extraHtml || '';
-      const editLink = (kindLabel === 'ルート' && idValue)
+      const editLink = (kindLabel === 'マイルート' && idValue)
         ? `<a class="detail-edit-link" href="detail-edit.html?id=${encodeURIComponent(idValue)}&v=${V()}" aria-label="編集">✏️</a>`
         : '';
       box.innerHTML = `
@@ -799,7 +799,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             const acc = ensured.ok ? ensured.ensuredAccountId : null;
             if(!acc){ alert('ログインが必要です'); return; }
             const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(rideLog.ended_at||rideLog.started_at||Date.now()));
-            const payload = { name: `実走ログ ${ymd} のルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: rideLog.id, polyline: rideLog.polyline ?? null, geojson: rideLog.geojson ?? null };
+            const payload = { name: `実走ログ ${ymd} のマイルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: rideLog.id, polyline: rideLog.polyline ?? null, geojson: rideLog.geojson ?? null };
             const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
             if(e2 || !newRow){
               console.error('ROUTE FROM RUN INSERT ERROR', e2, payload);
@@ -823,7 +823,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
         if(error || !routeRow){ box.textContent='読み込み失敗'; console.error(error); return; }
         __currentRoute = routeRow;
         const when = routeRow.created_at ? new Date(routeRow.created_at).toLocaleString() : '-';
-        const title = routeRow.name || 'ルート';
+        const title = routeRow.name || 'マイルート';
         const typeLabel = routeTypeLabel(routeRow.route_type, routeRow.origin, routeRow.source_run_id);
         const pubLabel = routeRow.is_public ? '公開' : '非公開';
         const owner = routeRow.account_id || '-';
@@ -836,7 +836,7 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             `<div class="muted">元実走ログ: <a class="btn" href="detail.html?id=${encodeURIComponent(routeRow.source_run_id)}&kind=run&v=${V()}">実走ログ #${routeRow.source_run_id}</a></div>`
           );
         }
-        renderDetailMeta('ルート', routeRow.id, title, when, fmtKmText(routeRow.distance_m), fmtMinText(routeRow.duration_s), extraParts.join(''));
+        renderDetailMeta('マイルート', routeRow.id, title, when, fmtKmText(routeRow.distance_m), fmtMinText(routeRow.duration_s), extraParts.join(''));
         const mapEl = document.getElementById('map');
         if (__map) {
           __map.remove();
@@ -1045,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 // 保存：GeoJSON LineString と距離を routes に保存（polyline は null に）
 async function saveDrawnRoute(){
   try{
-    if (!window.__currentRouteId){ alert('ルートIDを特定できません'); return; }
+    if (!window.__currentRouteId){ alert('マイルートIDを特定できません'); return; }
     if (Draw.pts.length<2){ alert('少なくとも2点以上が必要です'); return; }
     // GeoJSON（[lng,lat]）
     const coords = Draw.pts.map(p=> [p.lng, p.lat]);
@@ -1092,8 +1092,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
       <label><input type="checkbox" id="visToggle" /> 公開する</label>
     </div>
     <div style="margin:8px 0;">
-      <button id="btnToRoute" class="btn" style="display:none;">この実走ログをルート化する</button>
-      <a class="btn" id="btnRunThis" href="#" style="margin-left:6px;">このルートで実走する</a>
+      <button id="btnToRoute" class="btn" style="display:none;">この実走ログをマイルート化する</button>
+      <a class="btn" id="btnRunThis" href="#" style="margin-left:6px;">このマイルートで実走する</a>
       <script>
         (function(){
           const q = new URL(location.href).searchParams;

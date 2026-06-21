@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cycling-Book プロフィール設定</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto; max-width: 920px; margin: 20px auto; padding: 0 12px; color:#111827; background:#f8fafc; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .btn { padding:8px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; color:#111827; text-decoration:none; cursor:pointer; }
+    .btn.primary { background:#111827; border-color:#111827; color:#fff; }
+    .card { border:1px solid #e5e7eb; border-radius:14px; padding:14px; background:#fff; box-shadow:0 8px 24px rgba(15,23,42,.04); }
+    .muted { color:#6b7280; }
+    .status { margin:12px 0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; }
+    .status.error { border-color:#fecaca; background:#fff1f2; color:#b91c1c; }
+    .status.success { border-color:#bbf7d0; background:#f0fdf4; color:#166534; }
+    .grid { display:grid; gap:12px; }
+    label { display:grid; gap:6px; font-weight:600; }
+    input { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; font:inherit; }
+    #map { height:320px; border:1px solid #d1d5db; border-radius:12px; margin-top:10px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  </style>
+  <script src="js/version.js"></script>
+  <script>
+    if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
+      window.APP_VERSION = new Date().toISOString().slice(0,10) + '-dev';
+    }
+  </script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="js/auth-common.js"></script>
+  <script src="js/profile-common.js"></script>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700;">Cycling-Book プロフィール設定</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a id="lnMyPage" class="btn" href="web-mypage.html">マイページへ</a>
+      <a id="lnTop" class="btn" href="web-explore.html">トップへ</a>
+    </div>
+  </header>
+
+  <div id="gate" class="card"></div>
+  <div id="status" class="status" hidden></div>
+
+  <section class="card" style="margin-top:12px;">
+    <div class="grid">
+      <label>
+        表示名
+        <input id="displayName" type="text" maxlength="80" placeholder="表示名を入力" />
+      </label>
+
+      <div class="muted">プロフィール画像は今回は未実装です。</div>
+
+      <label>
+        ホーム地点名
+        <input id="homeName" type="text" maxlength="120" placeholder="例: ○○駅 / ○○公園" />
+      </label>
+
+      <div class="muted">ホーム地点</div>
+      <div class="muted">マイルート作成時の初期表示地点として使います。自宅そのものではなく、近くの駅や公園などでも構いません。</div>
+
+      <div id="map"></div>
+
+      <div class="actions">
+        <button id="btnUseCurrent" class="btn" type="button">現在地をホーム地点にする</button>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+        <label>
+          緯度
+          <input id="homeLat" type="number" step="0.000001" placeholder="35.680000" />
+        </label>
+        <label>
+          経度
+          <input id="homeLng" type="number" step="0.000001" placeholder="139.760000" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="btnSave" class="btn primary" type="button">保存</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="muted" style="margin-top:14px;">v: <code id="ver"></code></footer>
+  <script>
+    const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
+    const client = window.supabaseClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    AuthCommon.init(client, { redirectUrl: 'web-explore.html' });
+
+    const V = () => encodeURIComponent(window.APP_VERSION || '');
+    const $ = (s) => document.querySelector(s);
+    const gate = $('#gate');
+    const statusBox = $('#status');
+    const displayNameInput = $('#displayName');
+    const homeNameInput = $('#homeName');
+    const homeLatInput = $('#homeLat');
+    const homeLngInput = $('#homeLng');
+    const btnUseCurrent = $('#btnUseCurrent');
+    const btnSave = $('#btnSave');
+
+    $('#lnMyPage').href = `web-mypage.html?v=${V()}`;
+    $('#lnTop').href = `web-explore.html?v=${V()}`;
+    $('#ver').textContent = window.APP_VERSION || '';
+
+    const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([35.681236, 139.767125], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    let marker = null;
+
+    function setStatus(message, kind) {
+      if (!message) {
+        statusBox.hidden = true;
+        statusBox.textContent = '';
+        statusBox.className = 'status';
+        return;
+      }
+      statusBox.hidden = false;
+      statusBox.textContent = message;
+      statusBox.className = 'status' + (kind ? ` ${kind}` : '');
+    }
+
+    function setHomeLocation(lat, lng, { moveMap = true } = {}) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      homeLatInput.value = lat.toFixed(6);
+      homeLngInput.value = lng.toFixed(6);
+      if (!marker) {
+        marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+        marker.on('dragend', () => {
+          const p = marker.getLatLng();
+          setHomeLocation(p.lat, p.lng, { moveMap: false });
+        });
+      } else {
+        marker.setLatLng([lat, lng]);
+      }
+      if (moveMap) map.setView([lat, lng], Math.max(map.getZoom(), 15));
+    }
+
+    async function renderGate() {
+      const { user } = await ProfileCommon.getMyProfile(client, 'id');
+      if (!user?.id) {
+        gate.innerHTML = `未ログインです。<a class="btn" href="web-login.html?v=${V()}">ログインへ</a>`;
+        btnSave.disabled = true;
+        btnUseCurrent.disabled = true;
+        return false;
+      }
+      gate.innerHTML = `ログイン中: <strong>${user.email || ''}</strong> <button class="btn" data-signout style="margin-left:8px;">サインアウト</button>`;
+      return true;
+    }
+
+    async function loadProfile() {
+      const { data, error } = await ProfileCommon.getMyProfile(client);
+      if (error) {
+        if (ProfileCommon.isProfileColumnsMissingError(error)) {
+          setStatus(ProfileCommon.profileColumnsMissingMessage(), 'error');
+        } else {
+          setStatus(`プロフィール読込に失敗しました: ${error.message || error}`, 'error');
+        }
+        return;
+      }
+      displayNameInput.value = data?.display_name || '';
+      homeNameInput.value = data?.home_name || '';
+      if (Number.isFinite(Number(data?.home_lat)) && Number.isFinite(Number(data?.home_lng))) {
+        setHomeLocation(Number(data.home_lat), Number(data.home_lng));
+      }
+    }
+
+    async function saveProfile() {
+      const homeLat = homeLatInput.value === '' ? null : Number(homeLatInput.value);
+      const homeLng = homeLngInput.value === '' ? null : Number(homeLngInput.value);
+      if ((homeLatInput.value !== '' && !Number.isFinite(homeLat)) || (homeLngInput.value !== '' && !Number.isFinite(homeLng))) {
+        setStatus('緯度・経度は数値で入力してください。', 'error');
+        return;
+      }
+      btnSave.disabled = true;
+      setStatus('');
+      const payload = {
+        display_name: displayNameInput.value.trim() || null,
+        home_name: homeNameInput.value.trim() || null,
+        home_lat: homeLat,
+        home_lng: homeLng
+      };
+      const { error } = await ProfileCommon.updateMyProfile(client, payload);
+      btnSave.disabled = false;
+      if (error) {
+        if (ProfileCommon.isProfileColumnsMissingError(error)) {
+          setStatus(ProfileCommon.profileColumnsMissingMessage(), 'error');
+        } else {
+          setStatus(`保存に失敗しました: ${error.message || error}`, 'error');
+        }
+        return;
+      }
+      setStatus('プロフィールを保存しました。', 'success');
+    }
+
+    map.on('click', (ev) => {
+      setHomeLocation(ev.latlng.lat, ev.latlng.lng);
+    });
+
+    [homeLatInput, homeLngInput].forEach((input) => {
+      input.addEventListener('change', () => {
+        const lat = Number(homeLatInput.value);
+        const lng = Number(homeLngInput.value);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setHomeLocation(lat, lng);
+        }
+      });
+    });
+
+    btnUseCurrent.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        setStatus('この端末では現在地を取得できません。', 'error');
+        return;
+      }
+      btnUseCurrent.disabled = true;
+      setStatus('');
+      navigator.geolocation.getCurrentPosition((pos) => {
+        btnUseCurrent.disabled = false;
+        setHomeLocation(pos.coords.latitude, pos.coords.longitude);
+        setStatus('現在地をホーム地点候補に設定しました。必要なら地点名を入力して保存してください。', 'success');
+      }, (err) => {
+        btnUseCurrent.disabled = false;
+        setStatus(`現在地を取得できませんでした: ${err.message || err}`, 'error');
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    });
+
+    btnSave.addEventListener('click', () => {
+      saveProfile().catch((err) => {
+        btnSave.disabled = false;
+        setStatus(`保存に失敗しました: ${err.message || err}`, 'error');
+      });
+    });
+
+    (async function init() {
+      const ok = await renderGate();
+      if (ok) await loadProfile();
+      map.whenReady(() => map.invalidateSize());
+    })().catch((err) => setStatus(`初期化に失敗しました: ${err.message || err}`, 'error'));
+  </script>
+</body>
+</html>

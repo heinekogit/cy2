@@ -273,6 +273,7 @@
   <div id="statusToast"></div>
 
   <script src="js/auth-common.js"></script>
+  <script src="js/profile-common.js"></script>
   <script src="js/config.js"></script>
   <script>
     window.ROUTING_LOADED = true;
@@ -403,6 +404,21 @@
         console.warn('getDefaultRouteOrigin failed', e);
       }
       return null;
+    }
+
+    async function applyHomeCenterIfAvailable() {
+      try {
+        const { data, error } = await ProfileCommon.getMyProfile(sb, 'home_lat,home_lng');
+        if (error || !data) return false;
+        const lat = Number(data.home_lat);
+        const lng = Number(data.home_lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+        map.setView([lat, lng], 13);
+        return true;
+      } catch (e) {
+        console.warn('applyHomeCenterIfAvailable failed', e);
+        return false;
+      }
     }
 
     const clonePoint = (p) => ({ lat: Number(p.lat), lng: Number(p.lng) });
@@ -834,11 +850,11 @@
     async function restoreDraftIfNeeded() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
+        if (!raw) return false;
         const draft = JSON.parse(raw);
-        if (!draft || !Array.isArray(draft.controlPoints) || !draft.controlPoints.length) return;
-        if (editingId && draft.routeId && Number(draft.routeId) !== editingId) return;
-        if (!confirm('以前保存されたドラフトがあります。復元しますか？')) return;
+        if (!draft || !Array.isArray(draft.controlPoints) || !draft.controlPoints.length) return false;
+        if (editingId && draft.routeId && Number(draft.routeId) !== editingId) return false;
+        if (!confirm('以前保存されたドラフトがあります。復元しますか？')) return false;
         routeNameInput.value = draft.name || '';
         if (draft.mode) {
           state.mode = draft.mode;
@@ -858,8 +874,10 @@
         state.history = [currentSnapshot()];
         state.future = [];
         setDirty(true);
+        return true;
       } catch (e) {
         console.warn('restore draft failed', e);
+        return false;
       }
     }
 
@@ -1069,7 +1087,10 @@
       if (editingId) {
         await loadRoute(editingId);
       } else {
-        await restoreDraftIfNeeded();
+        const restored = await restoreDraftIfNeeded();
+        if (!restored) {
+          await applyHomeCenterIfAvailable();
+        }
       }
       if (!state.history.length) {
         state.history = [currentSnapshot()];

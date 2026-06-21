@@ -179,6 +179,7 @@
 
   <!-- Supabase UMD -->
   <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/profile-common.js"></script>
   <script>
     const SUPABASE_URL = "https://cqiqhczxuiyakptdjowr.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaXFoY3p4dWl5YWtwdGRqb3dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NzAwNzMsImV4cCI6MjA3MzM0NjA3M30.vCFQoQnsClINKa5tQAz-rNnF5XLEukmn_Nl0Err5k3k";
@@ -475,6 +476,7 @@
   <header>
     <div style="font-weight:700;">Cycling-Book　My Page</div>
     <div>
+      <a id="lnProfile" class="btn" href="web-profile.html">プロフィール設定</a>
       <a id="lnRouteEdit" class="btn" href="route-edit.html">マイルートを作成する</a>
       <a id="lnRun" class="btn" href="run.html">実走を始める</a>
       <a id="lnTop" class="btn" href="web-explore.html">トップへ</a>
@@ -504,6 +506,10 @@
       navigator.serviceWorker.register('./service-worker.js?v=' + (window.APP_VERSION || ''))
         .catch(err => console.error('SW register failed', err));
     }
+  </script>
+  <script>
+    const lnProfile = document.getElementById('lnProfile');
+    if (lnProfile) lnProfile.href = `web-profile.html?v=${V()}`;
   </script>
 </body>
 

@@ -169,31 +169,96 @@ function samplePoints(points, maxN = 200) {
   return res;
 }
 
-// Open-Elevation で標高[m]配列を取得（CORSが通らない環境では失敗→null）
-async function fetchElevations(points) {
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const qs = samplePoints(points, 200).map(p => `${p.lat},${p.lng}`).join("|");
-    if (!qs) return null;
-    const url = `https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(qs)}`;
-    const res = await fetch(url, { mode: 'cors' });
+    const res = await fetch(url, { ...options, signal: controller.signal });
     if (!res.ok) return null;
-    const json = await res.json();
-    const list = json?.results?.map(r => r.elevation).filter(x => Number.isFinite(x));
-    if (!list || list.length < 2) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-    // 間引きした標高を、元の点列長に線形補間して拡張
-    if (points.length <= list.length) return list;
-    const expanded = new Array(points.length);
-    const idxStep = (points.length - 1) / (list.length - 1);
-    for (let i = 0; i < points.length; i++) {
-      const pos = i / idxStep;
-      const k = Math.floor(pos);
-      if (k >= list.length - 1) { expanded[i] = list[list.length - 1]; continue; }
-      const t = pos - k;
-      expanded[i] = list[k] * (1 - t) + list[k + 1] * t;
+function pickElevationList(json) {
+  const list = json?.results?.map(r => r?.elevation).filter(x => Number.isFinite(x));
+  return list && list.length >= 2 ? list : null;
+}
+
+function expandElevationSamples(points, list, sampledCount) {
+  if (!Array.isArray(list) || list.length < 2) return null;
+  if (points.length <= list.length) return list.slice(0, points.length);
+  const expanded = new Array(points.length);
+  const idxStep = (points.length - 1) / Math.max(1, sampledCount - 1);
+  for (let i = 0; i < points.length; i++) {
+    const pos = i / idxStep;
+    const k = Math.floor(pos);
+    if (k >= list.length - 1) { expanded[i] = list[list.length - 1]; continue; }
+    const t = pos - k;
+    expanded[i] = list[k] * (1 - t) + list[k + 1] * t;
+  }
+  return expanded;
+}
+
+async function fetchElevationsOpenElevationPost(points) {
+  const samples = samplePoints(points, 120);
+  if (!samples.length) return null;
+  const json = await fetchJsonWithTimeout('https://api.open-elevation.com/api/v1/lookup', {
+    method: 'POST',
+    mode: 'cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      locations: samples.map(p => ({ latitude: p.lat, longitude: p.lng }))
+    })
+  });
+  const list = pickElevationList(json);
+  return list ? { list, sampledCount: samples.length } : null;
+}
+
+async function fetchElevationsOpenElevationGet(points) {
+  const samples = samplePoints(points, 120);
+  const qs = samples.map(p => `${p.lat},${p.lng}`).join("|");
+  if (!qs) return null;
+  const json = await fetchJsonWithTimeout(`https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(qs)}`, {
+    mode: 'cors'
+  });
+  const list = pickElevationList(json);
+  return list ? { list, sampledCount: samples.length } : null;
+}
+
+async function fetchElevationsOpenTopoData(points) {
+  const samples = samplePoints(points, 80);
+  const qs = samples.map(p => `${p.lat},${p.lng}`).join("|");
+  if (!qs) return null;
+  const json = await fetchJsonWithTimeout(`https://api.opentopodata.org/v1/srtm90m?locations=${encodeURIComponent(qs)}&interpolation=cubic`, {
+    mode: 'cors'
+  });
+  if (json?.status !== 'OK') return null;
+  const list = pickElevationList(json);
+  return list ? { list, sampledCount: samples.length } : null;
+}
+
+// 外部標高APIは不安定なので複数方式で順に試す
+async function fetchElevations(points) {
+  const providers = [
+    ['open-elevation-post', fetchElevationsOpenElevationPost],
+    ['open-elevation-get', fetchElevationsOpenElevationGet],
+    ['opentopodata', fetchElevationsOpenTopoData]
+  ];
+  for (const [name, provider] of providers) {
+    try {
+      const result = await provider(points);
+      if (!result?.list?.length) continue;
+      const expanded = expandElevationSamples(points, result.list, result.sampledCount);
+      if (expanded && expanded.length >= 2) return expanded;
+    } catch (err) {
+      console.warn(`fetchElevations failed via ${name}`, err);
     }
-    return expanded;
-  } catch (_) { return null; }
+  }
+  return null;
 }
 
 // 総上昇量・総下降量を計算（しきい値でノイズ抑制）

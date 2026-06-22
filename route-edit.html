@@ -296,6 +296,7 @@
       mode: modeSelect.value || 'cycling',
       currentRoute: null,
       routeBuildQueue: Promise.resolve(),
+      suppressAutoCamera: false,
       draftTimer: null,
       guestHintShown: false,
       redirectingToLogin: false
@@ -455,7 +456,7 @@
 
     function updatePolyline({ fit = true } = {}) {
       polylineLayer.setLatLngs(state.routeLine.map(p => [p.lat, p.lng]));
-      if (fit && state.routeLine.length >= 2) {
+      if (fit && !state.suppressAutoCamera && state.routeLine.length >= 2) {
         try {
           map.fitBounds(polylineLayer.getBounds(), { padding: [30, 30], maxZoom: 16 });
         } catch (_) { }
@@ -518,6 +519,7 @@
 
     function rebuildRouteLine() {
       state.routeBuildQueue = state.routeBuildQueue.then(async () => {
+        state.suppressAutoCamera = true;
         const ctrl = state.controlPoints.map(clonePoint);
         if (ctrl.length === 0) {
           state.routeLine = [];
@@ -551,8 +553,10 @@
           }
         }
         state.routeLine = assembled;
-        updatePolyline({ fit: true });
+        updatePolyline({ fit: false });
         updateMarkers();
+      }).finally(() => {
+        state.suppressAutoCamera = false;
       }).catch(err => {
         console.error('rebuildRouteLine failed', err);
       });
@@ -845,11 +849,11 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
-      let routeTypeValue = state.currentRoute?.route_type || 'manual';
+      let routeTypeValue = state.currentRoute?.route_type || 'planned';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();
-      if (!originValue) originValue = 'manual';
+      if (!originValue) originValue = 'drawn';
       payload.origin = originValue;
       console.info('[route-edit] saving payload', payload);
       btnSave.disabled = true;

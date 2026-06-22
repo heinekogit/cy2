@@ -988,11 +988,11 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
-      let routeTypeValue = state.currentRoute?.route_type || 'manual';
+      let routeTypeValue = state.currentRoute?.route_type || 'planned';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();
-      if (!originValue) originValue = 'manual';
+      if (!originValue) originValue = 'drawn';
       payload.origin = originValue;
       console.info('[route-edit] saving payload', payload);
       btnSave.disabled = true;

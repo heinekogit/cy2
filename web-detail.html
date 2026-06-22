@@ -364,6 +364,8 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
     }
 
     function routeTypeLabel(routeType, origin, sourceRunId){
+      if (origin === 'drawn') return '描画ルート';
+      if (routeType === 'planned') return '描画ルート';
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
       if (routeType === 'from_run' && sourceRunId) return '実走ログ由来';
       if (routeType === 'from_run') return '実走ログ由来';

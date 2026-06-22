@@ -58,6 +58,8 @@
     const fmtMin = (s)=> s==null?'-':Math.round(Number(s)/60)+' 分';
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     function routeTypeLabel(routeType, origin, sourceRunId) {
+      if (origin === 'drawn') return '描画ルート';
+      if (routeType === 'planned') return '描画ルート';
       if (routeType === 'from_run' && origin === 'manual') return '描画ルート';
       if (routeType === 'from_run' && sourceRunId) return '実走履歴';
       if (routeType === 'from_run') return '実走履歴';

@@ -896,7 +896,19 @@ body.mode-record #map { height: calc(var(--vh, 1vh) * 90); }
             const acc = ensured.ok ? ensured.ensuredAccountId : null;
             if(!acc){ alert('ログインが必要です'); return; }
             const ymd = (d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date(rideLog.ended_at||rideLog.started_at||Date.now()));
-            const payload = { name: `実走ログ ${ymd} のマイルート`, account_id: acc, is_public: false, route_type: 'from_run', source_run_id: rideLog.id, polyline: rideLog.polyline ?? null, geojson: rideLog.geojson ?? null };
+            const payload = {
+              ...AppCommon.buildRoutePayload({
+                name: `実走ログ ${ymd} のマイルート`,
+                accountId: acc,
+                ownerAccountId: acc,
+                isPublic: false,
+                origin: 'from_run',
+                routeType: 'from_run'
+              }),
+              source_run_id: rideLog.id,
+              polyline: rideLog.polyline ?? null,
+              geojson: rideLog.geojson ?? null
+            };
             const { data:newRow, error:e2 } = await client.from('routes').insert([payload]).select('id').maybeSingle();
             if(e2 || !newRow){
               console.error('ROUTE FROM RUN INSERT ERROR', e2, payload);

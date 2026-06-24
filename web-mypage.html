@@ -301,7 +301,7 @@
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
                 ${badge}
                 <button class="btn danger" type="button" data-delete-route="${r.id}">削除</button>
-                <a class="btn" href="route-edit.html?id=${encodeURIComponent(r.id)}" style="display:none;" aria-hidden="true">編集</a>
+                <a class="btn" href="Web-route-edit.html?id=${encodeURIComponent(r.id)}" style="display:none;" aria-hidden="true">編集</a>
               </div>
             </div>`;
         }).join('');
@@ -444,7 +444,7 @@
         const v = encodeURIComponent(window.APP_VERSION || '');
         if (lnTop) lnTop.href = 'web-explore.html?v=' + v;
         if (lnRun) lnRun.href = 'run.html?v=' + v;
-        if (lnRouteEdit) lnRouteEdit.href = 'route-edit.html?v=' + v;
+        if (lnRouteEdit) lnRouteEdit.href = 'Web-route-edit.html?v=' + v;
       } catch (e) { console.warn('set header link failed', e); }
 
       const ok = await renderGate(); if (ok) await loadMyRoutes();
@@ -479,7 +479,7 @@
     <div style="font-weight:700;">Cycling-Book　My Page</div>
     <div>
       <a id="lnProfile" class="btn" href="web-profile.html">プロフィール設定</a>
-      <a id="lnRouteEdit" class="btn" href="route-edit.html">マイルートを作成する</a>
+      <a id="lnRouteEdit" class="btn" href="Web-route-edit.html">マイルートを作成する</a>
       <a id="lnRun" class="btn" href="run.html">実走を始める</a>
       <a id="lnTop" class="btn" href="web-explore.html">トップへ</a>
     </div>

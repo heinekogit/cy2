@@ -193,6 +193,14 @@
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0, 10) + '-dev';
     }
+    try {
+      const target = new URL('Web-route-edit.html', window.location.href);
+      const current = new URL(window.location.href);
+      current.searchParams.forEach((value, key) => target.searchParams.set(key, value));
+      if (!target.searchParams.get('v') && window.APP_VERSION) target.searchParams.set('v', window.APP_VERSION);
+      target.hash = current.hash || '';
+      window.location.replace(target.toString());
+    } catch (_) {}
   </script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.46.1/dist/umd/supabase.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>

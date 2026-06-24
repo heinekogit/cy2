@@ -311,8 +311,19 @@
     };
 
     const fetchActiveSession = async () => {
-      console.info('[route-edit] fetchActiveSession invoked (no-op)');
-      return { session: null, user: null };
+      try {
+        const { data, error } = await sb.auth.getSession();
+        if (error) throw error;
+        let session = data?.session || null;
+        if (!session) {
+          const refreshResult = await sb.auth.refreshSession();
+          session = refreshResult?.data?.session || null;
+        }
+        return { session, user: session?.user || null };
+      } catch (e) {
+        console.warn('[route-edit] fetchActiveSession failed', e);
+        return { session: null, user: null };
+      }
     };
 
     const buildLoginRedirectUrl = () => {
@@ -329,8 +340,14 @@
     };
 
     const ensureLoggedIn = async () => {
-      console.info('[route-edit] ensureLoggedIn invoked (no-op)');
-      return true;
+      const { user } = await fetchActiveSession();
+      if (user?.id) {
+        return true;
+      }
+      authNotice.textContent = '保存にはログインが必要です';
+      showToast('ログインが必要です', 1800);
+      redirectToLogin();
+      return false;
     };
 
     if (modeStatus) {
@@ -837,7 +854,11 @@
       }
 
       if (!state.accountId) {
-        console.warn('[route-edit] accountId is missing, will rely on RLS error');
+        console.warn('[route-edit] accountId is missing, abort saving');
+        authNotice.textContent = '保存先アカウントを確認できませんでした';
+        alert('アカウント情報を確認できないため保存できません。再ログインしてもう一度お試しください。');
+        redirectToLogin();
+        return;
       }
 
       if (state.routeLine.length < 2) {
@@ -854,10 +875,11 @@
         name,
         geojson,
         polyline: polylineStr,
+        is_public: false,
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
-      let routeTypeValue = state.currentRoute?.route_type || 'planned';
+      let routeTypeValue = state.currentRoute?.route_type || 'manual';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();

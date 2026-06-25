@@ -49,8 +49,12 @@ self.addEventListener('fetch', (event) => {
   const sameOrigin = url.origin === self.location.origin;
   const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(url.pathname);
   const bypassPaths = new Set([
+    '/js/version.js',
+    '/version.js',
     '/js/app-common.js',
     '/js/storage.js',
+    '/Web-route-edit.html',
+    '/route-edit.html',
     '/run.html',
     '/detail.html',
     '/detail-edit.html',

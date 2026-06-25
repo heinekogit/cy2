@@ -218,6 +218,31 @@
 
   <script src="js/version.js"></script>
   <script>
+    async function hardRefreshIfVersionChanged() {
+      try {
+        const v = String(window.APP_VERSION || '');
+        const prev = localStorage.getItem('APP_VERSION');
+        if (prev && prev !== v) {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+          if (window.caches?.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          localStorage.setItem('APP_VERSION', v);
+          location.replace(location.pathname + '?v=' + encodeURIComponent(v) + '&t=' + Date.now());
+          return;
+        }
+        localStorage.setItem('APP_VERSION', v);
+      } catch (e) {
+        console.warn('hardRefreshIfVersionChanged', e);
+      }
+    }
+
+    hardRefreshIfVersionChanged();
+
     if (typeof window.APP_VERSION === 'undefined' || !window.APP_VERSION) {
       window.APP_VERSION = new Date().toISOString().slice(0, 10) + '-dev';
     }

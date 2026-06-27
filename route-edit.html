@@ -879,7 +879,7 @@
         account_id: state.accountId || null,
         owner_account_id: state.accountId || null
       };
-      let routeTypeValue = state.currentRoute?.route_type || 'planned';
+      let routeTypeValue = state.currentRoute?.route_type || 'from_run';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
       if (!originValue) originValue = await getDefaultRouteOrigin();

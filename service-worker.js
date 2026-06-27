@@ -4,6 +4,24 @@
 
 const CACHE_VERSION = (new URL(self.location)).searchParams.get('v') || 'dev';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
+const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, '');
+
+function normalizePath(pathname) {
+  if (!SCOPE_PATH || SCOPE_PATH === '/') return pathname;
+  if (pathname === SCOPE_PATH) return '/';
+  if (pathname.startsWith(SCOPE_PATH + '/')) {
+    return pathname.slice(SCOPE_PATH.length);
+  }
+  return pathname;
+}
+
+async function fetchNoStore(req) {
+  try {
+    return await fetch(req, { cache: 'no-store' });
+  } catch (_) {
+    return fetch(req);
+  }
+}
 
 // 即時適用
 self.addEventListener('install', (event) => {
@@ -21,6 +39,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const normalizedPath = normalizePath(url.pathname);
 
   // ✅ これが超重要：自ドメイン以外はSWで触らず、普通にネットへ流す
   if (url.origin !== self.location.origin) {
@@ -35,10 +54,10 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        return await fetch(req, { cache: 'no-store' });
+        return await fetchNoStore(req);
       } catch (e) {
         // オフライン時は最後のキャッシュ（あれば）→なければ簡易オフライン
-        const cached = await caches.match(req);
+        const cached = await caches.match(req).catch(() => null);
         return cached || new Response('<h1>Offline</h1>', { headers: { 'Content-Type': 'text/html' }});
       }
     })());
@@ -47,7 +66,7 @@ self.addEventListener('fetch', (event) => {
 
   // 画像/JS/CSS など同一オリジン静的は Cache First（v付与で更新保証済み）
   const sameOrigin = url.origin === self.location.origin;
-  const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(url.pathname);
+  const isStatic = sameOrigin && /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|json)$/.test(normalizedPath);
   const bypassPaths = new Set([
     '/js/version.js',
     '/version.js',
@@ -61,8 +80,11 @@ self.addEventListener('fetch', (event) => {
     '/route-photos.html'
   ]);
 
-  if (sameOrigin && bypassPaths.has(url.pathname)) {
-    event.respondWith(fetch(req, { cache: 'no-store' }));
+  if (sameOrigin && bypassPaths.has(normalizedPath)) {
+    event.respondWith((async () => {
+      const res = await fetchNoStore(req).catch(() => null);
+      return res || new Response('Offline', { status: 503, statusText: 'Offline' });
+    })());
     return;
   }
 
@@ -80,7 +102,14 @@ self.addEventListener('fetch', (event) => {
   }
 
   // それ以外（APIなど）はネットワーク優先で良い
-  event.respondWith(fetch(req).catch(() => caches.match(req)));
+  event.respondWith((async () => {
+    try {
+      return await fetch(req);
+    } catch (_) {
+      const cached = await caches.match(req).catch(() => null);
+      return cached || new Response('Offline', { status: 503, statusText: 'Offline' });
+    }
+  })());
 });
 
 // ページからのメッセージ（skipWaiting 等）

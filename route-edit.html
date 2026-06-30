@@ -882,7 +882,6 @@
       let routeTypeValue = state.currentRoute?.route_type || 'from_run';
       payload.route_type = routeTypeValue;
       let originValue = state.currentRoute?.origin || null;
-      if (!originValue) originValue = await getDefaultRouteOrigin();
       if (!originValue) originValue = 'drawn';
       payload.origin = originValue;
       console.info('[route-edit] saving payload', payload);
